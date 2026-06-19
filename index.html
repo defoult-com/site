@@ -2885,7 +2885,8 @@ function buildSteps(){
       const div=document.createElement('div');div.className='step-btn';
       div.innerHTML=`<div class="${padCls}" id="spad-${slot}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
       div.dataset.pressable='1';
-      div.addEventListener('click',()=>saveToSlot(patIdx));
+      div.addEventListener('click',e=>{ if(e.detail===0) return; saveToSlot(patIdx); });
+      div.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(div); saveToSlot(patIdx); },{passive:false});
       grid.appendChild(div);
     }
     return;
@@ -3037,9 +3038,13 @@ function buildSteps(){
       },{passive:false});
     }
     grid.appendChild(div); // always render the pad (below-start steps show grayed)
+  }
 
-    // Touchmove sweep — follow ONLY the finger that started the hold,
-    // so a second finger can drag display cells without breaking the sweep
+  // Attach the grid-level touch sweep/end handlers ONCE (not per-pad, not per
+  // rebuild — otherwise they pile up and behave erratically). They use the
+  // current closure-free globals (heldStepAbs, stepTouchId) so a single set works.
+  if(!grid._stepTouchBound){
+    grid._stepTouchBound=true;
     grid.addEventListener('touchmove',e=>{
       if(stepTouchId===null) return;
       const touch=Array.from(e.touches).find(t=>t.identifier===stepTouchId);
@@ -3051,6 +3056,9 @@ function buildSteps(){
       if(!pad) return;
       const newAbs=parseInt(pad.id.replace('spad-',''));
       if(isNaN(newAbs)||newAbs===heldStepAbs) return;
+      if(currentMode!=='step') return; // sweep only paints in STEP mode
+      const np=parts[activePart];
+      if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
       if(heldStepAbs!==-1){
         if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
         endHold();
@@ -3060,8 +3068,6 @@ function buildSteps(){
       startHold(newAbs,wasOn);
       showStepParams(newAbs);
     },{passive:false});
-
-    // End the hold only when the holding finger lifts
     grid.addEventListener('touchend',e=>{
       if(stepTouchId===null) return;
       if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
@@ -3072,11 +3078,15 @@ function buildSteps(){
         restoreSequencerDisplay();
       }
     },{passive:false});
-
-
+    grid.addEventListener('touchcancel',e=>{
+      if(stepTouchId===null) return;
+      stepTouchId=null;
+      if(heldStepAbs!==-1){ endHold(); restoreSequencerDisplay(); }
+    },{passive:false});
+  }
 
   updatePartIndicator();updateSmdDisplay();
-}} // end buildSteps
+} // end buildSteps
 
 function buildRangeBar(){
   const bar=document.getElementById('step-range-bar');bar.innerHTML='';
@@ -4583,6 +4593,7 @@ document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
   else if(currentMode==='ctrl'){ ctrlAllHeld=true; pressOn(document.getElementById('ctrl-none')); setStatus('All: hold + Save/Reload/Clear for every part'); }
 });
 document.addEventListener('mouseup',()=>{
+  if(_touchHoldCount>0) return; // touch is driving holds; ignore synthesized mouseups
   if(saveHeld) endSaveHold();
   if(looperActive&&(currentMode==='pat'||currentMode==='set')) releaseLooper();
   if(rollActive) releaseRoll();
@@ -4590,26 +4601,55 @@ document.addEventListener('mouseup',()=>{
 });
 
 // ── Touch support for the hold-capable action buttons ────────────────
-// These buttons use mousedown/mouseup/click for press-and-hold gestures
-// (looper, roll, save-to-slot, CTRL "All"). On touch we suppress the browser's
-// synthesized mouse events and dispatch real ones so hold + tap both work,
-// without double-firing.
+// Each button maps to a roll/looper division. On touch we drive the SAME
+// engage/release functions the keyboard uses, passing that button's division
+// so layered holds work (hold slow, add fast, release fast → fall back to
+// slow). We do NOT call the global "release everything" path on touchend.
+// A genuine quick tap still fires the button's click action (Save/Load/etc).
+const _HOLD_BTN_DIV={'ctrl-save':4,'ctrl-reload':2,'ctrl-clear':1,'ctrl-none':0.5};
+let _touchHoldCount=0; // number of hold-buttons currently held by touch
 ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach(id=>{
   const el=document.getElementById(id);
   if(!el) return;
+  const div=_HOLD_BTN_DIV[id];
+  let touchStartT=0, touchActive=false;
   el.addEventListener('touchstart',e=>{
-    e.preventDefault();                 // stop synthesized mouse events / zoom
-    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+    e.preventDefault();
+    touchActive=true; touchStartT=performance.now(); _touchHoldCount++;
+    pressOn(el);
+    // Engage the press behavior for the current mode (mirrors mousedown).
+    if(currentMode==='key'){ engageRoll(div); }
+    else if(currentMode==='pat'){ engageLooper(div); }
+    else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=true; setStatus('All: hold + Save/Reload/Clear for every part'); }
+    // STEP Save: on touch we LATCH browse mode (hold-and-tap-elsewhere is hard
+    // on a touchscreen). Tap Save → open save-browse; tap Save again → finish.
+    else if(currentMode==='step' && id==='ctrl-save'){
+      if(saveHeld){ endSaveHold(); } else { beginSaveHold(); }
+    }
   },{passive:false});
   el.addEventListener('touchend',e=>{
     e.preventDefault();
-    // Release any active hold (mirrors the global mouseup), then fire click for
-    // tap-actions (Save/Load/New, pattern Save/Reload/Clear, etc.).
-    document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
-    el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+    if(!touchActive) return;
+    touchActive=false; _touchHoldCount=Math.max(0,_touchHoldCount-1);
+    pressOff(el);
+    const wasQuick=(performance.now()-touchStartT)<300;
+    // Release this button's specific hold (layered: only removes its division).
+    if(currentMode==='key'){ releaseRoll(div); }
+    else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
+    else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=false; }
+    // STEP Save is latched (toggled on touchstart) — do nothing on release.
+    // Tap actions: fire the click handler for a quick tap in modes where the
+    // button is a tap-action. Exclude STEP ctrl-save (latched, handled above).
+    const isStepSaveHold=(currentMode==='step' && id==='ctrl-save');
+    if(wasQuick && !isStepSaveHold && (currentMode==='set'||currentMode==='step'||currentMode==='ctrl')){
+      el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+    }
   },{passive:false});
   el.addEventListener('touchcancel',()=>{
-    document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+    if(!touchActive) return; touchActive=false; _touchHoldCount=Math.max(0,_touchHoldCount-1); pressOff(el);
+    if(currentMode==='key') releaseRoll(div);
+    else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
+    else if(currentMode==='ctrl' && id==='ctrl-none') ctrlAllHeld=false;
   });
 });
 
