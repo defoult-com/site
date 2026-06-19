@@ -10,7 +10,9 @@
   :root{--seq-bg:#1a1a14;--seq-panel:#2a2a1e;--seq-border:#3a3a28;--seq-yellow:#f0c030;--seq-yellow-dark:#c09010;--seq-yellow-bg:#3a2e00;--seq-text:#e8e0c0;--seq-text-dim:#888870;--seq-btn-bg:#222218;--seq-red:#e05040;}
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;}
-  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;}
+  @media (max-width:680px){ html,body{padding:4px;} }
+  #scale-wrap{display:flex;justify-content:center;}
+  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:top center;}
   .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
   .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
@@ -40,9 +42,12 @@
   .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
   .parts-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
-  .part-num{width:100%;height:26px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;}
+  .part-num{width:100%;min-height:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
+  .pnum-n{font-size:11px;line-height:1;}
+  .pnum-name{font-size:8px;font-weight:bold;color:var(--seq-text-dim);text-transform:uppercase;letter-spacing:.03em;line-height:1;white-space:nowrap;overflow:hidden;max-width:100%;text-overflow:ellipsis;}
+  .part-num.active .pnum-name{color:inherit;}
   .part-num.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
-  .part-num.has-steps::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);transition:background .05s;}
+  .part-num.has-steps::after{content:'';position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);transition:background .05s;}
   .part-num.dot-flash::after{background:#fff!important;transition:none;}
   .part-num.active.has-steps::after{background:#111a;}
   .part-num.has-steps.out-of-sync::after{background:#e05040;}
@@ -51,8 +56,8 @@
   .part-num.muted.active{background:#3a2a00;border-color:#665500;color:#887730;}
   .part-num.soloed{border-color:#60d0d0;color:#60d0d0;}
   .part-num.active.soloed{background:#006060;border-color:#60d0d0;color:#b0ffff;}
-  .part-num.muted::before{content:'M';position:absolute;top:1px;right:2px;font-size:7px;color:#e05040;font-weight:bold;}
-  .part-num.soloed::before{content:'S';position:absolute;top:1px;right:2px;font-size:7px;color:#60d0d0;font-weight:bold;}
+  .part-num.muted::before{content:'M';position:absolute;top:1px;left:2px;font-size:7px;color:#e05040;font-weight:bold;}
+  .part-num.soloed::before{content:'S';position:absolute;top:1px;left:2px;font-size:7px;color:#60d0d0;font-weight:bold;}
   .part-num.muted.has-steps::after{background:#554430;}
   .part-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#111;padding:2px 0;}
   .part-name{font-size:8px;color:var(--seq-text-dim);text-align:center;margin-top:1px;letter-spacing:.03em;}
@@ -182,6 +187,7 @@
 </style>
 </head>
 <body>
+<div id="scale-wrap">
 <div id="seq-root">
   <div class="seq-top-bar">
     <div style="display:flex;gap:2px;align-items:stretch;flex:1;">
@@ -289,12 +295,76 @@
         <div class="se-row"><div class="se-label">Tune / Freq</div><input type="range" class="se-slider" id="se-tune" min="20" max="800" step="1" value="60"><div class="se-val" id="se-tune-val">60 Hz</div></div>
         <div class="se-row"><div class="se-label">Decay</div><input type="range" class="se-slider" id="se-decay" min="0.02" max="2" step="0.01" value="0.5"><div class="se-val" id="se-decay-val">0.50s</div></div>
         <div class="se-row"><div class="se-label">Tone</div><input type="range" class="se-slider" id="se-tone" min="0" max="1" step="0.01" value="0.5"><div class="se-val" id="se-tone-val">50%</div></div>
+        <!-- ── Master distortion + EQ (applies to ALL internal sounds) ── -->
+        <div style="border-top:1px solid var(--seq-border);margin:6px 0 2px;"></div>
+        <div class="se-row">
+          <div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">MASTER FX</div>
+          <div class="se-type-btn" id="se-fx-onoff" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">OFF</div>
+          <div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Distortion + EQ</div>
+        </div>
+        <div id="se-fx-controls" style="display:none;flex-direction:column;gap:5px;">
+          <div class="se-row"><div class="se-label">Volume</div><input type="range" class="se-slider" id="se-fx-volume" min="0" max="2" step="0.01" value="1"><div class="se-val" id="se-fx-volume-val">100%</div></div>
+          <div class="se-row"><div class="se-label">Gain</div><input type="range" class="se-slider" id="se-fx-gain" min="1" max="50" step="0.1" value="1"><div class="se-val" id="se-fx-gain-val">1.0×</div></div>
+          <div class="se-row"><div class="se-label">Character</div><input type="range" class="se-slider" id="se-fx-character" min="0" max="1" step="0.01" value="0.5"><div class="se-val" id="se-fx-character-val">50%</div></div>
+          <div class="se-row"><div class="se-label">EQ Pos</div><div class="se-type-btn" id="se-fx-eqpos" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">PRE</div><div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">EQ before / after drive</div></div>
+          <div class="se-row"><div class="se-label">EQ High</div><input type="range" class="se-slider" id="se-fx-high" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-high-val">0 dB</div></div>
+          <div class="se-row"><div class="se-label">EQ Mid</div><input type="range" class="se-slider" id="se-fx-mid" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-mid-val">0 dB</div></div>
+          <div class="se-row"><div class="se-label">EQ Low</div><input type="range" class="se-slider" id="se-fx-low" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-low-val">0 dB</div></div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+</div>
 
 <script>
+/* ====================================================================
+ * STEP SEQUENCER  —  architecture overview (for maintainers)
+ * ====================================================================
+ * Single-file app: all state in module-scope variables, all UI built
+ * imperatively from those variables via build*() functions. No framework.
+ *
+ * MODES (currentMode): 'pat' | 'step' | 'key' | 'ctrl' | 'set'(settings).
+ *   isPatLike()  = pat | key | set   (these share the PAT-style display)
+ *   isStepLike() = step | ctrl       (these share the STEP-style display)
+ *
+ * CORE STATE
+ *   parts[8]          per-part: steps[64], skip[64], stepParams[64],
+ *                     seqStart/seqEnd/dirIndex/speedIndex/swing/seqOffset,
+ *                     MIDI-delay settings, mute/soloed, + synth cfg fields.
+ *   playState[8]      live transport position per part (pos, ping-pong dir…).
+ *   patternStore[8][64]  saved pattern snapshots (bank × pattern). Each entry
+ *                     is a snapshotParts() blob incl. per-part CTRL data.
+ *   activeBank/activePattern/activePart  current selection.
+ *
+ * SCHEDULER  (see "Global bar clock" section)
+ *   A Web Worker fires periodic ticks (throttle-proof when tab is hidden).
+ *   On each tick we look ahead LOOKAHEAD seconds and schedule any steps whose
+ *   audio-clock time falls in the window, via scheduleDrum()->fireNote().
+ *   nextAbsStep() advances a part's position honoring direction + step-skip.
+ *
+ * SOUND vs MIDI OUT
+ *   fireNote() builds a note event (buildNoteEvent) and dispatches it to BOTH
+ *   the internal SoundEngine (fenced block — do not edit) and MIDI out
+ *   (sendMidiEvent), timestamped on their respective clocks.
+ *
+ * PERSISTENCE  (see "PERSISTENCE" section near the end)
+ *   serializeAll()/deserializeAll() capture/restore the ENTIRE app state.
+ *   Debounced autosave writes to an in-memory store; download/upload give
+ *   real files. To add a new saved parameter: edit BOTH serialize functions.
+ *
+ * INPUT
+ *   Keyboard shortcuts in the big keydown/keyup handlers; mouse + touch on
+ *   the grids/buttons. attachGenericDrag() powers the draggable display cells
+ *   (SEQ STRT/END, DIR, SPEED, SWING, …) with both mouse and touch support.
+ *
+ * SECTION MAP (search these headers):
+ *   Scale lock · Held keys + Arpeggiator · Roll · Pattern store · PAT mode UI
+ *   · Mode switching · Background-safe scheduler clock · Note event bridge
+ *   · Step parameter display · CTRL mode · SETTINGS display · attachGenericDrag
+ *   · SOUND ENGINE (fenced) · Metronome · Step Skip · Global bar clock
+ *   · Looper · Random fill · PERSISTENCE.
+ * ==================================================================== */
 const PARTS_KEYS=['1','2','3','4','5','6','7','8'];
 const STEP_KEYS=['Q','W','E','R','T','Y','U','I','A','S','D','F','G','H','J','K'];
 const RANGE_LABELS=['1–16','17–32','33–48','49–64'];
@@ -302,6 +372,9 @@ const RANGE_KEYS=['Z','X','C','V'];
 const PAGE_OFFSET=[0,16,32,48];
 const DRUM_TYPES=['kick','snare','hihat','openhat','clap','tom','rim','cowbell','fm','sample'];
 const DRUM_NAMES=['Kick','Snare','Hi-Hat','Open Hat','Clap','Tom','Rim','Cowbell','FM','Sample'];
+// Compact names for the small part-label under each part number (button sizes
+// unchanged). DRUM_NAMES above is still used for the sound-editor buttons/title.
+const DRUM_NAMES_SHORT=['Kick','Snare','CH','OH','Clap','Tom','Rim','Cowbll','FM','Smpl'];
 const SNAP_POINTS_END=[16,32,48,64]; const MIN_GAP=15;
 // Bar-start snap points: the four bar starts that stay below seqEnd.
 function snapPointsForStart(seqEnd){return [1,17,33,49].filter(p=>p<=seqEnd);}
@@ -340,13 +413,13 @@ const DEFAULTS=[
   {type:'cowbell',vol:0.65,freq:540,decay:0.5,tone:0.5},
 ];
 
-// Default step params factory
+// Default step params factory (the params attached to each step).
 function defaultStepParams(){return {note:0,accent:1,velManual:false,gate:50,prob:100,oct:5,vel:100,stepOffset:0,retrig:1};}
-// Global per-part defaults applied to NEWLY entered steps (prob/retrig excluded).
-// Lives outside the pattern store, so it's the same across all patterns/banks.
 // Velocity mixer (PAT mode display): per-part MIDI velocity scaler 0-100%.
 // 100 = velocities pass unchanged, 0 = part fully muted at the velocity level.
 const midiVel=Array(8).fill(100);
+// Global per-part defaults applied to NEWLY entered steps (prob/retrig excluded).
+// Lives outside the pattern store, so it's the same across all patterns/banks.
 const partStepDefaults=Array.from({length:8},()=>({note:0,accent:1,velManual:false,gate:50,oct:5,vel:100,stepOffset:0}));
 function newStepParams(pi){return {...defaultStepParams(),...partStepDefaults[pi]};}
 // Accent: 0=normal, 1=accent (+30%), 2=ghost (−50%). Legacy true/false maps to 1/0.
@@ -2574,7 +2647,7 @@ function attachDragHandlers(){
 }function attachGenericDrag(cellId,hintId,getV,setV,getMin,getMax,pxPerStep,isStart,doSnap,fmtHint){
   const cell=document.getElementById(cellId);const hint=document.getElementById(hintId);if(!cell)return;
   let sY=0,sV=0,drag=false;
-  function apply(raw){const p=parts[activePart];if(!shiftHeld){if(isStart===true&&doSnap){const pts=snapPointsForStart(p.seqEnd);const s=pts.length?snapNearest(raw,pts):Math.max(1,Math.min(p.seqEnd-MIN_GAP,raw));return Math.max(1,Math.min(p.seqEnd,s));}if(isStart===false&&doSnap){const pts=snapPointsForEnd(p.seqStart);const s=pts.length?snapNearest(raw,pts):Math.max(p.seqStart+MIN_GAP,Math.min(64,raw));return Math.max(p.seqStart,Math.min(64,s));}}if(isStart===true)return Math.max(1,Math.min(p.seqEnd,raw));if(isStart===false)return Math.max(p.seqStart,Math.min(64,raw));return Math.max(getMin(),Math.min(getMax(),raw));}
+  function apply(raw){const p=parts[activePart];const isRange=(isStart===true||isStart===false)&&doSnap;if(!shiftHeld){if(isStart===true&&doSnap){const pts=snapPointsForStart(p.seqEnd);const s=pts.length?snapNearest(raw,pts):Math.max(1,Math.min(p.seqEnd-MIN_GAP,raw));return Math.max(1,Math.min(p.seqEnd,s));}if(isStart===false&&doSnap){const pts=snapPointsForEnd(p.seqStart);const s=pts.length?snapNearest(raw,pts):Math.max(p.seqStart+MIN_GAP,Math.min(64,raw));return Math.max(p.seqStart,Math.min(64,s));}}if(isStart===true&&isRange)return Math.max(1,Math.min(p.seqEnd,raw));if(isStart===false&&isRange)return Math.max(p.seqStart,Math.min(64,raw));return Math.max(getMin(),Math.min(getMax(),raw));}
   function move(cy){const nv=apply(sV+Math.round((sY-cy)/pxPerStep));if(nv!==getV()){setV(nv);const el=document.getElementById(cellId+'-val');if(el)el.textContent=CELL_DEFS.find(d=>d.id===cellId)?.fmtVal()??nv;if(hint)hint.textContent=fmtHint?fmtHint(nv):(doSnap?(!shiftHeld?'⌂ bar snap':'free'):'');}if(doSnap)cell.classList.toggle('snap-mode',!shiftHeld);}
   cell.addEventListener('mousedown',e=>{if(e.target.tagName==='SELECT')return;drag=true;sY=e.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'⌂ bar snap':'free';}e.preventDefault();});
   document.addEventListener('mousemove',e=>{if(drag)move(e.clientY);});
@@ -2667,7 +2740,7 @@ function buildParts(){
       const isSelected=!partsInactive&&b===settingsPartSel;
       let cls='part-num'+(isSelected?' active':'')+(partsInactive?' part-disabled':'');
       const div=document.createElement('div');div.className='part-btn';
-      div.innerHTML=`<div class="${cls}" id="pnum-${b}">${b+1}</div>`;
+      div.innerHTML=`<div class="${cls}" id="pnum-${b}"><span class="pnum-n">${b+1}</span></div><div class="part-kbd">${PARTS_KEYS[b]}</div>`;
       if(!partsInactive){
         div.dataset.pressable='1';
         div.addEventListener('click',()=>{
@@ -2691,7 +2764,7 @@ function buildParts(){
       const isSelected=b===activeBank;
       let cls='part-num'+(isSelected?' active':'')+(hasAny?' has-steps':'')+(isPending?' soloed':'');
       const div=document.createElement('div');div.className='part-btn';
-      div.innerHTML=`<div class="${cls}" id="pnum-${b}">${b+1}</div>`;
+      div.innerHTML=`<div class="${cls}" id="pnum-${b}"><span class="pnum-n">${b+1}</span><span class="pnum-name">BANK</span></div><div class="part-kbd">${PARTS_KEYS[b]}</div>`;
       div.dataset.pressable='1';
       div.addEventListener('click',()=>{
         activeBank=b;
@@ -2710,7 +2783,8 @@ function buildParts(){
       let cls='part-num'+(i===activePart&&showActive?' active':'')+(hasSteps(i)?' has-steps':'')+(p.muted?' muted':'')+(p.soloed?' soloed':'')+(isOutOfSync(i)?' out-of-sync':'');
       const dimmed=anySoloed&&!p.soloed&&!p.muted;
       const div=document.createElement('div');div.className='part-btn';
-      div.innerHTML=`<div class="${cls}" id="pnum-${i}" style="${dimmed?'opacity:.4':''}">${i+1}</div>`;
+      const soundName=DRUM_NAMES_SHORT[DRUM_TYPES.indexOf(p.type)]||'';
+      div.innerHTML=`<div class="${cls}" id="pnum-${i}" style="${dimmed?'opacity:.4':''}"><span class="pnum-n">${i+1}</span><span class="pnum-name">${soundName}</span></div><div class="part-kbd">${PARTS_KEYS[i]}</div>`;
       div.dataset.pressable='1';
       div.addEventListener('mousedown',e=>{
         if(shiftHeld||ctrlHeld||altHeld||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey) return;
@@ -3109,6 +3183,52 @@ function buildSoundEditor(){
 
 document.getElementById('se-header').addEventListener('click',()=>{seOpen=!seOpen;document.getElementById('se-body').classList.toggle('open',seOpen);buildSoundEditor();});
 
+// ── Master FX (distortion + EQ) UI wiring ─────────────────────────
+function refreshMasterFXUI(){
+  const on=masterFX.enabled;
+  const btn=document.getElementById('se-fx-onoff');
+  if(btn){ btn.textContent=on?'ON':'OFF'; btn.style.color=on?'var(--seq-yellow)':'var(--seq-text-dim)'; btn.style.borderColor=on?'var(--seq-yellow)':''; }
+  const ctr=document.getElementById('se-fx-controls'); if(ctr) ctr.style.display=on?'flex':'none';
+  const eqp=document.getElementById('se-fx-eqpos');
+  if(eqp){ eqp.textContent=masterFX.eqPost?'POST':'PRE'; eqp.style.color='var(--seq-yellow)'; }
+  const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val;};
+  set('se-fx-volume',masterFX.volume); set('se-fx-gain',masterFX.gain); set('se-fx-character',masterFX.character);
+  set('se-fx-high',masterFX.high); set('se-fx-mid',masterFX.mid); set('se-fx-low',masterFX.low);
+  const txt=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
+  txt('se-fx-volume-val',Math.round(masterFX.volume*100)+'%');
+  txt('se-fx-gain-val',masterFX.gain.toFixed(1)+'×');
+  txt('se-fx-character-val',Math.round(masterFX.character*100)+'%');
+  txt('se-fx-high-val',(masterFX.high>0?'+':'')+masterFX.high+' dB');
+  txt('se-fx-mid-val',(masterFX.mid>0?'+':'')+masterFX.mid+' dB');
+  txt('se-fx-low-val',(masterFX.low>0?'+':'')+masterFX.low+' dB');
+}
+document.getElementById('se-fx-onoff').addEventListener('click',()=>{
+  masterFX.enabled=!masterFX.enabled;
+  buildMasterFX(); applyMasterFX(); refreshMasterFXUI();
+  if(typeof markSaveDirty==='function') markSaveDirty();
+  setStatus('Master FX '+(masterFX.enabled?'ON':'OFF'));
+});
+document.getElementById('se-fx-eqpos').addEventListener('click',()=>{
+  masterFX.eqPost=!masterFX.eqPost;
+  buildMasterFX(); rewireMasterFX(); applyMasterFX(); refreshMasterFXUI();
+  if(typeof markSaveDirty==='function') markSaveDirty();
+  setStatus('Master EQ '+(masterFX.eqPost?'post-drive':'pre-drive'));
+});
+[['se-fx-volume','volume',v=>Math.round(v*100)+'%'],
+ ['se-fx-gain','gain',v=>v.toFixed(1)+'×'],
+ ['se-fx-character','character',v=>Math.round(v*100)+'%'],
+ ['se-fx-high','high',v=>(v>0?'+':'')+v+' dB'],
+ ['se-fx-mid','mid',v=>(v>0?'+':'')+v+' dB'],
+ ['se-fx-low','low',v=>(v>0?'+':'')+v+' dB']].forEach(([id,key,fmt])=>{
+  const el=document.getElementById(id); if(!el) return;
+  el.addEventListener('input',e=>{
+    masterFX[key]=parseFloat(e.target.value);
+    const vEl=document.getElementById(id+'-val'); if(vEl) vEl.textContent=fmt(masterFX[key]);
+    buildMasterFX(); applyMasterFX();
+    if(typeof markSaveDirty==='function') markSaveDirty();
+  });
+});
+
 let allMuted=false;
 // ╔════════════════════════════════════════════════════════════════╗
 // ║ SOUND ENGINE — internal Web Audio synth                         ║
@@ -3131,11 +3251,108 @@ let allMuted=false;
 // ╚════════════════════════════════════════════════════════════════╝
 let masterGain=null;
 
+// ── Master FX: distortion + 3-band EQ (post-mix, pre-destination) ─────
+// Signal flow when built:
+//   voices → masterGain → eqLow → eqMid → eqHigh → driveGain → shaper
+//          → toneComp → fxVolume → destination
+// The metronome bypasses this chain (connects straight to destination) so
+// clicks stay clean. When fxEnabled is false, the shaper uses a linear curve
+// and driveGain/eqs are flat, so the chain is sonically transparent.
+const masterFX={
+  enabled:false,
+  volume:1.0,    // output level (makeup)        0..2
+  gain:1.0,      // pre-distortion drive          1..50
+  character:0.5, // clip shape morph              0..1 (soft→hard/foldback)
+  low:0,         // low shelf gain   dB           -18..+18
+  mid:0,         // mid peak  gain   dB           -18..+18
+  high:0,        // high shelf gain  dB           -18..+18
+  eqPost:false,  // false = EQ pre-drive (into the distortion), true = post-drive
+};
+let _fxNodes=null; // {eqLow,eqMid,eqHigh,drive,shaper,vol}
+
+// Build the waveshaper transfer curve. `character` morphs the clipping style:
+//   0.0  → soft saturation (tanh-like, gentle)
+//   0.5  → classic hard-ish overdrive
+//   1.0  → aggressive / wavefolder edge
+function makeDistCurve(character){
+  const n=2048, curve=new Float32Array(n);
+  const c=Math.max(0,Math.min(1,character));
+  // k drives how hard the soft-clip bends; fold adds a wavefolding term.
+  const k=1+c*40;
+  const fold=c; // 0 = none, 1 = strong fold
+  for(let i=0;i<n;i++){
+    const x=(i/(n-1))*2-1;            // -1..+1
+    const soft=Math.tanh(k*x)/Math.tanh(k); // normalized soft clip
+    const folded=Math.sin(x*Math.PI*(1+fold*2)); // wavefold component
+    curve[i]=(1-fold)*soft + fold*folded;
+  }
+  return curve;
+}
+
+function buildMasterFX(){
+  const ctx=getCtx();
+  if(_fxNodes) return _fxNodes;
+  const eqLow=ctx.createBiquadFilter();  eqLow.type='lowshelf';  eqLow.frequency.value=200;
+  const eqMid=ctx.createBiquadFilter();  eqMid.type='peaking';   eqMid.frequency.value=1000; eqMid.Q.value=0.9;
+  const eqHigh=ctx.createBiquadFilter(); eqHigh.type='highshelf';eqHigh.frequency.value=3500;
+  const drive=ctx.createGain();
+  const shaper=ctx.createWaveShaper();   shaper.oversample='4x';
+  const vol=ctx.createGain();
+  // EQ is an internal series block: eqLow → eqMid → eqHigh.
+  eqLow.connect(eqMid); eqMid.connect(eqHigh);
+  vol.connect(ctx.destination);
+  _fxNodes={eqLow,eqMid,eqHigh,drive,shaper,vol};
+  rewireMasterFX(); // connect masterGain through the chain in the chosen order
+  applyMasterFX();
+  return _fxNodes;
+}
+
+// (Re)connect the FX graph so the EQ block sits PRE or POST the distortion.
+//   pre  : masterGain → eqLow→eqMid→eqHigh → drive → shaper → vol → dest
+//   post : masterGain → drive → shaper → eqLow→eqMid→eqHigh → vol → dest
+// Called whenever masterFX.eqPost changes (and on build).
+function rewireMasterFX(){
+  if(!_fxNodes||!masterGain) return;
+  const {eqLow,eqMid,eqHigh,drive,shaper,vol}=_fxNodes;
+  // Tear down the mutable connections (the eqLow→eqMid→eqHigh and vol→dest
+  // links are fixed and left intact).
+  try{ masterGain.disconnect(); }catch(e){}
+  try{ eqHigh.disconnect(); }catch(e){}
+  try{ drive.disconnect(); }catch(e){}
+  try{ shaper.disconnect(); }catch(e){}
+  // Re-wire vol→destination (disconnect() above doesn't touch it, but be safe)
+  if(masterFX.eqPost){
+    masterGain.connect(drive);
+    drive.connect(shaper);
+    shaper.connect(eqLow);   // EQ after distortion
+    eqHigh.connect(vol);
+  }else{
+    masterGain.connect(eqLow); // EQ before distortion
+    eqHigh.connect(drive);
+    drive.connect(shaper);
+    shaper.connect(vol);
+  }
+}
+
+// Push the masterFX parameters onto the live audio nodes.
+function applyMasterFX(){
+  if(!_fxNodes) return;
+  const t=getCtx().currentTime;
+  const on=masterFX.enabled;
+  _fxNodes.eqLow.gain.setValueAtTime(on?masterFX.low:0, t);
+  _fxNodes.eqMid.gain.setValueAtTime(on?masterFX.mid:0, t);
+  _fxNodes.eqHigh.gain.setValueAtTime(on?masterFX.high:0, t);
+  _fxNodes.drive.gain.setValueAtTime(on?masterFX.gain:1, t);
+  _fxNodes.shaper.curve = on ? makeDistCurve(masterFX.character) : null;
+  _fxNodes.vol.gain.setValueAtTime(on?masterFX.volume:1, t);
+}
+
 function getMasterGain(){
   const ctx=getCtx();
   if(!masterGain){
     masterGain=ctx.createGain();
-    masterGain.connect(ctx.destination);
+    buildMasterFX();   // ensure the FX nodes exist
+    rewireMasterFX();  // connect masterGain through the chain in the current pre/post order
   }
   return masterGain;
 }
@@ -4329,6 +4546,30 @@ document.addEventListener('mouseup',()=>{
   if(ctrlAllHeld){ ctrlAllHeld=false; pressOff(document.getElementById('ctrl-none')); }
 });
 
+// ── Touch support for the hold-capable action buttons ────────────────
+// These buttons use mousedown/mouseup/click for press-and-hold gestures
+// (looper, roll, save-to-slot, CTRL "All"). On touch we suppress the browser's
+// synthesized mouse events and dispatch real ones so hold + tap both work,
+// without double-firing.
+['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('touchstart',e=>{
+    e.preventDefault();                 // stop synthesized mouse events / zoom
+    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+  },{passive:false});
+  el.addEventListener('touchend',e=>{
+    e.preventDefault();
+    // Release any active hold (mirrors the global mouseup), then fire click for
+    // tap-actions (Save/Load/New, pattern Save/Reload/Clear, etc.).
+    document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+    el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  },{passive:false});
+  el.addEventListener('touchcancel',()=>{
+    document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+  });
+});
+
 document.getElementById('ctrl-reload').addEventListener('click',()=>{
   if(isPatLike()) return;
   if(currentMode==='ctrl'){
@@ -4481,6 +4722,8 @@ function serializeAll(){
     // ── CTRL mode (also stored per-pattern, but keep the live set too) ──
     ctrl:{ nums:ctrlCCNums.map(a=>a.slice()), vals:ctrlCCVals.map(a=>a.slice()),
            locks:JSON.parse(JSON.stringify(ctrlLocks)) },
+    // ── master FX (distortion + EQ) ──
+    masterFX:{...masterFX},
     // ── settings page values ──
     settingsVals:{...settingsVals},
     // ── per-part page selection ──
@@ -4527,6 +4770,8 @@ function deserializeAll(data){
       if(Array.isArray(data.ctrl.vals)) data.ctrl.vals.forEach((a,i)=>{ if(a) for(let j=0;j<8;j++) ctrlCCVals[i][j]=a[j]??ctrlCCVals[i][j]; });
       if(data.ctrl.locks){ for(let i=0;i<8;i++){ for(const key in ctrlLocks[i]) delete ctrlLocks[i][key]; if(data.ctrl.locks[i]) Object.assign(ctrlLocks[i], JSON.parse(JSON.stringify(data.ctrl.locks[i]))); } }
     }
+    // master FX
+    if(data.masterFX){ Object.assign(masterFX, data.masterFX); try{ if(typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
     // settings page values
     if(data.settingsVals){ for(const key in settingsVals) delete settingsVals[key]; Object.assign(settingsVals, data.settingsVals); }
     // per-part page selection
@@ -4631,7 +4876,52 @@ function newProject(){
 }
 
 // Take an initial snapshot so there's always something to restore
+if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
 persistNow();
+
+// ── Uniform fit-to-screen scaling ───────────────────────────────────
+// The whole UI is a fixed 640px-wide design. On narrower screens (phones)
+// we scale the entire #seq-root down by a single factor so it fits the
+// viewport — same proportions, no rearranging. The wrapper's height is set
+// to the scaled height so there's no dead space below.
+function applyAppScale(){
+  const root=document.getElementById('seq-root');
+  const wrap=document.getElementById('scale-wrap');
+  if(!root||!wrap) return;
+  // offsetWidth/Height report the UNTRANSFORMED layout box, so we can measure
+  // without clearing the transform (avoids a reflow feedback loop).
+  const naturalW=root.offsetWidth || 640;
+  const naturalH=root.offsetHeight;
+  const avail=document.documentElement.clientWidth - 8; // small side margin
+  const scale=Math.min(1, avail/naturalW);
+  if(scale<1){
+    root.style.transform='scale('+scale+')';
+    wrap.style.height=(naturalH*scale)+'px';
+  }else{
+    root.style.transform='';
+    wrap.style.height='';
+  }
+}
+window.addEventListener('resize', applyAppScale);
+window.addEventListener('orientationchange', ()=>setTimeout(applyAppScale,100));
+applyAppScale();
+setTimeout(applyAppScale,50);
+if(window.ResizeObserver){
+  const _ro=new ResizeObserver(()=>applyAppScale());
+  _ro.observe(document.getElementById('seq-root'));
+}
+
+// iOS/Safari require a user gesture to start audio. Unlock the AudioContext on
+// the first touch or pointer anywhere, then remove the listeners.
+function _unlockAudio(){
+  try{ getCtx(); if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
+  document.removeEventListener('touchstart',_unlockAudio,true);
+  document.removeEventListener('pointerdown',_unlockAudio,true);
+  document.removeEventListener('mousedown',_unlockAudio,true);
+}
+document.addEventListener('touchstart',_unlockAudio,true);
+document.addEventListener('pointerdown',_unlockAudio,true);
+document.addEventListener('mousedown',_unlockAudio,true);
 
 
 // (step-pad press outline handled per-mode via btn-held class)
