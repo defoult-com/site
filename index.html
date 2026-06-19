@@ -184,6 +184,13 @@
   .tport-pad{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:6px 2px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--seq-text-dim);transition:all .1s;}
   .tport-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
   .tport-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
+  /* Mobile/touch: the yellow keyboard-shortcut hints are useless on a touchscreen — hide them all. */
+  body.mobile-mode .tport-top-kbd,
+  body.mobile-mode .part-kbd,
+  body.mobile-mode .step-kbd,
+  body.mobile-mode .rkbd,
+  body.mobile-mode .ctrl-kbd,
+  body.mobile-mode .tport-kbd{display:none!important;}
 </style>
 </head>
 <body>
@@ -4968,6 +4975,16 @@ persistNow();
 // viewport — same proportions, no rearranging. The wrapper's height is set
 // to the scaled height so there's no dead space below.
 let appScale=1; // current uniform UI scale (1 = full size); used to keep drag feel consistent
+// Mobile mode: a touch device with a coarse pointer (phone/tablet). In this
+// mode we hide the keyboard-shortcut hint labels (no physical keyboard).
+function isMobileMode(){
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
+  return touch && coarse;
+}
+function applyMobileMode(){
+  document.body.classList.toggle('mobile-mode', isMobileMode());
+}
 function applyAppScale(){
   const root=document.getElementById('seq-root');
   const wrap=document.getElementById('scale-wrap');
@@ -4987,6 +5004,9 @@ function applyAppScale(){
 }
 window.addEventListener('resize', applyAppScale);
 window.addEventListener('orientationchange', ()=>setTimeout(applyAppScale,100));
+applyMobileMode();
+window.addEventListener('resize', applyMobileMode);
+window.addEventListener('orientationchange', ()=>setTimeout(applyMobileMode,100));
 applyAppScale();
 setTimeout(applyAppScale,50);
 if(window.ResizeObserver){
