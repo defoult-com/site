@@ -1705,6 +1705,9 @@ function showStepParams(abs){
 let heldPartPi=-1;
 let stepTouchId=null;   // touch identifier of the finger holding a step pad
 let partTouchId=null;   // touch identifier of the finger holding a part button
+let partHoldTimer=null; // delayed timer that opens the part-defaults popup on a real hold
+let partHoldOpened=false; // true once the hold popup has opened for this touch
+let partTouchStart=null;  // {x,y} start point, to distinguish tap vs scroll
 function showPartDefaults(pi){
   const grid=document.getElementById('smd-grid');
   grid.innerHTML='';
@@ -2790,13 +2793,53 @@ function buildParts(){
         if(shiftHeld||ctrlHeld||altHeld||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey) return;
         if(heldStepAbs===-1 && currentMode==='step'){ heldPartPi=i; showPartDefaults(i); }
       });
+      // ── Touch: a quick TAP selects the part; a HOLD opens part-defaults.
+      // We select on touchend (not the synthesized click, which iOS drops when
+      // the DOM changes mid-touch — that was the "white outline but no select"
+      // bug). The defaults popup only opens after a deliberate ~400ms hold.
       div.addEventListener('touchstart',e=>{
         if(shiftHeld||ctrlHeld||altHeld) return;
-        if(heldStepAbs===-1 && currentMode==='step'){ partTouchId=e.changedTouches[0].identifier; heldPartPi=i; showPartDefaults(i); }
+        const t=e.changedTouches[0];
+        partTouchId=t.identifier; partTouchStart={x:t.clientX,y:t.clientY};
+        partHoldOpened=false;
+        clearTimeout(partHoldTimer);
+        if(heldStepAbs===-1 && currentMode==='step'){
+          partHoldTimer=setTimeout(()=>{ heldPartPi=i; showPartDefaults(i); partHoldOpened=true; }, 400);
+        }
       },{passive:true});
+      div.addEventListener('touchmove',e=>{
+        if(partTouchId===null||!partTouchStart) return;
+        const t=Array.from(e.touches).find(x=>x.identifier===partTouchId);
+        if(!t) return;
+        // Finger moved too far → it's a scroll, not a tap: cancel the hold.
+        if(Math.abs(t.clientX-partTouchStart.x)>14||Math.abs(t.clientY-partTouchStart.y)>14){
+          clearTimeout(partHoldTimer); partTouchStart=null;
+        }
+      },{passive:true});
+      div.addEventListener('touchend',e=>{
+        if(!Array.from(e.changedTouches).some(x=>x.identifier===partTouchId)) return;
+        e.preventDefault(); // suppress the unreliable synthesized click
+        clearTimeout(partHoldTimer);
+        const wasHold=partHoldOpened;
+        partTouchId=null; partTouchStart=null;
+        if(wasHold){ // hold opened defaults — close it, don't select
+          if(heldPartPi===i){ heldPartPi=-1; if(heldStepAbs===-1) restoreSequencerDisplay(); }
+          partHoldOpened=false;
+          return;
+        }
+        // Quick tap → select this part (honoring latched modifier buttons)
+        if(altHeld){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return; }
+        if(shiftHeld){ toggleMute(i); return; }
+        if(ctrlHeld){ toggleSolo(i); return; }
+        if(currentMode!=='ctrl' && recording&&isStepLike()){ recordStep(i); }
+        selectPart(i);
+      },{passive:false});
+      div.addEventListener('touchcancel',()=>{ clearTimeout(partHoldTimer); partTouchId=null; partTouchStart=null; partHoldOpened=false; });
       div.addEventListener('click',e=>{
+        // Desktop mouse path (touch handled above). Guard against double-firing:
+        // on touch devices touchend already handled it and called preventDefault.
+        if(e.detail===0) return; // synthesized/keyboard click — ignore
         e.preventDefault();
-        // Check both our held state AND native modifier keys
         const doShift=shiftHeld||e.shiftKey;
         const doCtrl=ctrlHeld||e.ctrlKey||e.metaKey;
         const doAlt=altHeld||e.altKey;
@@ -4884,16 +4927,16 @@ persistNow();
 // we scale the entire #seq-root down by a single factor so it fits the
 // viewport — same proportions, no rearranging. The wrapper's height is set
 // to the scaled height so there's no dead space below.
+let appScale=1; // current uniform UI scale (1 = full size); used to keep drag feel consistent
 function applyAppScale(){
   const root=document.getElementById('seq-root');
   const wrap=document.getElementById('scale-wrap');
   if(!root||!wrap) return;
-  // offsetWidth/Height report the UNTRANSFORMED layout box, so we can measure
-  // without clearing the transform (avoids a reflow feedback loop).
   const naturalW=root.offsetWidth || 640;
   const naturalH=root.offsetHeight;
-  const avail=document.documentElement.clientWidth - 8; // small side margin
+  const avail=document.documentElement.clientWidth - 8;
   const scale=Math.min(1, avail/naturalW);
+  appScale=scale;
   if(scale<1){
     root.style.transform='scale('+scale+')';
     wrap.style.height=(naturalH*scale)+'px';
@@ -4911,17 +4954,41 @@ if(window.ResizeObserver){
   _ro.observe(document.getElementById('seq-root'));
 }
 
-// iOS/Safari require a user gesture to start audio. Unlock the AudioContext on
-// the first touch or pointer anywhere, then remove the listeners.
+// iOS/Safari require a user gesture to start audio, and newer iOS (17+) is
+// stricter: a plain resume() often isn't enough — the context only truly
+// "wakes" once an actual (silent) buffer has been played from within a user
+// gesture. We therefore:
+//   • on every early gesture, resume() AND play a 1-sample silent buffer,
+//   • keep the listeners attached until the context is confirmed 'running'
+//     (so a second tap can recover if the first didn't take),
+//   • also resume on visibility/focus changes (iOS suspends in background).
+let _audioUnlocked=false;
 function _unlockAudio(){
-  try{ getCtx(); if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
-  document.removeEventListener('touchstart',_unlockAudio,true);
-  document.removeEventListener('pointerdown',_unlockAudio,true);
-  document.removeEventListener('mousedown',_unlockAudio,true);
+  try{
+    const ctx=getCtx();
+    if(ctx.state==='suspended') ctx.resume();
+    // Silent-buffer kick — the reliable iOS unlock.
+    const buf=ctx.createBuffer(1,1,22050);
+    const src=ctx.createBufferSource();
+    src.buffer=buf; src.connect(ctx.destination);
+    if(src.start) src.start(0); else if(src.noteOn) src.noteOn(0);
+    if(ctx.state==='running'){
+      _audioUnlocked=true;
+      document.removeEventListener('touchend',_unlockAudio,true);
+      document.removeEventListener('pointerdown',_unlockAudio,true);
+      document.removeEventListener('mousedown',_unlockAudio,true);
+      document.removeEventListener('keydown',_unlockAudio,true);
+    }
+  }catch(e){}
 }
-document.addEventListener('touchstart',_unlockAudio,true);
+// touchEND (not start) is the most reliable unlock point on iOS Safari.
+document.addEventListener('touchend',_unlockAudio,true);
 document.addEventListener('pointerdown',_unlockAudio,true);
 document.addEventListener('mousedown',_unlockAudio,true);
+document.addEventListener('keydown',_unlockAudio,true);
+// Re-resume when returning to the tab/app (iOS suspends audio in background).
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); });
+window.addEventListener('focus',()=>{ if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); });
 
 
 // (step-pad press outline handled per-mode via btn-held class)
