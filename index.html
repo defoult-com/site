@@ -233,7 +233,7 @@
   body.portrait .parts-grid{gap:4px;}
   body.portrait .step-grid{gap:4px;}
   body.portrait .step-pad{font-size:13px;min-height:0;aspect-ratio:1;}      /* fit width: square via aspect-ratio, no fixed min that forces overflow */
-  body.portrait .part-num{min-height:0;}
+  body.portrait .part-num{min-height:0;aspect-ratio:1;}  /* match step-pad height (square) */
   body.portrait .parts-grid,body.portrait .step-grid{grid-template-columns:repeat(8,minmax(0,1fr));}
   body.portrait .smd-grid{gap:6px;}
 
@@ -301,7 +301,7 @@
         </div>
         <div class="tport-top-kbd">N</div>
       </div>
-      <div class="tport-top-btn" id="btn-metro" data-pressable="1" style="flex:1;"><div class="tport-top-pad" id="pad-metro">🔔</div><div class="tport-top-kbd">M</div></div>
+      <div class="tport-top-btn" id="btn-metro" data-pressable="1" style="flex:1;"><div class="tport-top-pad" id="pad-metro"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Metronome"><path d="M9 3h6l3.2 18H5.8L9 3z"></path><line x1="7" y1="16" x2="17" y2="16"></line><line x1="12" y1="15.5" x2="15.5" y2="6.5"></line></svg></div><div class="tport-top-kbd">M</div></div>
     </div>
     </div>
     <div class="top-bar-sep"></div>
@@ -3072,8 +3072,7 @@ function buildParts(){
         if(altHeld){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return; }
         if(shiftHeld){ toggleMute(i); return; }
         if(ctrlHeld){ toggleSolo(i); return; }
-        if(currentMode!=='ctrl' && recording&&isStepLike()){ recordStep(i); }
-        selectPart(i);
+        triggerSelectPart(i);
       },{passive:false});
       div.addEventListener('touchcancel',()=>{ clearTimeout(partHoldTimer); partTouchId=null; partTouchStart=null; partHoldOpened=false; });
       div.addEventListener('click',e=>{
@@ -3087,8 +3086,7 @@ function buildParts(){
         if(doAlt){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
         if(doShift){toggleMute(i);return;}
         if(doCtrl){toggleSolo(i);return;}
-        if(currentMode!=='ctrl' && recording&&isStepLike()){ recordStep(i); }
-        selectPart(i);
+        triggerSelectPart(i);
       });
       grid.appendChild(div);
     }
@@ -4018,6 +4016,22 @@ function handlePartClick(i){
   selectPart(i);
 }
 function selectPart(i){activePart=i;buildParts();buildSteps();buildRangeBar();if(seOpen)buildSoundEditor();if(currentMode==='ctrl')showCtrlPanel();if(currentMode==='key')showKeyPanel();setStatus('Part '+(i+1)+(parts[i].muted?' [MUTED]':parts[i].soloed?' [SOLO]':''));}
+// Select a part AND trigger its sound — used by mouse click / touch tap so they
+// behave like the keyboard part keys. Triggering happens only in trigger-capable
+// modes (STEP/KEY), and is suppressed while Select (triggerHeld) is held, which
+// is the "select without sound" modifier. Mirrors the keydown handler.
+function triggerSelectPart(i){
+  const canTrigger = (currentMode!=='ctrl' && currentMode!=='pat' && currentMode!=='set');
+  if(currentMode!=='ctrl' && recording && isStepLike()){ recordStep(i); }
+  if(canTrigger && !triggerHeld){
+    getCtx();
+    const sp=newStepParams(i);
+    playDrumAt(parts[i],sp,audioCtx.currentTime);
+    sendMidiNote(i,sp,150);
+    setStatus('Trigger Part '+(i+1));
+  }
+  selectPart(i);
+}
 
 // ── Step Skip: marked steps are jumped over by the playhead ──────────
 function partHasSkips(pi){ const s=parts[pi].skip; return !!s && s.some(Boolean); }
@@ -4832,13 +4846,21 @@ let _modPointerHeld=null;
   const el=document.getElementById(id);
   if(!el) return;
   let touchActive=false;
-  // When ALIGN is pressed while Mute or Solo is held, clear all mutes/solos —
-  // the touch equivalent of the desktop Shift+`/Ctrl+` shortcuts. Returns true
-  // if it handled the press (so we skip normal align engagement).
+  // Modifier-combo clears (touch equivalents of the desktop keyboard shortcuts):
+  //   ALIGN + Mute  → clear all mutes   (desktop Shift+`)
+  //   ALIGN + Solo  → clear all solos   (desktop Ctrl+`)
+  //   SELECT + Mute → clear step skips  (desktop Shift+\)
+  // Returns true if it handled the press (so we skip normal modifier engagement).
   const alignClearCombo=()=>{
-    if(which!=='alt') return false;
-    if(shiftHeld){ clearAllMutes(); return true; }
-    if(ctrlHeld){ clearAllSolos(); return true; }
+    if(which==='alt'){
+      if(shiftHeld){ clearAllMutes(); return true; }
+      if(ctrlHeld){ clearAllSolos(); return true; }
+    }
+    if(which==='trigger' && shiftHeld){
+      if(partHasSkips(activePart)){ clearSkips(activePart); buildSteps(); buildParts(); setStatus('Cleared step skips — Part '+(activePart+1)); }
+      else setStatus('No step skips on Part '+(activePart+1));
+      return true;
+    }
     return false;
   };
   el.addEventListener('mousedown',e=>{ if(currentMode==='set')return; e.preventDefault(); if(alignClearCombo()){ pressOn(el); setTimeout(()=>pressOff(el),120); return; } _modPointerHeld=which; _setModifier(which,true); pressOn(el); });
