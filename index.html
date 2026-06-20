@@ -855,8 +855,11 @@ let pendingPattern=null;
 
 function snapshotParts(){
   // Mute & solo are GLOBAL performance state — never stored in patterns.
+  // The chosen SOUND for each part (type + synth params) is ALSO global: it is
+  // the same across all patterns/banks, so it is excluded from the snapshot and
+  // never overwritten on load. Only sequence/automation data lives in a pattern.
   return parts.map((p,pi)=>{
-    const {muted,soloed,...rest}=p;
+    const {muted,soloed,type,vol,freq,decay,tone,...rest}=p;
     return {
       ...rest,
       steps:[...p.steps],
@@ -877,9 +880,13 @@ function restoreParts(snapshot){
   snapshot.forEach((saved,i)=>{
     // Preserve live (global) mute/solo across pattern load
     const keepMuted=parts[i].muted, keepSoloed=parts[i].soloed;
-    const {ctrl,...partData}=saved;
+    // Preserve the GLOBAL sound config — never let a pattern change the chosen
+    // sound (covers old snapshots/projects that may still contain these keys).
+    const keepSound={type:parts[i].type,vol:parts[i].vol,freq:parts[i].freq,decay:parts[i].decay,tone:parts[i].tone};
+    const {ctrl,type,vol,freq,decay,tone,...partData}=saved;
     Object.assign(parts[i],partData);
     parts[i].muted=keepMuted; parts[i].soloed=keepSoloed;
+    Object.assign(parts[i],keepSound);
     parts[i].steps=[...saved.steps];
     parts[i].skip=[...(saved.skip||Array(64).fill(false))];
     parts[i].stepParams=saved.stepParams.map(sp=>({...sp}));
@@ -5130,6 +5137,10 @@ function serializeAll(){
            locks:JSON.parse(JSON.stringify(ctrlLocks)) },
     // ── master FX (distortion + EQ) ──
     masterFX:{...masterFX},
+    // ── GLOBAL per-part sound config (type + synth params). Stored once at the
+    //    project level, NOT per pattern — the chosen sounds are shared across
+    //    all patterns/banks. ──
+    partSounds:parts.map(p=>({type:p.type,vol:p.vol,freq:p.freq,decay:p.decay,tone:p.tone})),
     // ── settings page values ──
     settingsVals:{...settingsVals},
     // ── per-part page selection ──
@@ -5196,6 +5207,14 @@ function deserializeAll(data){
     activePattern=data.activePattern??activePattern;
     activePart=Math.max(0,Math.min(7,data.activePart??activePart));
     patternPage=data.patternPage??patternPage;
+    // GLOBAL sounds: apply first so they become the live (preserved) sound config
+    // before patterns/liveParts are restored (restoreParts keeps these intact).
+    if(Array.isArray(data.partSounds)){
+      data.partSounds.forEach((s,i)=>{ if(s&&parts[i]){ parts[i].type=s.type??parts[i].type; parts[i].vol=s.vol??parts[i].vol; parts[i].freq=s.freq??parts[i].freq; parts[i].decay=s.decay??parts[i].decay; parts[i].tone=s.tone??parts[i].tone; } });
+    } else if(Array.isArray(data.liveParts)){
+      // Backward-compat: older projects stored the sound inside liveParts.
+      data.liveParts.forEach((s,i)=>{ if(s&&parts[i]){ if(s.type!==undefined)parts[i].type=s.type; if(s.vol!==undefined)parts[i].vol=s.vol; if(s.freq!==undefined)parts[i].freq=s.freq; if(s.decay!==undefined)parts[i].decay=s.decay; if(s.tone!==undefined)parts[i].tone=s.tone; } });
+    }
     // live parts: restore the working copy if present, else load the active pattern
     if(Array.isArray(data.liveParts)) restoreParts(data.liveParts);
     else if(patternStore[activeBank][activePattern]) restoreParts(patternStore[activeBank][activePattern]);
