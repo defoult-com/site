@@ -2881,15 +2881,17 @@ function buildParts(){
       // the DOM changes mid-touch — that was the "white outline but no select"
       // bug). The defaults popup only opens after a deliberate ~400ms hold.
       div.addEventListener('touchstart',e=>{
-        if(shiftHeld||ctrlHeld||altHeld) return;
         const t=e.changedTouches[0];
         partTouchId=t.identifier; partTouchStart={x:t.clientX,y:t.clientY};
         partHoldOpened=false;
         clearTimeout(partHoldTimer);
-        if(heldStepAbs===-1 && currentMode==='step'){
+        // Only arm the hold-to-open-defaults timer when NO modifier is held.
+        // With a modifier (Mute/Solo/Align held), a tap should act on the part
+        // immediately on touchend, not open the part-defaults popup.
+        if(!shiftHeld&&!ctrlHeld&&!altHeld&&!triggerHeld&&heldStepAbs===-1 && currentMode==='step'){
           partHoldTimer=setTimeout(()=>{ heldPartPi=i; showPartDefaults(i); partHoldOpened=true; }, 400);
         }
-      },{passive:true});
+      },{passive:false});
       div.addEventListener('touchmove',e=>{
         if(partTouchId===null||!partTouchStart) return;
         const t=Array.from(e.touches).find(x=>x.identifier===partTouchId);
