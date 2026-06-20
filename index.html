@@ -201,8 +201,8 @@
      Stacks the two main columns into one and lets the app fill the screen
      width instead of the fixed 640px desktop design. Toggled by body.portrait
      (auto on portrait phones, or via the manual toggle). */
-  body.portrait #scale-wrap{width:100%;}
-  body.portrait #seq-root{width:100%!important;max-width:560px;transform:none!important;padding:6px;}
+  body.portrait #scale-wrap{width:100%;justify-content:center;align-items:flex-start;}
+  body.portrait #seq-root{width:100%!important;max-width:560px;padding:6px;transform-origin:top center;}
   #view-toggle{display:none;position:fixed;bottom:8px;right:8px;z-index:1000;background:var(--seq-yellow);color:#111;border:none;border-radius:4px;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;padding:6px 11px;cursor:pointer;opacity:.9;box-shadow:0 2px 6px rgba(0,0,0,.5);}
   body.mobile-mode #view-toggle{display:block;}
   body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
@@ -3526,8 +3526,33 @@ window.SoundEngine={
   },
   // Synthesize one voice from MIDI data + channel config
   _voice(p, note, vel, when, durSec, ch){
-    const ctx=getCtx();
+    const _rawCtx=getCtx();
     const out=getMasterGain();
+    // ── Voice node cleanup (prevents an iOS audio-graph leak) ──────────
+    // Every node created for this voice is tracked, then disconnected once the
+    // voice has finished. Without this, stopped-but-connected nodes accumulate
+    // on the audio thread (iOS Safari doesn't GC them), causing progressive
+    // glitching and tempo slowdown over time. We wrap the context's factory
+    // methods so each drum case below auto-registers its nodes — no per-case
+    // edits needed. A source's onended (plus a fallback timer) triggers cleanup.
+    const _nodes=[];
+    const _track=n=>{ if(n) _nodes.push(n); return n; };
+    const ctx={
+      sampleRate:_rawCtx.sampleRate,
+      currentTime:_rawCtx.currentTime,
+      createGain:()=>_track(_rawCtx.createGain()),
+      createOscillator:()=>_track(_rawCtx.createOscillator()),
+      createBiquadFilter:()=>_track(_rawCtx.createBiquadFilter()),
+      createWaveShaper:()=>_track(_rawCtx.createWaveShaper()),
+      createBufferSource:()=>_track(_rawCtx.createBufferSource()),
+      createBuffer:(...a)=>_rawCtx.createBuffer(...a),
+    };
+    let _cleaned=false;
+    const _cleanup=()=>{
+      if(_cleaned) return; _cleaned=true;
+      for(const n of _nodes){ try{ n.disconnect(); }catch(e){} }
+      _nodes.length=0;
+    };
     const vol=Math.min(1.0, p.vol*(vel/127));
     const freq=p.freq*(midiToHz(note)/midiToHz(60));
     const decay=durSec;
@@ -3710,6 +3735,17 @@ window.SoundEngine={
       src.stop(when+dur+0.06);
       break;}
     }
+    // ── Schedule cleanup once the voice has finished ──────────────────
+    // Prefer onended on real source nodes (fires when they stop); the last
+    // source to end disconnects every node this voice created. A timer
+    // fallback covers iOS edge cases where onended may not fire.
+    const _srcs=_nodes.filter(n=>n&&typeof n.start==='function');
+    if(_srcs.length){
+      let _remaining=_srcs.length;
+      _srcs.forEach(s=>{ s.onended=()=>{ if(--_remaining<=0) _cleanup(); }; });
+    }
+    const _tailSec=Math.max(0,(when-_rawCtx.currentTime))+Math.max(durSec,0)+0.5;
+    setTimeout(_cleanup, Math.min(15000, _tailSec*1000));
   }
 };
 
@@ -5075,16 +5111,49 @@ function portraitActive(){
 function applyPortrait(){
   const on=portraitActive();
   document.body.classList.toggle('portrait', on);
-  // In portrait we reflow fluidly (no uniform scale); clear any transform.
   if(on){
+    applyPortraitScale();
+  }else{
     const root=document.getElementById('seq-root'), wrap=document.getElementById('scale-wrap');
     if(root){ root.style.transform=''; }
-    if(wrap){ wrap.style.height=''; }
+    if(wrap){ wrap.style.height=''; wrap.style.width=''; }
     appScale=1;
   }
   // Update the toggle button label if present
   const tg=document.getElementById('view-toggle');
   if(tg) tg.textContent = on ? '⬍ Portrait' : '⬌ Wide';
+}
+
+// Portrait fit-to-screen: the portrait layout reflows to fill the width, but on
+// a phone it can be taller than the viewport. Scale the whole thing uniformly
+// so it always fits the screen height (scales DOWN if too tall, UP if there's
+// room), keeping proportions. Anchored top-center.
+let _pScaling=false;
+function applyPortraitScale(){
+  if(_pScaling) return;
+  if(!portraitActive()) return;
+  const root=document.getElementById('seq-root');
+  const wrap=document.getElementById('scale-wrap');
+  if(!root||!wrap) return;
+  _pScaling=true;
+  // Measure natural (unscaled) size — clear transform first so the reflowed
+  // width is computed against the real viewport, not a scaled box.
+  root.style.transform='';
+  wrap.style.height=''; wrap.style.width='';
+  const naturalW=root.offsetWidth || 1;
+  const naturalH=root.offsetHeight || 1;
+  const margin=4;
+  const availW=document.documentElement.clientWidth - margin*2;
+  const availH=window.innerHeight - margin*2;
+  // Largest uniform factor that fits BOTH dimensions.
+  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/naturalH));
+  appScale=scale;
+  if(Math.abs(scale-1)>0.005){
+    root.style.transform='scale('+scale+')';
+    wrap.style.height=(naturalH*scale)+'px';
+    wrap.style.width=(naturalW*scale)+'px';
+  }
+  _pScaling=false;
 }
 let _scaling=false;
 function applyAppScale(){
@@ -5127,10 +5196,13 @@ applyPortrait();
     refreshLayout();
   });
 })();
-applyAppScale();
-setTimeout(applyAppScale,50);
+
+// Dispatch to the correct scaler depending on orientation mode.
+function applyScale(){ if(portraitActive()) applyPortraitScale(); else applyAppScale(); }
+applyScale();
+setTimeout(applyScale,50);
 if(window.ResizeObserver){
-  const _ro=new ResizeObserver(()=>applyAppScale());
+  const _ro=new ResizeObserver(()=>applyScale());
   _ro.observe(document.getElementById('seq-root'));
 }
 
