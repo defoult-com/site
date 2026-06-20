@@ -3290,7 +3290,7 @@ function buildSoundEditor(){
     const srow=document.createElement('div');
     srow.className='se-row';srow.id='se-sample-row';
     const name=(typeof partSampleNames!=='undefined'&&partSampleNames[activePart])?partSampleNames[activePart]:'no sample loaded';
-    srow.innerHTML=`<div class="se-label">Sample</div><div class="se-type-btn" id="se-sample-load" style="cursor:pointer">Load…</div><div class="se-val" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div><input type="file" id="se-sample-file" accept="audio/*" style="display:none">`;
+    srow.innerHTML=`<div class="se-label">Sample</div><div class="se-type-btn" id="se-sample-load" style="cursor:pointer">Load…</div><div class="se-val" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div><input type="file" id="se-sample-file" accept=".wav,.mp3,.m4a,.aac,.aif,.aiff,.ogg,.oga,.flac,.caf,.opus,audio/*" style="display:none">`;
     row.parentElement.insertAdjacentElement('afterend',srow);
     const fi=srow.querySelector('#se-sample-file');
     srow.querySelector('#se-sample-load').addEventListener('click',()=>fi.click());
@@ -3496,8 +3496,25 @@ const partSamples=Array(8).fill(null);
 const partSampleNames=Array(8).fill(null);
 async function loadSampleForPart(pi,file){
   const ctx=getCtx();
-  const arr=await file.arrayBuffer();
-  const buf=await ctx.decodeAudioData(arr);
+  // iOS: the context must be running to decode; resume it (it may be suspended
+  // until a gesture). Loading is triggered by a tap, so this is allowed.
+  try{ if(ctx.state==='suspended') await ctx.resume(); }catch(e){}
+  setStatus('Loading sample…');
+  let arr;
+  try{ arr=await file.arrayBuffer(); }
+  catch(e){ setStatus('Could not read file (try copying it to On My iPad/iPhone first)'); return; }
+  let buf;
+  try{
+    // Safari's decodeAudioData historically needs the callback form; support both.
+    buf=await new Promise((resolve,reject)=>{
+      const p=ctx.decodeAudioData(arr, resolve, reject);
+      if(p&&typeof p.then==='function') p.then(resolve,reject);
+    });
+  }catch(e){
+    setStatus('Unsupported audio format — try a WAV or MP3 file');
+    return;
+  }
+  if(!buf){ setStatus('Could not decode that audio file'); return; }
   partSamples[pi]=buf;
   partSampleNames[pi]=file.name;
   setStatus('Part '+(pi+1)+' sample: '+file.name+' ('+buf.duration.toFixed(2)+'s)');
