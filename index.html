@@ -4772,10 +4772,19 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=false; }
     // STEP Save is latched (toggled on touchstart) — do nothing on release.
-    // Tap actions: fire the click handler for a quick tap in modes where the
-    // button is a tap-action. Exclude STEP ctrl-save (latched, handled above).
+    // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
+    // gesture — iOS blocks share sheets / file pickers triggered from a
+    // synthesized click. So we call them directly here.
     const isStepSaveHold=(currentMode==='step' && id==='ctrl-save');
-    if(wasQuick && !isStepSaveHold && (currentMode==='set'||currentMode==='step'||currentMode==='ctrl')){
+    if(wasQuick && currentMode==='set'){
+      if(id==='ctrl-save'){ downloadProject(); flashCtrlBtn('ctrl-save'); }
+      else if(id==='ctrl-reload'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); }
+      else if(id==='ctrl-clear'){ newProject(); flashCtrlBtn('ctrl-clear'); }
+      return;
+    }
+    // Other tap actions: fire the click handler for a quick tap in modes where
+    // the button is a tap-action. Exclude STEP ctrl-save (latched, above).
+    if(wasQuick && !isStepSaveHold && (currentMode==='step'||currentMode==='ctrl')){
       el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
     }
   },{passive:false});
