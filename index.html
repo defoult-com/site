@@ -9,11 +9,11 @@
   .step-grid,.parts-grid,.smd-grid,.step-range-bar,.tport-top-btn,.ctrl-btn,.mode-tab{touch-action:none;}
   :root{--seq-bg:#1a1a14;--seq-panel:#2a2a1e;--seq-border:#3a3a28;--seq-yellow:#f0c030;--seq-yellow-dark:#c09010;--seq-yellow-bg:#3a2e00;--seq-text:#e8e0c0;--seq-text-dim:#888870;--seq-btn-bg:#222218;--seq-red:#e05040;}
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{background:#111;display:flex;justify-content:center;align-items:center;min-height:100vh;height:100vh;margin:0;padding:0;overflow:hidden;}
-  body.portrait{align-items:flex-start;height:auto;min-height:100vh;overflow:auto;}
-  @media (max-width:680px){ html,body{padding:0;} }
-  #scale-wrap{display:flex;justify-content:center;align-items:center;}
-  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:center center;}
+  html,body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;margin:0;padding:8px;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;}
+  body.portrait{align-items:flex-start;padding:4px;}
+  @media (max-width:680px){ html,body{padding:4px;} }
+  #scale-wrap{display:flex;justify-content:center;align-items:flex-start;}
+  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:top center;}
   .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
   .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
@@ -26,7 +26,7 @@
   .mode-tab.active .kbdkey{background:#111;color:var(--seq-yellow);}
   .kbdkey{border-radius:2px;font-size:10px;font-weight:bold;padding:1px 5px;min-width:20px;text-align:center;background:var(--seq-yellow);color:#111;}
   .mode-tab:not(.active) .kbdkey{background:var(--seq-text-dim);color:#222;}
-  .seq-main{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:stretch;}
+  .seq-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:stretch;}
   .mode-tabs-group{flex:1 1 0;display:flex;gap:2px;align-items:stretch;}
   .mode-tabs-group .mode-tab{flex:1 1 0;min-width:0;}
   .seq-left,.seq-right{display:flex;flex-direction:column;gap:6px;}
@@ -5111,50 +5111,19 @@ function portraitActive(){
 function applyPortrait(){
   const on=portraitActive();
   document.body.classList.toggle('portrait', on);
+  // Portrait reflows fluidly to fill the screen width (max 560px) and scrolls
+  // vertically — no uniform scaling (keeps tap targets full size). Clear any
+  // transform left over from landscape mode.
+  const root=document.getElementById('seq-root'), wrap=document.getElementById('scale-wrap');
   if(on){
-    applyPortraitScale();
-  }else{
-    const root=document.getElementById('seq-root'), wrap=document.getElementById('scale-wrap');
     if(root){ root.style.transform=''; }
     if(wrap){ wrap.style.height=''; wrap.style.width=''; }
     appScale=1;
   }
-  // Update the toggle button label if present
   const tg=document.getElementById('view-toggle');
   if(tg) tg.textContent = on ? '⬍ Portrait' : '⬌ Wide';
 }
 
-// Portrait fit-to-screen: the portrait layout reflows to fill the width, but on
-// a phone it can be taller than the viewport. Scale the whole thing uniformly
-// so it always fits the screen height (scales DOWN if too tall, UP if there's
-// room), keeping proportions. Anchored top-center.
-let _pScaling=false;
-function applyPortraitScale(){
-  if(_pScaling) return;
-  if(!portraitActive()) return;
-  const root=document.getElementById('seq-root');
-  const wrap=document.getElementById('scale-wrap');
-  if(!root||!wrap) return;
-  _pScaling=true;
-  // Measure natural (unscaled) size — clear transform first so the reflowed
-  // width is computed against the real viewport, not a scaled box.
-  root.style.transform='';
-  wrap.style.height=''; wrap.style.width='';
-  const naturalW=root.offsetWidth || 1;
-  const naturalH=root.offsetHeight || 1;
-  const margin=4;
-  const availW=document.documentElement.clientWidth - margin*2;
-  const availH=window.innerHeight - margin*2;
-  // Largest uniform factor that fits BOTH dimensions.
-  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/naturalH));
-  appScale=scale;
-  if(Math.abs(scale-1)>0.005){
-    root.style.transform='scale('+scale+')';
-    wrap.style.height=(naturalH*scale)+'px';
-    wrap.style.width=(naturalW*scale)+'px';
-  }
-  _pScaling=false;
-}
 let _scaling=false;
 function applyAppScale(){
   if(_scaling) return;
@@ -5167,17 +5136,17 @@ function applyAppScale(){
   // CSS transform, so we can read them even while a scale is applied.
   const naturalW=root.offsetWidth || 640;
   const naturalH=root.offsetHeight || 1;
-  // Available viewport (small margin so it never touches the edges).
   const margin=8;
   const availW=document.documentElement.clientWidth - margin*2;
-  const availH=window.innerHeight - margin*2;
-  // Proportional (uniform) scale: the largest factor that still fits BOTH
-  // dimensions. This scales UP on big screens and DOWN on small ones.
-  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/naturalH));
+  // Scale to FILL THE WIDTH (scales up on big screens, down on small ones).
+  // We deliberately do NOT also shrink to fit the height — instead the page
+  // scrolls vertically when the scaled design is taller than the screen, so
+  // the TOP is always anchored and never clipped.
+  const scale=Math.max(0.2, availW/naturalW);
   appScale=scale;
   root.style.transform='scale('+scale+')';
-  // The transformed box still reserves its natural size in layout, so set the
-  // wrapper to the scaled dimensions to keep it centered with no dead space.
+  root.style.transformOrigin='top center';
+  // Reserve the scaled box size so layout (and scrolling) is correct.
   wrap.style.height=(naturalH*scale)+'px';
   wrap.style.width=(naturalW*scale)+'px';
   _scaling=false;
@@ -5198,7 +5167,7 @@ applyPortrait();
 })();
 
 // Dispatch to the correct scaler depending on orientation mode.
-function applyScale(){ if(portraitActive()) applyPortraitScale(); else applyAppScale(); }
+function applyScale(){ if(portraitActive()){/* portrait reflows, no scaling */} else applyAppScale(); }
 applyScale();
 setTimeout(applyScale,50);
 if(window.ResizeObserver){
