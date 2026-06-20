@@ -44,7 +44,7 @@
   .pat-action-btn:hover{border-color:var(--seq-yellow);color:var(--seq-text);}
   .panel{background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:3px;padding:8px;}
   .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
-  .parts-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px;}
+  .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;margin-bottom:6px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
   .pnum-n{font-size:11px;line-height:1;}
@@ -80,7 +80,7 @@
   .part-num.part-disabled{opacity:.35;cursor:default;}
   .step-pad.page-disabled{opacity:.3;cursor:default;}
   .ctrl-btn.ctrl-disabled{opacity:.3;cursor:default;pointer-events:none;}
-  .step-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
+  .step-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;}
   .step-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .step-pad{width:100%;aspect-ratio:1;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:var(--seq-text-dim);transition:background .06s;position:relative;}
   .step-pad.has-data::after,.step-pad.dot-flash::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
@@ -217,8 +217,9 @@
   body.portrait .smd-cell-val{font-size:20px;}
   body.portrait .parts-grid{gap:4px;}
   body.portrait .step-grid{gap:4px;}
-  body.portrait .step-pad{font-size:13px;min-height:42px;}      /* bigger tap targets */
-  body.portrait .part-num{min-height:42px;}
+  body.portrait .step-pad{font-size:13px;min-height:0;aspect-ratio:1;}      /* fit width: square via aspect-ratio, no fixed min that forces overflow */
+  body.portrait .part-num{min-height:0;}
+  body.portrait .parts-grid,body.portrait .step-grid{grid-template-columns:repeat(8,minmax(0,1fr));}
   body.portrait .smd-grid{gap:6px;}
 
   /* ── Portrait panel order: Display → Parts → Step → Status ────────────
