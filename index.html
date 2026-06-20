@@ -5045,14 +5045,45 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden&&_saveDirt
 //    where the File System Access API or a desktop temp-file path slots in. ──
 function downloadProject(){
   persistNow();
-  const blob=new Blob([_memSave||JSON.stringify(serializeAll())],{type:'application/json'});
+  const json=_memSave||JSON.stringify(serializeAll());
+  const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  const fname='sequencer-project-'+stamp+'.json';
+  const blob=new Blob([json],{type:'application/json'});
+
+  // On touch devices (iPhone/iPad), <a download> is ignored by Safari, so use
+  // the Web Share API — it lets the user pick “Save to Files”, AirDrop, etc.
+  const aTest=document.createElement('a');
+  const downloadWorks=('download' in aTest);
+  const isTouch=('ontouchend' in document) || (navigator.maxTouchPoints>0);
+  if(isTouch && navigator.canShare){
+    try{
+      const file=new File([blob],fname,{type:'application/json'});
+      if(navigator.canShare({files:[file]})){
+        navigator.share({files:[file],title:fname})
+          .then(()=>setStatus('Project shared — choose “Save to Files”'))
+          .catch(()=>_downloadFallback(blob,fname));
+        return;
+      }
+    }catch(e){}
+  }
+  _downloadFallback(blob,fname);
+}
+
+// Fallback save path: normal <a download>; if unsupported, open the JSON so the
+// user can save it manually (Safari Share → Save to Files).
+function _downloadFallback(blob,fname){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  a.href=url; a.download='sequencer-project-'+stamp+'.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  setStatus('Project downloaded');
+  if('download' in a){
+    a.href=url; a.download=fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setStatus('Project downloaded');
+  }else{
+    window.open(url,'_blank');
+    setStatus('Project opened — use Share → Save to Files');
+    setTimeout(()=>URL.revokeObjectURL(url),20000);
+  }
 }
 function loadProjectFromFile(file){
   const r=new FileReader();
@@ -5062,7 +5093,7 @@ function loadProjectFromFile(file){
 }
 // Hidden file input for loading
 const _projInput=document.createElement('input');
-_projInput.type='file'; _projInput.accept='application/json,.json'; _projInput.style.display='none';
+_projInput.type='file'; _projInput.accept='.json,application/json,text/json,text/plain,*/*'; _projInput.style.display='none';
 _projInput.addEventListener('change',e=>{ const f=e.target.files[0]; if(f) loadProjectFromFile(f); _projInput.value=''; });
 document.body.appendChild(_projInput);
 function openProjectPicker(){ _projInput.click(); }
