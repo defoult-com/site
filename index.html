@@ -2487,6 +2487,8 @@ function absStepFn(s){return PAGE_OFFSET[getPage()]+s;}
 function isPartAudible(i){const any=parts.some(p=>p.soloed);return any?parts[i].soloed:!parts[i].muted;}
 function toggleMute(i){if(parts[i].soloed)parts[i].soloed=false;parts[i].muted=!parts[i].muted;buildParts();buildSteps();setStatus('Part '+(i+1)+' '+(parts[i].muted?'MUTED':'unmuted'));}
 function toggleSolo(i){const was=parts[i].soloed;parts.forEach(p=>p.soloed=false);if(!was){parts[i].soloed=true;parts[i].muted=false;}buildParts();buildSteps();}
+function clearAllMutes(){const n=parts.filter(p=>p.muted).length;parts.forEach(p=>p.muted=false);buildParts();buildSteps();setStatus(n?('Unmuted all parts ('+n+')'):'No muted parts');}
+function clearAllSolos(){const n=parts.filter(p=>p.soloed).length;parts.forEach(p=>p.soloed=false);buildParts();buildSteps();setStatus(n?('Cleared all solos ('+n+')'):'No soloed parts');}
 
 
 function peekNextAbsStep(pi){
@@ -4415,6 +4417,9 @@ document.addEventListener('keydown',e=>{
   if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&currentMode==='set') return;
   if((e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight')&&currentMode==='set') return;
   if(e.code==='Backquote'&&currentMode==='set'){e.preventDefault();return;}
+  // Shift+` clears all muted parts; Ctrl+` clears all soloed parts.
+  if(e.code==='Backquote'&&(shiftHeld||e.shiftKey)){e.preventDefault();clearAllMutes();return;}
+  if(e.code==='Backquote'&&(ctrlHeld||e.ctrlKey||e.metaKey)){e.preventDefault();clearAllSolos();return;}
   if(e.code==='ShiftLeft'||e.code==='ShiftRight'){if(!shiftHeld){shiftHeld=true;buildParts();refreshShiftLabels();setStatus('Shift — press 1–8 to mute/unmute');}pressOn(document.getElementById('shift-btn'));return;}
   if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){if(!ctrlHeld){ctrlHeld=true;buildParts();setStatus('Ctrl — press 1–8 to solo/unsolo');}pressOn(document.getElementById('ctrl-btn'));return;}
   if(e.code==='Backquote'){e.preventDefault();if(!altHeld){altHeld=true;buildParts();setStatus('` held — press 1–8 to align part on next bar');}pressOn(document.getElementById('btn-resync'));return;}
@@ -4631,7 +4636,46 @@ document.addEventListener('keyup',e=>{
     }
   }
 });
-document.getElementById('shift-btn').addEventListener('click',()=>{shiftHeld=!shiftHeld;ctrlHeld=false;altHeld=false;const v=document.getElementById('shift-val');if(v){v.style.borderColor=shiftHeld?'var(--seq-yellow)':'';v.style.color=shiftHeld?'var(--seq-yellow)':'';}pressOff(document.getElementById('shift-btn'));pressOff(document.getElementById('ctrl-btn'));buildParts();setStatus(shiftHeld?'Shift: click a part to mute/unmute':'Ready');});
+// ── Modifier buttons as HOLD buttons (Mute/Solo/Align/Select) ─────────
+// These mirror the keyboard modifiers: press-and-hold to engage, release to
+// disengage (not toggles). Works for both mouse and touch. While held, tap a
+// part (1–8) to mute/solo/align/select it.
+function _setModifier(which, on){
+  if(which==='shift'){ shiftHeld=on; if(on){ctrlHeld=false;altHeld=false;triggerHeld=false;} }
+  else if(which==='ctrl'){ ctrlHeld=on; if(on){shiftHeld=false;altHeld=false;triggerHeld=false;} }
+  else if(which==='alt'){ altHeld=on; if(on){shiftHeld=false;ctrlHeld=false;triggerHeld=false;} }
+  else if(which==='trigger'){ triggerHeld=on; if(on){shiftHeld=false;ctrlHeld=false;altHeld=false;} }
+  // value-cell highlight colors
+  const hl=(id,color)=>{const v=document.querySelector('#'+id+' .ctrl-val');if(v){v.style.borderColor=color||'';v.style.color=color||'';}};
+  hl('shift-btn', shiftHeld?'var(--seq-yellow)':'');
+  hl('ctrl-btn', ctrlHeld?'#60d0d0':'');
+  hl('btn-resync', altHeld?'var(--seq-yellow)':'');
+  hl('btn-trigger', triggerHeld?'var(--seq-yellow)':'');
+  buildParts();
+  if(on){
+    const msg={shift:'Shift held — tap a part to mute/unmute',
+               ctrl:'Ctrl held — tap a part to solo/unsolo',
+               alt:'Align held — tap a part to align on next bar',
+               trigger:'Select held — tap a part to select'}[which];
+    setStatus(msg);
+  }else if(!shiftHeld&&!ctrlHeld&&!altHeld&&!triggerHeld){ setStatus('Ready'); }
+}
+let _modPointerHeld=null;
+[['shift-btn','shift'],['ctrl-btn','ctrl'],['btn-resync','alt'],['btn-trigger','trigger']].forEach(([id,which])=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  let touchActive=false;
+  el.addEventListener('mousedown',e=>{ if(currentMode==='set')return; e.preventDefault(); _modPointerHeld=which; _setModifier(which,true); pressOn(el); });
+  el.addEventListener('mouseup',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
+  el.addEventListener('mouseleave',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
+  el.addEventListener('touchstart',e=>{ if(currentMode==='set')return; e.preventDefault(); touchActive=true; _setModifier(which,true); pressOn(el); },{passive:false});
+  el.addEventListener('touchend',e=>{ if(!touchActive)return; e.preventDefault(); touchActive=false; _setModifier(which,false); pressOff(el); },{passive:false});
+  el.addEventListener('touchcancel',()=>{ if(!touchActive)return; touchActive=false; _setModifier(which,false); pressOff(el); });
+});
+// Release the mouse-held modifier on mouseup anywhere (dragging off still releases).
+document.addEventListener('mouseup',()=>{
+  if(_modPointerHeld){ _setModifier(_modPointerHeld,false); _modPointerHeld=null; }
+});
 // Save: hold = browse in PAT mode, each pattern click saves snapshot there.
 // Quick tap (no clicks) = save to current pattern. Playback is never touched.
 let saveHeld=false;
@@ -4832,7 +4876,7 @@ document.getElementById('ctrl-none').addEventListener('click',()=>{
   if(currentMode==='step'){ randomFillPart(); flashCtrlBtn('ctrl-none'); return; } // Random fill
   setStatus('None');
 });
-document.getElementById('ctrl-btn').addEventListener('click',()=>{ctrlHeld=!ctrlHeld;shiftHeld=false;altHeld=false;const v=document.getElementById('ctrl-val');if(v){v.style.borderColor=ctrlHeld?'#60d0d0':'';v.style.color=ctrlHeld?'#60d0d0':'';}pressOff(document.getElementById('ctrl-btn'));pressOff(document.getElementById('shift-btn'));buildParts();setStatus(ctrlHeld?'Ctrl: click a part to solo/unsolo':'Ready');});
+// (ctrl-btn Solo is now a hold button — see the unified modifier hold system above)
 let paramDragActive=false;
 document.addEventListener('mouseup',()=>{
   if(paramDragActive){paramDragActive=false;return;}
