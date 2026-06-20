@@ -1300,6 +1300,49 @@ const CELL_DEFS=[
     fmtVal(){return parts[activePart].dlyFb+'%';}},
 ];
 
+// ── Global scroll-wheel for ALL display cells, in every mode/panel ────
+// Each panel builder attaches `cell._wheelAdjust = (dir, shift)=>{}` to its
+// adjustable cells. One delegated listener on the display grid finds the cell
+// under the pointer and calls it. dir = +1 (up) / -1 (down). preventDefault
+// stops the page scrolling while adjusting a value.
+function setupDisplayWheel(){
+  const grid=document.getElementById('smd-grid');
+  if(!grid||grid._wheelBound) return;
+  grid._wheelBound=true;
+  grid.addEventListener('wheel',e=>{
+    if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+    const cell=e.target.closest('.smd-cell');
+    if(!cell||typeof cell._wheelAdjust!=='function') return;
+    e.preventDefault();
+    cell._wheelAdjust(e.deltaY<0?1:-1, shiftHeld);
+  },{passive:false});
+  // ── Double-TAP to reset (mobile equivalent of desktop double-click) ──
+  // Two quick taps on the same cell (no drag between them) fire that cell's
+  // existing dblclick handler, which already performs the reset.
+  let lastTapT=0, lastTapCell=null, tapX=0, tapY=0, moved=false;
+  grid.addEventListener('touchstart',e=>{
+    const t=e.changedTouches[0]; tapX=t.clientX; tapY=t.clientY; moved=false;
+  },{passive:true});
+  grid.addEventListener('touchmove',e=>{
+    const t=e.changedTouches[0];
+    if(Math.abs(t.clientX-tapX)>12||Math.abs(t.clientY-tapY)>12) moved=true;
+  },{passive:true});
+  grid.addEventListener('touchend',e=>{
+    if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+    const cell=e.target.closest('.smd-cell');
+    if(!cell||moved){ lastTapT=0; lastTapCell=null; return; }
+    const now=Date.now();
+    if(lastTapCell===cell && (now-lastTapT)<320){
+      // Second tap on the same cell → reset via the cell's dblclick handler.
+      e.preventDefault();
+      cell.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+      lastTapT=0; lastTapCell=null;
+    }else{
+      lastTapT=now; lastTapCell=cell;
+    }
+  },{passive:false});
+}
+
 function buildSmdGrid(){
   const grid=document.getElementById('smd-grid');grid.innerHTML='';
   CELL_DEFS.forEach((def,idx)=>{
@@ -1776,6 +1819,19 @@ function showStepParams(abs){
       },{passive:false});
       document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
     }
+    // Scroll-wheel adjust for this step-param cell.
+    cell._wheelAdjust=(dir)=>{
+      if(def.isToggle){
+        sp[def.key]=!sp[def.key]; heldStepParamChanged=true;
+        const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(sp[def.key]);
+        cell.classList.toggle('cc-active',!!sp[def.key]); updateAccVelGrey(sp);
+      }else{
+        const nv=Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+        if(nv!==sp[def.key]){ sp[def.key]=nv; heldStepParamChanged=true; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
+        const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
+        if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
+      }
+    };
     grid.appendChild(cell);
   });
   updateAccVelGrey(sp);
@@ -1853,6 +1909,12 @@ function showPartDefaults(pi){
       if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
     },{passive:false});
     document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    cell._wheelAdjust=(dir)=>{
+      const nv=Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+      if(nv!==sp[def.key]){ sp[def.key]=nv; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
+      const el=document.getElementById('pd-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
+      if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
+    };
     grid.appendChild(cell);
   });
   updatePartDefGrey(sp);
@@ -1904,6 +1966,7 @@ function showVelMixer(){
       paint();
     },{passive:false});
     document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    cell._wheelAdjust=(dir)=>{ midiVel[pi]=Math.max(0,Math.min(100,midiVel[pi]+dir)); paint(); };
     grid.appendChild(cell);
     paint();
   }
@@ -2023,6 +2086,7 @@ function showCtrlPanel(){
       if(nv!==shownVal()) applyVal(nv);
     },{passive:false});
     document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,shownVal()+dir)); if(nv!==shownVal()) applyVal(nv); };
     grid.appendChild(cell);
     paint();
   }
@@ -2243,6 +2307,7 @@ function showSettingsPanel(){
         if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();}
       },{passive:false});
       document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+      cell._wheelAdjust=(dir)=>{ const nv=Math.max(1,Math.min(127,cellCCs[idx]+dir)); if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();} };
       grid.appendChild(cell);
     }
     return;
@@ -2286,6 +2351,7 @@ function showSettingsPanel(){
         if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();}
       },{passive:false});
       document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+      cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,ctrlCCNums[part][idx]+dir)); if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();} };
       grid.appendChild(cell);
     }
     return;
@@ -2330,6 +2396,7 @@ function showSettingsPanel(){
       if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();}
     },{passive:false});
     document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,getSettingVal(idx)+dir)); if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();} };
     grid.appendChild(cell);
   }
 }
@@ -2376,6 +2443,7 @@ function showKeyPanel(){
       if(nv!==spec.get()){spec.set(nv);paint();}
     },{passive:false});
     document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    cell._wheelAdjust=(dir)=>{ const nv=Math.max(spec.min,Math.min(spec.max,spec.get()+dir)); if(nv!==spec.get()){spec.set(nv);paint();} };
     return cell;
   }
 
@@ -2654,6 +2722,22 @@ function attachDragHandlers(){
     document.addEventListener('touchend',e=>{
       if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){ drag=false;tid=null; cell.classList.remove('dragging'); leaveTimeMode(); }
     });
+    // Scroll-wheel adjust — DLY amount, or Shift = DLY TIME (hidden param).
+    cell._wheelAdjust=(dir,shift)=>{
+      if(shift){
+        const nv=Math.max(0,Math.min(DLY_TIMES.length-1,parts[activePart].midiDlyTime+dir));
+        if(nv!==parts[activePart].midiDlyTime){
+          parts[activePart].midiDlyTime=nv; enterTimeMode();
+          setStatus('DLY TIME: '+DLY_TIMES[nv].label);
+        }
+      }else{
+        const nv=Math.max(0,Math.min(100,parts[activePart].midiDly+dir));
+        if(nv!==parts[activePart].midiDly){
+          parts[activePart].midiDly=nv; updateDlyDisplay(); updatePartIndicator();
+          setStatus('MIDI DLY: '+nv+'%');
+        }
+      }
+    };
   })();
   (function(){
     const cell=document.getElementById('smd-fb-cell');
@@ -2721,6 +2805,22 @@ function attachDragHandlers(){
       else { parts[activePart].dlyFb=0; updateFbDisplay(); }
       updatePartIndicator();
     });
+    // Scroll-wheel adjust — DLY FB, or Shift = PITCH FB (hidden param).
+    cell._wheelAdjust=(dir,shift)=>{
+      if(shift){
+        const nv=Math.max(-12,Math.min(12,(parts[activePart].dlyPitch||0)+dir));
+        if(nv!==parts[activePart].dlyPitch){
+          parts[activePart].dlyPitch=nv; enterPitchMode();
+          setStatus('PITCH FB: '+(nv>0?'+':'')+nv+' st');
+        }
+      }else{
+        const nv=Math.max(0,Math.min(100,parts[activePart].dlyFb+dir));
+        if(nv!==parts[activePart].dlyFb){
+          parts[activePart].dlyFb=nv; updateFbDisplay(); updatePartIndicator();
+          setStatus('DLY FB: '+nv+'%');
+        }
+      }
+    };
   })();
   // OFFSET
   attachGenericDrag('smd-off-cell','smd-off-cell-hint',
@@ -2742,6 +2842,29 @@ function attachDragHandlers(){
   cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'⌂ bar snap':'free';}e.preventDefault();},{passive:false});
   document.addEventListener('touchmove',e=>{if(!drag)return;const t=Array.from(e.touches).find(x=>x.identifier===tid);if(!t)return;e.preventDefault();move(t.clientY);},{passive:false});
   document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;cell.classList.remove('dragging','snap-mode');if(hint)hint.textContent='';}});
+  // Scroll-wheel adjust — invoked by the global delegated wheel listener.
+  cell._wheelAdjust=(dir,shift)=>{
+    const cur = getV();
+    let nv;
+    const isRange=(isStart===true||isStart===false)&&doSnap;
+    if(isRange && !shift){
+      const p=parts[activePart];
+      const pts=(isStart===true?snapPointsForStart(p.seqEnd):snapPointsForEnd(p.seqStart));
+      if(pts&&pts.length){
+        let idx=0,best=Infinity;
+        pts.forEach((pt,k)=>{const d=Math.abs(pt-cur);if(d<best){best=d;idx=k;}});
+        idx=Math.max(0,Math.min(pts.length-1, idx+dir));
+        nv=apply(pts[idx]);
+      }else{ nv=apply(cur+dir); }
+    }else{
+      nv=apply(cur+dir);
+    }
+    if(nv!==cur){
+      setV(nv);
+      const def=CELL_DEFS.find(d=>d.id===cellId);
+      if(def){ const el=document.getElementById(cellId+'-val'); if(el) el.textContent=def.fmtVal(); }
+    }
+  };
 }
 
 function hasSteps(i){return parts[i].steps.some(Boolean);}
@@ -4960,6 +5083,7 @@ document.getElementById('btn-play').addEventListener('click',()=>{playing?stopPl
 
 for(let i=0;i<8;i++){resetPartPlayState(i);partInPhase[i]=true;}
 buildSmdGrid();buildParts();buildSteps();buildRangeBar();buildSoundEditor();
+if(typeof setupDisplayWheel==='function') setupDisplayWheel();
 
 // ════════════════════════════════════════════════════════════════════
 //  PERSISTENCE  —  full-state save/load
