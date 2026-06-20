@@ -43,6 +43,11 @@
   .pat-action-btn{padding:4px 10px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-family:'Courier New',monospace;font-size:10px;font-weight:bold;color:var(--seq-text-dim);cursor:pointer;}
   .pat-action-btn:hover{border-color:var(--seq-yellow);color:var(--seq-text);}
   .panel{background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:3px;padding:8px;}
+  /* In the two-column (landscape) layout, let the Step panel grow to fill the
+     remaining left-column height so its bottom edge lines up with the Status
+     bar on the right — no gap. The step grid keeps its natural size; the extra
+     space just sits below it (buttons are unchanged). */
+  body:not(.portrait) #step-panel{flex:1 1 auto;}
   .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
   .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;margin-bottom:6px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
@@ -74,9 +79,9 @@
   .action-key.ctrl-key{background:var(--seq-btn-bg);border-color:#60d0d0;color:#60d0d0;}
   .action-key.shift-key.held{background:#fff;color:#000;box-shadow:0 0 0 2px var(--seq-yellow);}
   .action-key.ctrl-key.held{background:#003838;box-shadow:0 0 0 2px #60d0d0;}
-  .step-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;}
-  .step-panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;}
-  .part-indicator{font-size:11px;color:var(--seq-yellow);font-weight:bold;}
+  .step-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;min-height:16px;}
+  .step-panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;line-height:16px;}
+  .part-indicator{font-size:11px;color:var(--seq-yellow);font-weight:bold;line-height:16px;height:16px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;}
   .part-num.part-disabled{opacity:.35;cursor:default;}
   .step-pad.page-disabled{opacity:.3;cursor:default;}
   .ctrl-btn.ctrl-disabled{opacity:.3;cursor:default;pointer-events:none;}
@@ -256,6 +261,9 @@
      now positioned below the sequencer/status: 8 buttons → exactly 4 per row.
      flex-shrink:0 so they hold their width and the 5th wraps to the next row. */
   body.portrait #action-btn-row{flex-wrap:wrap;}
+  /* The status bar is relocated (via JS) to sit between the button row and the
+     sound engine in portrait — give it the same 6px separation as other rows. */
+  body.portrait #status-panel{margin-top:6px;}
   body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
     flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
@@ -304,7 +312,7 @@
         </div>
         <div class="parts-grid" id="parts-grid"></div>
       </div>
-      <div class="panel">
+      <div class="panel" id="step-panel">
         <div class="step-panel-header">
           <div class="step-panel-title" id="step-panel-title">Step Sequencer</div>
           <div class="part-indicator" id="part-indicator">Part 1 (16st)</div>
@@ -321,7 +329,7 @@
         </div>
       </div>
 
-      <div class="panel" style="flex:1;display:flex;align-items:center;">
+      <div class="panel" id="status-panel" style="flex:1;display:flex;align-items:center;">
         <div class="status-bar" style="margin:0;border:none;padding:0;background:transparent;">
           <div class="seq-dot"></div>
           <div class="status-msg" id="status-msg">Ready — Space to play · Allow MIDI when prompted</div>
@@ -537,7 +545,7 @@ function isStepLike(){return currentMode==='step'||currentMode==='ctrl';}
 let keyOctave=5;     // virtual keyboard octave
 let keyVelocity=100; // virtual keyboard velocity
 // Arpeggiator: 0=off, then up / down / ping-pong / rev ping-pong / random
-const ARP_MODES=['OFF','UP','DOWN','PNG-PNG','REV P-P','RANDOM'];
+const ARP_MODES=['OFF','UP','DOWN','P-P','RPP','RAND'];
 let keyArpMode=0;    // index into ARP_MODES
 // Arp rate: multiplier of a 1/16 step. label / ratio pairs.
 const ARP_RATES=[
@@ -555,25 +563,24 @@ let keyArpGate=50;   // arp note length as % of step interval (5-100)
 // When a scale is selected, keys outside it are grayed and unplayable.
 // Scales are sets of pitch-class intervals from the root.
 const SCALES=[
-  {name:'OFF',     ints:null},
-  {name:'MAJOR',   ints:[0,2,4,5,7,9,11]},
-  {name:'MINOR',   ints:[0,2,3,5,7,8,10]},
-  {name:'DORIAN',  ints:[0,2,3,5,7,9,10]},
-  {name:'PHRYGIAN',ints:[0,1,3,5,7,8,10]},
-  {name:'LYDIAN',  ints:[0,2,4,6,7,9,11]},
-  {name:'MIXOLYD', ints:[0,2,4,5,7,9,10]},
-  {name:'LOCRIAN', ints:[0,1,3,5,6,8,10]},
-  {name:'HARM MIN',ints:[0,2,3,5,7,8,11]},
-  {name:'MEL MIN', ints:[0,2,3,5,7,9,11]},
-  {name:'PENT MAJ',ints:[0,2,4,7,9]},
-  {name:'PENT MIN',ints:[0,3,5,7,10]},
-  {name:'BLUES',   ints:[0,3,5,6,7,10]},
-  {name:'CHROMATIC',ints:[0,1,2,3,4,5,6,7,8,9,10,11]},
+  {name:'CHROM', ints:null},   // all 12 notes — no scale filtering (was 'OFF')
+  {name:'MAJ',   ints:[0,2,4,5,7,9,11]},
+  {name:'MIN',   ints:[0,2,3,5,7,8,10]},
+  {name:'DOR',   ints:[0,2,3,5,7,9,10]},
+  {name:'PHRY',  ints:[0,1,3,5,7,8,10]},
+  {name:'LYD',   ints:[0,2,4,6,7,9,11]},
+  {name:'MIXO',  ints:[0,2,4,5,7,9,10]},
+  {name:'LOCR',  ints:[0,1,3,5,6,8,10]},
+  {name:'H.MIN', ints:[0,2,3,5,7,8,11]},
+  {name:'M.MIN', ints:[0,2,3,5,7,9,11]},
+  {name:'P.MAJ', ints:[0,2,4,7,9]},
+  {name:'P.MIN', ints:[0,3,5,7,10]},
+  {name:'BLUES', ints:[0,3,5,6,7,10]},
 ];
-let keyScale=0;      // index into SCALES (0 = OFF)
+let keyScale=0;      // index into SCALES (0 = CHROM, i.e. no filtering)
 let keyScaleRoot=0;  // 0=C .. 11=B
 const ROOT_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-// Is a given total MIDI note in the active scale? (OFF → always true)
+// Is a given total MIDI note in the active scale? (CHROM → always true)
 function noteInScale(total){
   const sc=SCALES[keyScale];
   if(!sc.ints) return true;
@@ -2421,16 +2428,17 @@ function showKeyPanel(){
     const cell=document.createElement('div');
     cell.className='smd-cell draggable';
     cell.title='Drag up/down — '+spec.label;
+    const initVal=spec.fmt(spec.get());
     cell.innerHTML=`
       <div class="smd-cell-label">${spec.label}</div>
-      <div class="smd-cell-val" id="${spec.id}" style="font-size:22px${spec.dim?';opacity:0.35':''}">${spec.fmt(spec.get())}</div>
+      <div class="smd-cell-val" id="${spec.id}" style="font-size:20px;white-space:nowrap;line-height:1.1${spec.dim?';opacity:0.35':''}">${initVal}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[spec.ccIdx]}" title="MIDI input CC number"></div>`;
     const ccInput=cell.querySelector('.cc-num-input');
     ccInput.addEventListener('change',()=>{const v=Math.max(1,Math.min(127,parseInt(ccInput.value)||1));cellCCs[spec.ccIdx]=v;ccInput.value=v;});
     ccInput.addEventListener('mousedown',e=>e.stopPropagation());
     ccInput.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
-    const paint=()=>{const el=document.getElementById(spec.id);if(el)el.textContent=spec.fmt(spec.get());updatePartIndicator();};
+    const paint=()=>{const el=document.getElementById(spec.id);if(el){el.textContent=spec.fmt(spec.get());}updatePartIndicator();};
     if(spec.reset!==undefined) cell.addEventListener('dblclick',()=>{spec.set(spec.reset);paint();});
     let sY=0,sV=0,drag=false,tid=null;
     const stepPx=spec.stepPx||2;
@@ -2461,7 +2469,7 @@ function showKeyPanel(){
       cell=makeCell({idx,ccIdx:0,label:'VELOCITY',id:'kvel-val',min:1,max:127,reset:100,
         get:()=>keyVelocity, set:v=>keyVelocity=v, fmt:v=>''+v});
     } else if(idx===1){
-      cell=makeCell({idx,ccIdx:1,label:'SCALE',id:'kscale-val',min:0,max:SCALES.length-1,reset:0,stepPx:14,
+      cell=makeCell({idx,ccIdx:1,label:'SCALE',id:'kscale-val',min:0,max:SCALES.length-1,reset:0,stepPx:14,textVal:true,
         get:()=>keyScale, set:v=>{keyScale=v;buildSteps();}, fmt:v=>SCALES[v].name});
     } else if(idx===5){
       cell=makeCell({idx,ccIdx:5,label:'ROOT',id:'kroot-val',min:0,max:11,reset:0,stepPx:14,
@@ -2470,16 +2478,16 @@ function showKeyPanel(){
       cell=makeCell({idx,ccIdx:4,label:'OCTAVE',id:'koct-val',min:0,max:10,reset:5,stepPx:14,
         get:()=>keyOctave, set:v=>{keyOctave=v;buildSteps();}, fmt:v=>''+v});
     } else if(idx===2){
-      cell=makeCell({idx,ccIdx:2,label:'ARP',id:'karp-val',min:0,max:ARP_MODES.length-1,reset:0,stepPx:14,
+      cell=makeCell({idx,ccIdx:2,label:'ARP',id:'karp-val',min:0,max:ARP_MODES.length-1,reset:0,stepPx:14,textVal:true,
         get:()=>keyArpMode, set:v=>{const was=keyArpMode;keyArpMode=v; if(v===0)stopArp(); else if(keyHeld.size>0)ensureArpRunning(); if((was===0)!==(v===0))showKeyPanel();}, fmt:v=>ARP_MODES[v]});
     } else if(idx===3){
-      cell=makeCell({idx,ccIdx:3,label:'RATE',id:'karate-val',min:0,max:ARP_RATES.length-1,reset:3,stepPx:14,dim:keyArpMode===0,
+      cell=makeCell({idx,ccIdx:3,label:'RATE',id:'karate-val',min:0,max:ARP_RATES.length-1,reset:3,stepPx:14,dim:keyArpMode===0,textVal:true,
         get:()=>keyArpRate, set:v=>keyArpRate=v, fmt:v=>ARP_RATES[v].label});
     } else if(idx===6){
       cell=makeCell({idx,ccIdx:6,label:'RANGE',id:'karange-val',min:1,max:4,reset:1,stepPx:14,dim:keyArpMode===0,
         get:()=>keyArpRange, set:v=>keyArpRange=v, fmt:v=>''+v});
     } else if(idx===7){
-      cell=makeCell({idx,ccIdx:7,label:'GATE',id:'kgate-val',min:5,max:100,reset:50,dim:keyArpMode===0,
+      cell=makeCell({idx,ccIdx:7,label:'GATE',id:'kgate-val',min:5,max:100,reset:50,dim:keyArpMode===0,textVal:true,
         get:()=>keyArpGate, set:v=>keyArpGate=v, fmt:v=>fmtGate(v)});
     } else {
       cell=document.createElement('div');
@@ -5368,6 +5376,24 @@ function portraitActive(){
 function applyPortrait(){
   const on=portraitActive();
   document.body.classList.toggle('portrait', on);
+  // Move the status bar so in PORTRAIT it sits between the action button row
+  // and the sound engine bar; in landscape it lives in its normal column slot.
+  const statusPanel=document.getElementById('status-panel');
+  const seqRight=document.querySelector('.seq-right');
+  const bottomBar=document.querySelector('.seq-bottom-bar');
+  if(statusPanel){
+    if(on){
+      // Place directly before the sound engine (after the action button row).
+      if(bottomBar && statusPanel.nextElementSibling!==bottomBar){
+        bottomBar.parentNode.insertBefore(statusPanel, bottomBar);
+      }
+    }else{
+      // Restore into the right column (as its last panel).
+      if(seqRight && statusPanel.parentNode!==seqRight){
+        seqRight.appendChild(statusPanel);
+      }
+    }
+  }
   // Portrait reflows fluidly to fill the screen width (max 560px) and scrolls
   // vertically — no uniform scaling (keeps tap targets full size). Clear any
   // transform left over from landscape mode.
