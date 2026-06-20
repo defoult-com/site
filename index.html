@@ -9,10 +9,11 @@
   .step-grid,.parts-grid,.smd-grid,.step-range-bar,.tport-top-btn,.ctrl-btn,.mode-tab{touch-action:none;}
   :root{--seq-bg:#1a1a14;--seq-panel:#2a2a1e;--seq-border:#3a3a28;--seq-yellow:#f0c030;--seq-yellow-dark:#c09010;--seq-yellow-bg:#3a2e00;--seq-text:#e8e0c0;--seq-text-dim:#888870;--seq-btn-bg:#222218;--seq-red:#e05040;}
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;}
-  @media (max-width:680px){ html,body{padding:4px;} }
-  #scale-wrap{display:flex;justify-content:center;}
-  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:top center;}
+  html,body{background:#111;display:flex;justify-content:center;align-items:center;min-height:100vh;height:100vh;margin:0;padding:0;overflow:hidden;}
+  body.portrait{align-items:flex-start;height:auto;min-height:100vh;overflow:auto;}
+  @media (max-width:680px){ html,body{padding:0;} }
+  #scale-wrap{display:flex;justify-content:center;align-items:center;}
+  #seq-root{background:var(--seq-bg);font-family:'Courier New',monospace;color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:center center;}
   .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
   .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
@@ -21,10 +22,13 @@
   .tport-top-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
   .tport-top-kbd{font-size:9px;font-weight:bold;color:#111;background:var(--seq-yellow);border-radius:2px;padding:1px 4px 0;width:100%;box-sizing:border-box;min-height:14px;display:flex;align-items:center;justify-content:center;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:clip;letter-spacing:0;}
   .mode-tab{display:flex;align-items:center;justify-content:center;gap:6px;padding:5px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;cursor:pointer;font-family:'Courier New',monospace;font-size:13px;font-weight:bold;color:var(--seq-text-dim);flex:1;}
-  .mode-tab.active{background:var(--seq-yellow-bg);border-color:var(--seq-yellow);color:var(--seq-text);}
+  .mode-tab.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .mode-tab.active .kbdkey{background:#111;color:var(--seq-yellow);}
   .kbdkey{border-radius:2px;font-size:10px;font-weight:bold;padding:1px 5px;min-width:20px;text-align:center;background:var(--seq-yellow);color:#111;}
   .mode-tab:not(.active) .kbdkey{background:var(--seq-text-dim);color:#222;}
   .seq-main{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:stretch;}
+  .mode-tabs-group{flex:1 1 0;display:flex;gap:2px;align-items:stretch;}
+  .mode-tabs-group .mode-tab{flex:1 1 0;min-width:0;}
   .seq-left,.seq-right{display:flex;flex-direction:column;gap:6px;}
   .pat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
   .pat-num{width:100%;padding:6px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:var(--seq-text);cursor:pointer;position:relative;transition:all .08s;}
@@ -42,7 +46,7 @@
   .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
   .parts-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
-  .part-num{width:100%;min-height:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
+  .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
   .pnum-n{font-size:11px;line-height:1;}
   .pnum-name{font-size:8px;font-weight:bold;color:var(--seq-text-dim);text-transform:uppercase;letter-spacing:.03em;line-height:1;white-space:nowrap;overflow:hidden;max-width:100%;text-overflow:ellipsis;}
   .part-num.active .pnum-name{color:inherit;}
@@ -78,7 +82,7 @@
   .ctrl-btn.ctrl-disabled{opacity:.3;cursor:default;pointer-events:none;}
   .step-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
   .step-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
-  .step-pad{width:100%;aspect-ratio:1;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:var(--seq-text-dim);transition:background .06s;position:relative;}
+  .step-pad{width:100%;aspect-ratio:1;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:var(--seq-text-dim);transition:background .06s;position:relative;}
   .step-pad.has-data::after,.step-pad.dot-flash::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
   .step-pad.on.has-data::after{background:#111a;}
   .step-pad.dot-flash::after{background:#fff!important;width:6px!important;height:6px!important;box-shadow:0 0 4px #fff;transition:none;}
@@ -190,13 +194,79 @@
   body.mobile-mode .step-kbd,
   body.mobile-mode .rkbd,
   body.mobile-mode .ctrl-kbd,
-  body.mobile-mode .tport-kbd{display:none!important;}
+  body.mobile-mode .tport-kbd,
+  body.mobile-mode .mode-tab .kbdkey{display:none!important;}
+
+  /* ── Vertical / portrait phone layout ──────────────────────────────
+     Stacks the two main columns into one and lets the app fill the screen
+     width instead of the fixed 640px desktop design. Toggled by body.portrait
+     (auto on portrait phones, or via the manual toggle). */
+  body.portrait #scale-wrap{width:100%;}
+  body.portrait #seq-root{width:100%!important;max-width:560px;transform:none!important;padding:6px;}
+  #view-toggle{display:none;position:fixed;bottom:8px;right:8px;z-index:1000;background:var(--seq-yellow);color:#111;border:none;border-radius:4px;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;padding:6px 11px;cursor:pointer;opacity:.9;box-shadow:0 2px 6px rgba(0,0,0,.5);}
+  body.mobile-mode #view-toggle{display:block;}
+  body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
+  /* Flatten the left/right wrappers so all four panels become direct flex items
+     of seq-main, then reorder: Display → Parts → Step → Status. */
+  body.portrait .seq-left,body.portrait .seq-right{display:contents;}
+  body.portrait .seq-right > .panel:first-child{order:1;}  /* SMD display first */
+  body.portrait .seq-left > .panel:nth-child(1){order:2;}  /* Parts */
+  body.portrait .seq-left > .panel:nth-child(2){order:3;}  /* Step sequencer */
+  body.portrait .seq-right > .panel:nth-child(2){order:4;} /* status bar last */
+  body.portrait .smd-grid{aspect-ratio:auto;}               /* let the display grow naturally full-width */
+  body.portrait .smd-cell-val{font-size:20px;}
+  body.portrait .parts-grid{gap:4px;}
+  body.portrait .step-grid{gap:4px;}
+  body.portrait .step-pad{font-size:13px;min-height:42px;}      /* bigger tap targets */
+  body.portrait .part-num{min-height:42px;}
+  body.portrait .smd-grid{gap:6px;}
+
+  /* ── Portrait panel order: Display → Parts → Step → Status ────────────
+     The display normally lives in seq-right (after seq-left's Parts/Step).
+     In portrait we flatten both wrappers (display:contents) so their child
+     panels become direct flex items of seq-main, then use `order` to pull
+     the SMD display panel up between the top button rows and the Parts box. */
+  body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
+  body.portrait .seq-left,body.portrait .seq-right{display:contents;}
+  body.portrait .seq-right > .panel:first-child{order:1;}   /* SMD display first */
+  body.portrait .seq-left  > .panel:nth-child(1){order:2;}  /* Parts second */
+  body.portrait .seq-left  > .panel:nth-child(2){order:3;}  /* Step Sequencer third */
+  body.portrait .seq-right > .panel:nth-child(2){order:4;}  /* Status last */
+
+  /* ── Portrait top-bar rows ───────────────────────────────────────────
+     Row 1: play/pause/record/settings | tempo+metro   (first seq-top-bar)
+     Row 2: PAT STEP KEY CTRL                           (mode-tabs-group wraps below)
+     Row 3: Mute Solo Align Select                      (second seq-top-bar)
+     Row 4: Save Reload Clear Random                    (wraps below row 3)
+     Groups stay together by 4, like the horizontal design. */
+  body.portrait .seq-top-bar{flex-wrap:wrap;row-gap:4px;}
+  /* Hide the separators that sit BETWEEN the wrapped half-rows, but keep the
+     one inside the left-half (between transport and tempo/metro) visible. */
+  body.portrait .seq-top-bar > .top-bar-sep{display:none;}
+
+
+  /* Row 1: the transport+tempo left-half group takes the full first line. */
+
+  /* Row 2: the mode-tabs group takes the full next line; its 4 tabs split evenly. */
+  body.portrait .mode-tabs-group{flex:1 1 100%;}
+  body.portrait .mode-tabs-group .mode-tab{flex:1 1 0;}
+
+  /* Second top-bar (Mute/Solo/Align/Select + Save/Reload/Clear/Random):
+     8 buttons → exactly 4 per row. flex-shrink:0 so they hold their width and
+     the 5th wraps to the next row instead of all 8 squeezing onto one line. */
+  body.portrait .seq-top-bar:nth-of-type(2){flex-wrap:wrap;}
+  body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
+  body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
+    flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
+  }
 </style>
 </head>
 <body>
+<button id="view-toggle" title="Toggle portrait / wide layout">⬍ Portrait</button>
 <div id="scale-wrap">
 <div id="seq-root">
   <div class="seq-top-bar">
+    <div class="topbar-left-half" style="display:flex;align-items:stretch;gap:2px;flex:1;">
     <div style="display:flex;gap:2px;align-items:stretch;flex:1;">
       <div class="tport-top-btn" id="btn-play"><div class="tport-top-pad" id="pad-play">▶</div><div class="tport-top-kbd">SPC</div></div>
       <div class="tport-top-btn" id="btn-stop"><div class="tport-top-pad" id="pad-pause">❚❚</div><div class="tport-top-kbd">BKSP</div></div>
@@ -214,11 +284,14 @@
       </div>
       <div class="tport-top-btn" id="btn-metro" data-pressable="1" style="flex:1;"><div class="tport-top-pad" id="pad-metro">🔔</div><div class="tport-top-kbd">M</div></div>
     </div>
+    </div>
     <div class="top-bar-sep"></div>
+    <div class="mode-tabs-group">
     <div class="mode-tab" id="tab-pat" onclick="setMode('pat')"><span>PAT</span><span class="kbdkey">9</span></div>
     <div class="mode-tab active" id="tab-step" onclick="setMode('step')"><span>STEP</span><span class="kbdkey">0</span></div>
     <div class="mode-tab" id="tab-key" onclick="setMode('key')"><span>KEY</span><span class="kbdkey">-</span></div>
     <div class="mode-tab" id="tab-ctrl" onclick="setMode('ctrl')"><span>CTRL</span><span class="kbdkey">=</span></div>
+    </div>
   </div>
 
   <div class="seq-top-bar" style="margin-bottom:6px;">
@@ -4985,28 +5058,75 @@ function isMobileMode(){
 function applyMobileMode(){
   document.body.classList.toggle('mobile-mode', isMobileMode());
 }
+
+// ── Portrait phone layout ────────────────────────────────────────────
+// portraitPref: 'auto' (decide from screen), 'on' (forced), 'off' (forced desktop).
+let portraitPref='auto';
+function isPortraitAuto(){
+  const portrait = window.matchMedia && window.matchMedia('(orientation:portrait)').matches;
+  const narrow = document.documentElement.clientWidth < 640;
+  return isMobileMode() && portrait && narrow;
+}
+function portraitActive(){
+  if(portraitPref==='on') return true;
+  if(portraitPref==='off') return false;
+  return isPortraitAuto();
+}
+function applyPortrait(){
+  const on=portraitActive();
+  document.body.classList.toggle('portrait', on);
+  // In portrait we reflow fluidly (no uniform scale); clear any transform.
+  if(on){
+    const root=document.getElementById('seq-root'), wrap=document.getElementById('scale-wrap');
+    if(root){ root.style.transform=''; }
+    if(wrap){ wrap.style.height=''; }
+    appScale=1;
+  }
+  // Update the toggle button label if present
+  const tg=document.getElementById('view-toggle');
+  if(tg) tg.textContent = on ? '⬍ Portrait' : '⬌ Wide';
+}
+let _scaling=false;
 function applyAppScale(){
+  if(_scaling) return;
+  if(portraitActive()) return; // portrait reflows fluidly — no scaling
   const root=document.getElementById('seq-root');
   const wrap=document.getElementById('scale-wrap');
   if(!root||!wrap) return;
+  _scaling=true;
+  // Measure the design's natural (unscaled) size. offsetWidth/Height ignore the
+  // CSS transform, so we can read them even while a scale is applied.
   const naturalW=root.offsetWidth || 640;
-  const naturalH=root.offsetHeight;
-  const avail=document.documentElement.clientWidth - 8;
-  const scale=Math.min(1, avail/naturalW);
+  const naturalH=root.offsetHeight || 1;
+  // Available viewport (small margin so it never touches the edges).
+  const margin=8;
+  const availW=document.documentElement.clientWidth - margin*2;
+  const availH=window.innerHeight - margin*2;
+  // Proportional (uniform) scale: the largest factor that still fits BOTH
+  // dimensions. This scales UP on big screens and DOWN on small ones.
+  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/naturalH));
   appScale=scale;
-  if(scale<1){
-    root.style.transform='scale('+scale+')';
-    wrap.style.height=(naturalH*scale)+'px';
-  }else{
-    root.style.transform='';
-    wrap.style.height='';
-  }
+  root.style.transform='scale('+scale+')';
+  // The transformed box still reserves its natural size in layout, so set the
+  // wrapper to the scaled dimensions to keep it centered with no dead space.
+  wrap.style.height=(naturalH*scale)+'px';
+  wrap.style.width=(naturalW*scale)+'px';
+  _scaling=false;
 }
-window.addEventListener('resize', applyAppScale);
-window.addEventListener('orientationchange', ()=>setTimeout(applyAppScale,100));
+
+function refreshLayout(){ applyMobileMode(); applyPortrait(); applyAppScale(); if(typeof syncModeTabWidths==='function') requestAnimationFrame(syncModeTabWidths); }
+window.addEventListener('resize', refreshLayout);
+window.addEventListener('orientationchange', ()=>setTimeout(refreshLayout,100));
 applyMobileMode();
-window.addEventListener('resize', applyMobileMode);
-window.addEventListener('orientationchange', ()=>setTimeout(applyMobileMode,100));
+applyPortrait();
+// Manual view toggle: flips between portrait and wide, overriding auto.
+(function(){
+  const tg=document.getElementById('view-toggle');
+  if(tg) tg.addEventListener('click',()=>{
+    portraitPref = portraitActive() ? 'off' : 'on';
+    refreshLayout();
+  });
+})();
 applyAppScale();
 setTimeout(applyAppScale,50);
 if(window.ResizeObserver){
@@ -5103,16 +5223,22 @@ document.addEventListener('touchend',()=>{
   const el=document.getElementById(id);
   if(el) el.dataset.pressable='1';
 });
-// Match mode tab widths to ctrl button widths
-requestAnimationFrame(()=>{
+// Match mode tab widths to ctrl button widths — DESKTOP ONLY. In portrait the
+// tabs fill their full-width row instead, so we clear the fixed width there.
+function syncModeTabWidths(){
+  const portrait = document.body.classList.contains('portrait');
   const ref=document.getElementById('ctrl-save');
-  if(!ref) return;
-  const w=ref.offsetWidth;
+  const w = ref ? ref.offsetWidth : 0;
   ['tab-pat','tab-step','tab-key','tab-ctrl'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el){el.style.flex='0 0 '+w+'px';}
+    if(!el) return;
+    el.style.flex = portrait ? '' : ('0 0 '+w+'px');
   });
-});
+}
+requestAnimationFrame(syncModeTabWidths);
+// Re-sync whenever the layout changes (portrait toggle, resize, orientation).
+window.addEventListener('resize', ()=>requestAnimationFrame(syncModeTabWidths));
+window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimationFrame(syncModeTabWidths),120));
 initMIDI();
 </script>
 </body>
