@@ -252,10 +252,10 @@
   body.portrait .mode-tabs-group{flex:1 1 100%;}
   body.portrait .mode-tabs-group .mode-tab{flex:1 1 0;}
 
-  /* Second top-bar (Mute/Solo/Align/Select + Save/Reload/Clear/Random):
-     8 buttons → exactly 4 per row. flex-shrink:0 so they hold their width and
-     the 5th wraps to the next row instead of all 8 squeezing onto one line. */
-  body.portrait .seq-top-bar:nth-of-type(2){flex-wrap:wrap;}
+  /* Action button row (Mute/Solo/Align/Select + Save/Reload/Clear/Random),
+     now positioned below the sequencer/status: 8 buttons → exactly 4 per row.
+     flex-shrink:0 so they hold their width and the 5th wraps to the next row. */
+  body.portrait #action-btn-row{flex-wrap:wrap;}
   body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
     flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
@@ -295,18 +295,6 @@
     </div>
   </div>
 
-  <div class="seq-top-bar" style="margin-bottom:6px;">
-    <div class="ctrl-btn" id="shift-btn" style="flex:1;"><div class="ctrl-val" id="shift-val">Mute</div><div class="ctrl-kbd">Shift</div></div>
-    <div class="ctrl-btn" id="ctrl-btn" style="flex:1;"><div class="ctrl-val" id="ctrl-val">Solo</div><div class="ctrl-kbd">Ctrl</div></div>
-    <div class="ctrl-btn" id="btn-resync" style="flex:1;"><div class="ctrl-val">Align</div><div class="ctrl-kbd">`</div></div>
-    <div class="ctrl-btn" id="btn-trigger" style="flex:1;"><div class="ctrl-val">Select</div><div class="ctrl-kbd">\</div></div>
-    <div class="top-bar-sep"></div>
-    <div class="ctrl-btn" id="ctrl-save" style="flex:1;"><div class="ctrl-val">Save</div><div class="ctrl-kbd">O</div></div>
-    <div class="ctrl-btn" id="ctrl-reload" style="flex:1;"><div class="ctrl-val">Reload</div><div class="ctrl-kbd">P</div></div>
-    <div class="ctrl-btn" id="ctrl-clear" style="flex:1;"><div class="ctrl-val">Clear</div><div class="ctrl-kbd">[</div></div>
-    <div class="ctrl-btn" id="ctrl-none" style="flex:1;"><div class="ctrl-val">Random</div><div class="ctrl-kbd">]</div></div>
-  </div>
-
   <div class="seq-main active" id="seq-main">
     <div class="seq-left">
       <div class="panel">
@@ -341,6 +329,19 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- Action buttons row: moved below the sequencer/status, above the sound engine. -->
+  <div class="seq-top-bar" id="action-btn-row" style="margin-top:6px;margin-bottom:0;">
+    <div class="ctrl-btn" id="shift-btn" style="flex:1;"><div class="ctrl-val" id="shift-val">Mute</div><div class="ctrl-kbd">Shift</div></div>
+    <div class="ctrl-btn" id="ctrl-btn" style="flex:1;"><div class="ctrl-val" id="ctrl-val">Solo</div><div class="ctrl-kbd">Ctrl</div></div>
+    <div class="ctrl-btn" id="btn-resync" style="flex:1;"><div class="ctrl-val">Align</div><div class="ctrl-kbd">`</div></div>
+    <div class="ctrl-btn" id="btn-trigger" style="flex:1;"><div class="ctrl-val">Select</div><div class="ctrl-kbd">\</div></div>
+    <div class="top-bar-sep"></div>
+    <div class="ctrl-btn" id="ctrl-save" style="flex:1;"><div class="ctrl-val">Save</div><div class="ctrl-kbd">O</div></div>
+    <div class="ctrl-btn" id="ctrl-reload" style="flex:1;"><div class="ctrl-val">Reload</div><div class="ctrl-kbd">P</div></div>
+    <div class="ctrl-btn" id="ctrl-clear" style="flex:1;"><div class="ctrl-val">Clear</div><div class="ctrl-kbd">[</div></div>
+    <div class="ctrl-btn" id="ctrl-none" style="flex:1;"><div class="ctrl-val">Random</div><div class="ctrl-kbd">]</div></div>
   </div>
 
   <!-- Shared bottom row: MIDI over Sound -->
@@ -4790,10 +4791,19 @@ let _modPointerHeld=null;
   const el=document.getElementById(id);
   if(!el) return;
   let touchActive=false;
-  el.addEventListener('mousedown',e=>{ if(currentMode==='set')return; e.preventDefault(); _modPointerHeld=which; _setModifier(which,true); pressOn(el); });
+  // When ALIGN is pressed while Mute or Solo is held, clear all mutes/solos —
+  // the touch equivalent of the desktop Shift+`/Ctrl+` shortcuts. Returns true
+  // if it handled the press (so we skip normal align engagement).
+  const alignClearCombo=()=>{
+    if(which!=='alt') return false;
+    if(shiftHeld){ clearAllMutes(); return true; }
+    if(ctrlHeld){ clearAllSolos(); return true; }
+    return false;
+  };
+  el.addEventListener('mousedown',e=>{ if(currentMode==='set')return; e.preventDefault(); if(alignClearCombo()){ pressOn(el); setTimeout(()=>pressOff(el),120); return; } _modPointerHeld=which; _setModifier(which,true); pressOn(el); });
   el.addEventListener('mouseup',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
   el.addEventListener('mouseleave',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
-  el.addEventListener('touchstart',e=>{ if(currentMode==='set')return; e.preventDefault(); touchActive=true; _setModifier(which,true); pressOn(el); },{passive:false});
+  el.addEventListener('touchstart',e=>{ if(currentMode==='set')return; e.preventDefault(); if(alignClearCombo()){ pressOn(el); setTimeout(()=>pressOff(el),120); return; } touchActive=true; _setModifier(which,true); pressOn(el); },{passive:false});
   el.addEventListener('touchend',e=>{ if(!touchActive)return; e.preventDefault(); touchActive=false; _setModifier(which,false); pressOff(el); },{passive:false});
   el.addEventListener('touchcancel',()=>{ if(!touchActive)return; touchActive=false; _setModifier(which,false); pressOff(el); });
 });
