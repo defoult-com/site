@@ -143,6 +143,8 @@
   .tempo-slider{flex:1;margin-left:4px;}
   .ctrl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:6px;}
   .ctrl-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
+  /* AUTO-SAVE active: solid yellow value cell (like an active part/step) */
+  .ctrl-btn.autosave-on .ctrl-val{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
   .ctrl-val:hover{border-color:var(--seq-yellow);}
   .ctrl-label{font-size:9px;color:var(--seq-text-dim);text-align:center;}
   .ctrl-val{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:10px;font-weight:bold;color:var(--seq-text);text-align:center;padding:5px 2px;letter-spacing:.04em;}
@@ -359,7 +361,7 @@
     <div class="ctrl-btn" id="ctrl-save" style="flex:1;"><div class="ctrl-val">Save</div><div class="ctrl-kbd">O</div></div>
     <div class="ctrl-btn" id="ctrl-reload" style="flex:1;"><div class="ctrl-val">Reload</div><div class="ctrl-kbd">P</div></div>
     <div class="ctrl-btn" id="ctrl-clear" style="flex:1;"><div class="ctrl-val">Clear</div><div class="ctrl-kbd">[</div></div>
-    <div class="ctrl-btn" id="ctrl-none" style="flex:1;"><div class="ctrl-val">Random</div><div class="ctrl-kbd">]</div></div>
+    <div class="ctrl-btn" id="ctrl-none" style="flex:1;"><div class="ctrl-val" id="ctrl-none-val">Random</div><div class="ctrl-kbd">]</div></div>
   </div>
 
   <!-- Shared bottom row: MIDI over Sound -->
@@ -1104,13 +1106,14 @@ function setMode(mode){
   restoreSequencerDisplay();
   updatePartIndicator();
   // Relabel Save/Reload/Clear/None as looper divisions in PAT mode
-  const looperLabels=mode==='set'?['SAVE','LOAD','NEW','NONE']
+  const looperLabels=mode==='set'?['SAVE','LOAD','NEW','AUTO-SAVE']
     :(mode==='pat'||mode==='key')?['1/4','1/8','1/16','1/32']
     :['Save','Reload','Clear',mode==='ctrl'?'All':'Random'];
   ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
     const v=document.getElementById(id)?.querySelector('.ctrl-val');
     if(v) v.textContent=looperLabels[i];
   });
+  if(typeof refreshAutoSaveBtn==='function') refreshAutoSaveBtn();
   // Deactivate Mute/Solo/Align/Select in SETTINGS mode (like the page buttons)
   ['shift-btn','ctrl-btn','btn-resync','btn-trigger'].forEach(id=>{
     const el=document.getElementById(id);
@@ -3493,7 +3496,7 @@ function buildSoundEditor(){
   });
 });
 
-document.getElementById('se-header').addEventListener('click',()=>{seOpen=!seOpen;document.getElementById('se-body').classList.toggle('open',seOpen);buildSoundEditor();});
+document.getElementById('se-header').addEventListener('click',()=>{seOpen=!seOpen;document.getElementById('se-body').classList.toggle('open',seOpen);buildSoundEditor();if(typeof applyScale==='function')applyScale();});
 
 // ── Master FX (distortion + EQ) UI wiring ─────────────────────────
 function refreshMasterFXUI(){
@@ -4778,7 +4781,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='BracketLeft'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='pat'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageLooper(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&ctrlHeld){e.preventDefault();if(!e.repeat){if(!isPatLike())document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
-  if(e.code==='BracketRight'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));}return;}
+  if(e.code==='BracketRight'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){toggleAutoSave();flashCtrlBtn('ctrl-none');pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){ctrlAllHeld=true;pressOn(document.getElementById('ctrl-none'));setStatus('All: hold + Save/Reload/Clear for every part');}return;}
   if(e.code==='BracketRight'&&currentMode==='step'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));showRandomParams();randomTrigger='key';setStatus('Random range — release to randomize');}return;}
   if(e.code==='BracketRight'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-none').click();pressOn(document.getElementById('ctrl-none'));}return;}
@@ -5054,7 +5057,7 @@ function closeRandomParams(){ randomPanelActive=false; randomTrigger=null; }
 let randomTrigger=null; // 'mouse' | 'key' | 'touch' — how the panel was opened
 
 document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
-  if(currentMode==='set'){ flashCtrlBtn('ctrl-none'); return; } // NONE — no function
+  if(currentMode==='set'){ toggleAutoSave(); flashCtrlBtn('ctrl-none'); return; } // AUTO-SAVE toggle
   if(currentMode==='key') engageRoll(0.5); else if(currentMode==='pat') engageLooper(0.5);
   else if(currentMode==='ctrl'){ ctrlAllHeld=true; pressOn(document.getElementById('ctrl-none')); setStatus('All: hold + Save/Reload/Clear for every part'); }
   else if(currentMode==='step'){ pressOn(document.getElementById('ctrl-none')); showRandomParams(); randomTrigger='mouse'; setStatus('Random range — release to randomize'); }
@@ -5126,6 +5129,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       if(id==='ctrl-save'){ downloadProject(); flashCtrlBtn('ctrl-save'); }
       else if(id==='ctrl-reload'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); }
       else if(id==='ctrl-clear'){ newProject(); flashCtrlBtn('ctrl-clear'); }
+      else if(id==='ctrl-none'){ toggleAutoSave(); flashCtrlBtn('ctrl-none'); }
       return;
     }
     // STEP Random: range params were shown on touchstart — apply the randomize
@@ -5400,9 +5404,44 @@ function deserializeAll(data){
 //    temp file later without touching callers) ──
 var _memSave=null;       // in-memory "temp file"
 var _saveDirty=false;    // something changed since last persist
+const AUTOSAVE_KEY='stepseq_autosave_v1';
+var autoSaveEnabled=true; // ON by default; toggled by the AUTO-SAVE button
 function markSaveDirty(){ _saveDirty=true; }
-function persistNow(){    // write full state to the working store
-  try{ _memSave=JSON.stringify(serializeAll()); _saveDirty=false; }catch(e){}
+function persistNow(){    // write full state to the working store (and disk if auto-save on)
+  try{
+    _memSave=JSON.stringify(serializeAll());
+    _saveDirty=false;
+    if(autoSaveEnabled){ try{ localStorage.setItem(AUTOSAVE_KEY,_memSave); }catch(e){} }
+  }catch(e){}
+}
+// Restore the auto-save toggle preference and (if on) the last saved project.
+function loadAutoSavePref(){
+  try{ const v=localStorage.getItem(AUTOSAVE_KEY+'_on'); if(v!==null) autoSaveEnabled=(v==='1'); }catch(e){}
+}
+function saveAutoSavePref(){ try{ localStorage.setItem(AUTOSAVE_KEY+'_on', autoSaveEnabled?'1':'0'); }catch(e){} }
+function toggleAutoSave(){
+  autoSaveEnabled=!autoSaveEnabled;
+  saveAutoSavePref();
+  if(autoSaveEnabled){ persistNow(); setStatus('Auto-save ON — saved to this browser'); }
+  else { try{ localStorage.removeItem(AUTOSAVE_KEY); }catch(e){} setStatus('Auto-save OFF — saved data cleared'); }
+  refreshAutoSaveBtn();
+}
+function restoreAutoSave(){
+  if(!autoSaveEnabled) return false;
+  try{
+    const raw=localStorage.getItem(AUTOSAVE_KEY);
+    if(!raw) return false;
+    deserializeAll(JSON.parse(raw));
+    return true;
+  }catch(e){ return false; }
+}
+// Reflect the AUTO-SAVE button state (yellow = active) — only meaningful in
+// settings mode where ctrl-none is the AUTO-SAVE toggle.
+function refreshAutoSaveBtn(){
+  const btn=document.getElementById('ctrl-none');
+  if(!btn) return;
+  const showActive = (currentMode==='set') && autoSaveEnabled;
+  btn.classList.toggle('autosave-on', showActive);
 }
 
 // Debounced autosave: coalesces bursts of edits; writes only when dirty and
@@ -5589,21 +5628,28 @@ function applyAppScale(){
   const wrap=document.getElementById('scale-wrap');
   if(!root||!wrap) return;
   _scaling=true;
-  // Measure the design's natural (unscaled) size. offsetWidth/Height ignore the
-  // CSS transform, so we can read them even while a scale is applied.
+  // Natural (unscaled) size. offsetWidth/Height ignore the CSS transform.
   const naturalW=root.offsetWidth || 640;
   const naturalH=root.offsetHeight || 1;
+  // The expandable sound-engine body should NOT count toward the fit: the core
+  // app must always fit the screen, and expanding the sound engine is allowed
+  // to overflow into a vertical scroll. So subtract its height from the height
+  // we fit against.
+  const seBody=document.getElementById('se-body');
+  let seExtra=0;
+  if(seBody && getComputedStyle(seBody).display!=='none'){ seExtra=seBody.offsetHeight||0; }
+  const fitH=Math.max(1, naturalH - seExtra);   // height of the core app (sound engine collapsed)
   const margin=8;
   const availW=document.documentElement.clientWidth - margin*2;
-  // Scale to FILL THE WIDTH (scales up on big screens, down on small ones).
-  // We deliberately do NOT also shrink to fit the height — instead the page
-  // scrolls vertically when the scaled design is taller than the screen, so
-  // the TOP is always anchored and never clipped.
-  const scale=Math.max(0.2, availW/naturalW);
+  const availH=window.innerHeight - margin*2;
+  // Scale so the CORE app fits both the width and the height. Scales up on big
+  // screens, down on small ones, keeping proportions. When the sound engine is
+  // expanded, the extra height below overflows and the page scrolls.
+  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/fitH));
   appScale=scale;
   root.style.transform='scale('+scale+')';
   root.style.transformOrigin='top center';
-  // Reserve the scaled box size so layout (and scrolling) is correct.
+  // Reserve the scaled box size so layout (and scrolling, when expanded) works.
   wrap.style.height=(naturalH*scale)+'px';
   wrap.style.width=(naturalW*scale)+'px';
   _scaling=false;
@@ -5747,6 +5793,17 @@ requestAnimationFrame(syncModeTabWidths);
 // Re-sync whenever the layout changes (portrait toggle, resize, orientation).
 window.addEventListener('resize', ()=>requestAnimationFrame(syncModeTabWidths));
 window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimationFrame(syncModeTabWidths),120));
+// ── Auto-save restore on startup ──────────────────────────────────────
+// Load the saved on/off preference, then (if enabled) restore the last
+// auto-saved project from this browser and rebuild the UI to reflect it.
+loadAutoSavePref();
+if(restoreAutoSave()){
+  buildSmdGrid(); buildParts(); buildSteps(); buildRangeBar(); buildSoundEditor();
+  if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
+  setStatus('Restored your last session (auto-save on)');
+}
+refreshAutoSaveBtn();
+
 initMIDI();
 </script>
 </body>
