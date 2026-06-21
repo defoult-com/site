@@ -472,11 +472,11 @@ const STEP_KEYS=['Q','W','E','R','T','Y','U','I','A','S','D','F','G','H','J','K'
 const RANGE_LABELS=['1–16','17–32','33–48','49–64'];
 const RANGE_KEYS=['Z','X','C','V'];
 const PAGE_OFFSET=[0,16,32,48];
-const DRUM_TYPES=['kick','snare','hihat','openhat','clap','tom','rim','cowbell','fm','sample'];
-const DRUM_NAMES=['Kick','Snare','Hi-Hat','Open Hat','Clap','Tom','Rim','Cowbell','FM','Sample'];
+const DRUM_TYPES=['kick','snare','tom','rim','clap','hihat','fm','sample'];
+const DRUM_NAMES=['Kick','Snare','Tom','Perc','Clap','Cymbal','FM','Sample'];
 // Compact names for the small part-label under each part number (button sizes
 // unchanged). DRUM_NAMES above is still used for the sound-editor buttons/title.
-const DRUM_NAMES_SHORT=['Kick','Snare','CH','OH','Clap','Tom','Rim','Cowbll','FM','Smpl'];
+const DRUM_NAMES_SHORT=['Kick','Snare','Tom','PERC','Clap','CYM','FM','Smpl'];
 const SNAP_POINTS_END=[16,32,48,64]; const MIN_GAP=15;
 // Bar-start snap points: the four bar starts that stay below seqEnd.
 function snapPointsForStart(seqEnd){return [1,17,33,49].filter(p=>p<=seqEnd);}
@@ -507,12 +507,12 @@ const DEFAULT_DLY_TIME_IDX=4; // 1/8 dotted
 const DEFAULTS=[
   {type:'kick',vol:0.9,freq:60,decay:0.5,tone:0.3},
   {type:'snare',vol:0.8,freq:180,decay:0.18,tone:0.6},
-  {type:'hihat',vol:0.6,freq:800,decay:0.06,tone:0.8},
-  {type:'openhat',vol:0.6,freq:600,decay:0.35,tone:0.7},
-  {type:'clap',vol:0.75,freq:300,decay:0.15,tone:0.7},
   {type:'tom',vol:0.8,freq:90,decay:0.3,tone:0.4},
   {type:'rim',vol:0.7,freq:400,decay:0.08,tone:0.5},
-  {type:'cowbell',vol:0.65,freq:540,decay:0.5,tone:0.5},
+  {type:'clap',vol:0.75,freq:300,decay:0.15,tone:0.7},
+  {type:'hihat',vol:0.6,freq:800,decay:0.06,tone:0.8},
+  {type:'fm',vol:0.7,freq:220,decay:0.3,tone:0.5},
+  {type:'sample',vol:0.8,freq:600,decay:0.3,tone:0.5},
 ];
 
 // Default step params factory (the params attached to each step).
@@ -3679,7 +3679,7 @@ function getMasterGain(){
 // The pan value is stored on parts[ch].pan  (-1 = hard left … 0 = centre …
 // +1 = hard right). getPartOut() is what _voice() connects to instead of the
 // raw master gain, so EVERY synth type (kick/snare/hihat/clap/tom/rim/
-// cowbell/fm/sample) is panned uniformly with no per-case edits.
+// fm/sample) is panned uniformly with no per-case edits.
 const _partPanners=Array(8).fill(null);
 function getPartOut(ch){
   const mg=getMasterGain();
@@ -3931,8 +3931,7 @@ window.SoundEngine={
       ng.gain.exponentialRampToValueAtTime(0.001,when+decay);
       src.connect(hpf);hpf.connect(lpf);lpf.connect(ng);ng.connect(out);src.start(when);
       break;}
-    case 'hihat':
-    case 'openhat':{
+    case 'hihat':{
       // Metallic stack: 6 detuned squares → bandpass → highpass
       const ratios=[1,1.342,1.2312,1.6532,1.9523,2.1523];
       const bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=Math.min(12000,freq*12);bpf.Q.value=1;
@@ -4002,20 +4001,6 @@ window.SoundEngine={
       g3.gain.exponentialRampToValueAtTime(0.001,when+decay*0.8);
       o1.connect(g3);g3.connect(out);
       o1.start(when);o2.start(when);o1.stop(when+decay+0.02);o2.stop(when+decay+0.02);
-      break;}
-    case 'cowbell':{
-      // Classic pair (1 : 1.48 squares) through bandpass, punchy envelope
-      const bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=freq*1.8;bpf.Q.value=1+p.tone*2;
-      const cg=ctx.createGain();
-      cg.gain.setValueAtTime(vol,when);
-      cg.gain.exponentialRampToValueAtTime(Math.max(0.002,vol*0.25),when+0.02);
-      cg.gain.exponentialRampToValueAtTime(0.001,when+decay);
-      bpf.connect(cg);cg.connect(out);
-      [1,1.48].forEach(r=>{
-        const o=ctx.createOscillator();o.type='square';o.frequency.value=freq*r;
-        const og=ctx.createGain();og.gain.value=0.45;
-        o.connect(og);og.connect(bpf);o.start(when);o.stop(when+decay+0.05);
-      });
       break;}
     case 'fm':{
       // 2-operator FM percussion: a sine CARRIER frequency-modulated by a sine
