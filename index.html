@@ -5400,40 +5400,93 @@ function deserializeAll(data){
   }catch(err){ setStatus('Load failed: '+err.message); return false; }
 }
 
-// ── Persistence layer (swappable: in-memory now; File System API / desktop
-//    temp file later without touching callers) ──
-var _memSave=null;       // in-memory "temp file"
+// ── Persistence layer ─────────────────────────────────────────────────
+// Uses IndexedDB as the primary store because it persists reliably across
+// page reloads even when the app is opened from a file:// URL (where
+// localStorage is partitioned per-load by some browsers and silently loses
+// data). localStorage is also written as a fast fallback when it works.
+var _memSave=null;       // in-memory copy of the latest state
 var _saveDirty=false;    // something changed since last persist
 const AUTOSAVE_KEY='stepseq_autosave_v1';
+const IDB_NAME='stepseq_db', IDB_STORE='kv';
 var autoSaveEnabled=true; // ON by default; toggled by the AUTO-SAVE button
+var _restoreDone=false;   // block writes until the startup restore has finished,
+                          // so the blank initial state can't overwrite the save
+
+// Minimal promise-based IndexedDB key/value helpers.
+let _idbPromise=null;
+function idbOpen(){
+  if(_idbPromise) return _idbPromise;
+  _idbPromise=new Promise((resolve)=>{
+    let req;
+    try{ req=indexedDB.open(IDB_NAME,1); }
+    catch(e){ resolve(null); return; }
+    req.onupgradeneeded=()=>{ try{ req.result.createObjectStore(IDB_STORE); }catch(e){} };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>resolve(null);
+    req.onblocked=()=>resolve(null);
+  });
+  return _idbPromise;
+}
+async function idbSet(key,val){
+  const db=await idbOpen(); if(!db) return false;
+  return new Promise((resolve)=>{ try{
+    const tx=db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).put(val,key);
+    tx.oncomplete=()=>resolve(true); tx.onerror=()=>resolve(false); tx.onabort=()=>resolve(false);
+  }catch(e){ resolve(false); } });
+}
+async function idbGet(key){
+  const db=await idbOpen(); if(!db) return null;
+  return new Promise((resolve)=>{ try{
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const r=tx.objectStore(IDB_STORE).get(key);
+    r.onsuccess=()=>resolve(r.result??null); r.onerror=()=>resolve(null);
+  }catch(e){ resolve(null); } });
+}
+async function idbDel(key){
+  const db=await idbOpen(); if(!db) return;
+  try{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).delete(key); }catch(e){}
+}
+
 function markSaveDirty(){ _saveDirty=true; }
-function persistNow(){    // write full state to the working store (and disk if auto-save on)
+function persistNow(){    // write full state to the store(s)
+  if(!_restoreDone) return;   // never overwrite the saved data before restore finishes
   try{
     _memSave=JSON.stringify(serializeAll());
     _saveDirty=false;
-    if(autoSaveEnabled){ try{ localStorage.setItem(AUTOSAVE_KEY,_memSave); }catch(e){} }
+    if(autoSaveEnabled){
+      try{ localStorage.setItem(AUTOSAVE_KEY,_memSave); }catch(e){}
+      idbSet(AUTOSAVE_KEY,_memSave);   // primary, reload-safe store
+    }
   }catch(e){}
 }
-// Restore the auto-save toggle preference and (if on) the last saved project.
-function loadAutoSavePref(){
-  try{ const v=localStorage.getItem(AUTOSAVE_KEY+'_on'); if(v!==null) autoSaveEnabled=(v==='1'); }catch(e){}
+async function loadAutoSavePref(){
+  // prefer IndexedDB pref, fall back to localStorage
+  let v=await idbGet(AUTOSAVE_KEY+'_on');
+  if(v===null){ try{ v=localStorage.getItem(AUTOSAVE_KEY+'_on'); }catch(e){} }
+  if(v!==null) autoSaveEnabled=(v==='1');
 }
-function saveAutoSavePref(){ try{ localStorage.setItem(AUTOSAVE_KEY+'_on', autoSaveEnabled?'1':'0'); }catch(e){} }
+function saveAutoSavePref(){
+  try{ localStorage.setItem(AUTOSAVE_KEY+'_on', autoSaveEnabled?'1':'0'); }catch(e){}
+  idbSet(AUTOSAVE_KEY+'_on', autoSaveEnabled?'1':'0');
+}
 function toggleAutoSave(){
   autoSaveEnabled=!autoSaveEnabled;
   saveAutoSavePref();
-  if(autoSaveEnabled){ persistNow(); setStatus('Auto-save ON — saved to this browser'); }
-  else { try{ localStorage.removeItem(AUTOSAVE_KEY); }catch(e){} setStatus('Auto-save OFF — saved data cleared'); }
+  if(autoSaveEnabled){ persistNow(); setStatus('Auto-save ON — your work is saved automatically'); }
+  else { try{ localStorage.removeItem(AUTOSAVE_KEY); }catch(e){} idbDel(AUTOSAVE_KEY); setStatus('Auto-save OFF — saved data cleared'); }
   refreshAutoSaveBtn();
 }
-function restoreAutoSave(){
+// Async restore: read the saved project (IndexedDB first, then localStorage),
+// apply it, and rebuild the UI. Returns true if something was restored.
+async function restoreAutoSave(){
   if(!autoSaveEnabled) return false;
-  try{
-    const raw=localStorage.getItem(AUTOSAVE_KEY);
-    if(!raw) return false;
-    deserializeAll(JSON.parse(raw));
-    return true;
-  }catch(e){ return false; }
+  let raw=await idbGet(AUTOSAVE_KEY);
+  if(!raw){ try{ raw=localStorage.getItem(AUTOSAVE_KEY); }catch(e){} }
+  if(!raw) return false;
+  try{ deserializeAll(JSON.parse(raw)); return true; }
+  catch(e){ return false; }
 }
 // Reflect the AUTO-SAVE button state (yellow = active) — only meaningful in
 // settings mode where ctrl-none is the AUTO-SAVE toggle.
@@ -5455,6 +5508,7 @@ setInterval(()=>{
 // Flush on tab close / hide so closing doesn't lose the last edits
 window.addEventListener('beforeunload',()=>{ if(_saveDirty) persistNow(); });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&_saveDirty) persistNow(); });
+document.addEventListener('pagehide',()=>{ if(_saveDirty) persistNow(); });
 
 // ── File I/O (browser): download a .json, load via file picker. Later this is
 //    where the File System Access API or a desktop temp-file path slots in. ──
@@ -5642,10 +5696,21 @@ function applyAppScale(){
   const margin=8;
   const availW=document.documentElement.clientWidth - margin*2;
   const availH=window.innerHeight - margin*2;
-  // Scale so the CORE app fits both the width and the height. Scales up on big
-  // screens, down on small ones, keeping proportions. When the sound engine is
-  // expanded, the extra height below overflows and the page scrolls.
-  const scale=Math.max(0.2, Math.min(availW/naturalW, availH/fitH));
+  const widthScale=availW/naturalW;
+  const heightScale=availH/fitH;
+  // Choose the scale:
+  //  • Normal screens (desktop / tablet landscape): fit BOTH width and height so
+  //    the whole core app is visible without scrolling.
+  //  • Very SHORT screens (a phone held in landscape is extremely short): fitting
+  //    the tiny height would shrink the app into a small box with big black side
+  //    bars. Instead, FILL THE WIDTH and let the page scroll vertically.
+  const PHONE_LANDSCAPE_MAXH=540; // px; below this the screen is too short to fit vertically
+  let scale;
+  if(availH < PHONE_LANDSCAPE_MAXH){
+    scale=Math.max(0.2, widthScale);          // fill width, scroll vertically
+  }else{
+    scale=Math.max(0.2, Math.min(widthScale, heightScale)); // fit both
+  }
   appScale=scale;
   root.style.transform='scale('+scale+')';
   root.style.transformOrigin='top center';
@@ -5795,14 +5860,40 @@ window.addEventListener('resize', ()=>requestAnimationFrame(syncModeTabWidths));
 window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimationFrame(syncModeTabWidths),120));
 // ── Auto-save restore on startup ──────────────────────────────────────
 // Load the saved on/off preference, then (if enabled) restore the last
-// auto-saved project from this browser and rebuild the UI to reflect it.
-loadAutoSavePref();
-if(restoreAutoSave()){
-  buildSmdGrid(); buildParts(); buildSteps(); buildRangeBar(); buildSoundEditor();
-  if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
-  setStatus('Restored your last session (auto-save on)');
-}
-refreshAutoSaveBtn();
+// auto-saved project from this browser/device and rebuild the UI. This is
+// async because IndexedDB is async (it persists reliably even on file://).
+(async()=>{
+  try{
+    await loadAutoSavePref();
+    const ok=await restoreAutoSave();
+    if(ok){
+      buildSmdGrid(); buildParts(); buildSteps(); buildRangeBar(); buildSoundEditor();
+      if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
+      if(typeof refreshLayout==='function') refreshLayout();
+      setStatus('Restored your last session (auto-save on)');
+    }
+  }catch(e){}
+  _restoreDone=true;   // now safe to let autosave write
+  _saveDirty=false;    // don't immediately re-persist the just-restored state
+  refreshAutoSaveBtn();
+  // Verify storage actually persists. Some setups (opening the file directly via
+  // file://, or private/incognito mode) block IndexedDB *and* localStorage, in
+  // which case auto-save silently can't work. Detect that and warn once.
+  if(autoSaveEnabled){
+    try{
+      const probe='stepseq_probe_'+Date.now();
+      let lsOK=false, idbOK=false;
+      try{ localStorage.setItem(probe,'1'); lsOK=(localStorage.getItem(probe)==='1'); localStorage.removeItem(probe); }catch(e){}
+      try{ await idbSet(probe,'1'); idbOK=((await idbGet(probe))==='1'); await idbDel(probe); }catch(e){}
+      if(!lsOK && !idbOK){
+        const onFile=(location.protocol==='file:');
+        setStatus(onFile
+          ? 'Auto-save unavailable: open via a web server (http) — browsers block storage on file:// pages'
+          : 'Auto-save unavailable: browser storage is blocked (private mode?)');
+      }
+    }catch(e){}
+  }
+})();
 
 initMIDI();
 </script>
