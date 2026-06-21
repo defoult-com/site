@@ -290,7 +290,7 @@
       <div class="tport-top-btn" id="btn-play"><div class="tport-top-pad" id="pad-play"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Play"><path d="M7 4.5v15l13-7.5z"></path></svg></div><div class="tport-top-kbd">SPC</div></div>
       <div class="tport-top-btn" id="btn-stop"><div class="tport-top-pad" id="pad-pause"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Pause"><rect x="6" y="4.5" width="4" height="15"></rect><rect x="14" y="4.5" width="4" height="15"></rect></svg></div><div class="tport-top-kbd">BKSP</div></div>
       <div class="tport-top-btn" id="btn-record"><div class="tport-top-pad" id="pad-record"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Record"><circle cx="12" cy="12" r="6.5"></circle></svg></div><div class="tport-top-kbd">ENT</div></div>
-      <div class="tport-top-btn" id="btn-settings" data-pressable="1"><div class="tport-top-pad" id="pad-settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Settings"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M4.4 7l2.6 1.5M17 15.5l2.6 1.5M19.6 7L17 8.5M7 15.5L4.4 17"></path></svg></div><div class="tport-top-kbd">ESC</div></div>
+      <div class="tport-top-btn" id="btn-settings" data-pressable="1"><div class="tport-top-pad" id="pad-settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-label="Settings"><path d="M 19.10 10.30 L 21.88 10.44 L 21.88 13.56 L 19.10 13.70 L 18.22 15.81 L 20.09 17.88 L 17.88 20.09 L 15.81 18.22 L 13.70 19.10 L 13.56 21.88 L 10.44 21.88 L 10.30 19.10 L 8.19 18.22 L 6.12 20.09 L 3.91 17.88 L 5.78 15.81 L 4.90 13.70 L 2.12 13.56 L 2.12 10.44 L 4.90 10.30 L 5.78 8.19 L 3.91 6.12 L 6.12 3.91 L 8.19 5.78 L 10.30 4.90 L 10.44 2.12 L 13.56 2.12 L 13.70 4.90 L 15.81 5.78 L 17.88 3.91 L 20.09 6.12 L 18.22 8.19 Z"></path><circle cx="12" cy="12" r="3.1"></circle></svg></div><div class="tport-top-kbd">ESC</div></div>
     </div>
     <div class="top-bar-sep"></div>
     <div style="flex:1;display:flex;align-items:stretch;gap:2px;">
@@ -1746,6 +1746,20 @@ function fmtGate(pct){
   return (half%1===0)?String(half):String(Math.floor(half))+'½';
 }
 function midiNoteName(n){return NOTE_NAMES[n%12]+(Math.floor(n/12)-1);}
+
+// ── Random fill configuration (STEP mode) ────────────────────────────
+// Held while the Random button is down; the actual randomize fires on release.
+// Gate min/max are chosen from this musical list (value = % of one step).
+const RAND_GATES=[12,17,20,25,33,38,50,62,67,75,88,100,150,200,250,300,350,400];
+function nearestGateIdx(pct){ let bi=0,bd=Infinity; RAND_GATES.forEach((g,i)=>{const d=Math.abs(g-pct);if(d<bd){bd=d;bi=i;}}); return bi; }
+const randomCfg={
+  scale:0,        // index into SCALES (0 = CHROM)
+  rootNote:0,     // 0=C .. 11=B
+  loOct:6, hiOct:4,
+  velMin:64, velMax:127,
+  gateMin:50,     // ½ step
+  gateMax:400,    // 4 steps
+};
 
 const STEP_PARAM_DEFS=[
   {key:'note',      label:'NOTE',      fmt:v=>NOTE_NAMES[v],        min:0,  max:11,  pxPerStep:8,  isToggle:false},
@@ -4766,6 +4780,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='BracketLeft'&&ctrlHeld){e.preventDefault();if(!e.repeat){if(!isPatLike())document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketRight'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){ctrlAllHeld=true;pressOn(document.getElementById('ctrl-none'));setStatus('All: hold + Save/Reload/Clear for every part');}return;}
+  if(e.code==='BracketRight'&&currentMode==='step'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));showRandomParams();randomTrigger='key';setStatus('Random range — release to randomize');}return;}
   if(e.code==='BracketRight'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-none').click();pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(0.5);pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='pat'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageLooper(0.5);pressOn(document.getElementById('ctrl-none'));}return;}
@@ -4794,7 +4809,7 @@ document.addEventListener('keyup',e=>{
   }
   if(e.code==='KeyP'){pressOff(document.getElementById('ctrl-reload'));if(currentMode==='key')releaseRoll(2);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(2);}
   if(e.code==='BracketLeft'){pressOff(document.getElementById('ctrl-clear'));if(currentMode==='key')releaseRoll(1);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(1);}
-  if(e.code==='BracketRight'){pressOff(document.getElementById('ctrl-none'));if(ctrlAllHeld)ctrlAllHeld=false;if(currentMode==='key')releaseRoll(0.5);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(0.5);}
+  if(e.code==='BracketRight'){pressOff(document.getElementById('ctrl-none'));if(ctrlAllHeld)ctrlAllHeld=false;if(currentMode==='key')releaseRoll(0.5);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(0.5);else if(currentMode==='step'&&isRandomPanelOpen()){closeRandomParams();randomFillPart();restoreSequencerDisplay();}}
   if(e.code in CODE_TO_PAGE){const _rbs=document.querySelectorAll('.range-btn');Object.values(CODE_TO_PAGE).forEach(i=>{if(_rbs[i])pressOff(_rbs[i]);});}
   if(e.code in CODE_TO_PART){
     const i=CODE_TO_PART[e.code];
@@ -4944,21 +4959,35 @@ document.getElementById('ctrl-clear').addEventListener('mousedown',()=>{
 });
 // ── Random fill (STEP mode) ──────────────────────────────────────────
 // Replace the active part's sequence across its active range (seqStart..seqEnd)
-// with a random pattern: random steps on, each with a random note, octave,
-// gate and velocity. Rules/restrictions will be layered on later.
+// with a random pattern, constrained by randomCfg: notes drawn from the chosen
+// SCALE/ROOT, octaves within LO..HI, velocity within MIN..MAX, gate within
+// MIN..MAX. The actual fill runs on Random-button RELEASE (see handlers).
 function randomFillPart(){
   const p=parts[activePart];
   const lo=p.seqStart-1, hi=p.seqEnd-1;
-  const GATES=[25,50,75,100,150,200];           // musical gate choices (%)
+  const sc=SCALES[randomCfg.scale];
+  // Build the set of allowed pitch classes (0-11) for the chosen scale+root.
+  let pcs;
+  if(!sc.ints){ pcs=[0,1,2,3,4,5,6,7,8,9,10,11]; } // CHROM / no filtering
+  else { pcs=sc.ints.map(iv=>(iv+randomCfg.rootNote)%12); }
+  const octLo=Math.min(randomCfg.loOct,randomCfg.hiOct);
+  const octHi=Math.max(randomCfg.loOct,randomCfg.hiOct);
+  const vLo=Math.min(randomCfg.velMin,randomCfg.velMax);
+  const vHi=Math.max(randomCfg.velMin,randomCfg.velMax);
+  const gLo=Math.min(randomCfg.gateMin,randomCfg.gateMax);
+  const gHi=Math.max(randomCfg.gateMin,randomCfg.gateMax);
+  // Gate choices within the chosen range.
+  const gateChoices=RAND_GATES.filter(g=>g>=gLo&&g<=gHi);
+  const gatePool=gateChoices.length?gateChoices:[gLo];
   for(let abs=lo; abs<=hi; abs++){
     if(p.skip&&p.skip[abs]) continue;            // leave skipped steps alone
     const on=Math.random()<0.5;                  // ~50% chance a step is active
     p.steps[abs]=on;
     if(on){
-      const note=Math.floor(Math.random()*12);   // 0-11
-      const oct=3+Math.floor(Math.random()*4);    // octaves 3-6
-      const gate=GATES[Math.floor(Math.random()*GATES.length)];
-      const vel=20+Math.floor(Math.random()*108); // 20-127
+      const note=pcs[Math.floor(Math.random()*pcs.length)];
+      const oct=octLo+Math.floor(Math.random()*(octHi-octLo+1));
+      const gate=gatePool[Math.floor(Math.random()*gatePool.length)];
+      const vel=vLo+Math.floor(Math.random()*(vHi-vLo+1));
       p.stepParams[abs]={...newStepParams(activePart), note, oct, gate,
         vel, velManual:true, accent:1};
     }
@@ -4969,10 +4998,66 @@ function randomFillPart(){
   setStatus('Part '+(activePart+1)+' randomized ('+(hi-lo+1)+' steps)');
 }
 
+// Display the random-range parameters while the Random button is held.
+// Layout (8 boxes):
+//  1 SCALE     2 HI OCT   3 VEL MAX   4 GATE MAX
+//  5 ROOT      6 LO OCT   7 VEL MIN   8 GATE MIN
+const RANDOM_PARAM_DEFS=[
+  {label:'SCALE',   get:()=>randomCfg.scale,   set:v=>randomCfg.scale=v,   min:0,max:SCALES.length-1, fmt:v=>SCALES[v].name},
+  {label:'HI OCT',  get:()=>randomCfg.loOct,   set:v=>randomCfg.loOct=v,   min:0,max:10,              fmt:v=>''+v},
+  {label:'VEL MAX', get:()=>randomCfg.velMax,  set:v=>randomCfg.velMax=v,  min:1,max:127,             fmt:v=>''+v},
+  {label:'GATE MAX',get:()=>nearestGateIdx(randomCfg.gateMax), set:i=>randomCfg.gateMax=RAND_GATES[i], min:0,max:RAND_GATES.length-1, fmt:i=>fmtGate(RAND_GATES[i])},
+  {label:'ROOT',    get:()=>randomCfg.rootNote,set:v=>randomCfg.rootNote=v,min:0,max:11,              fmt:v=>NOTE_NAMES[v]},
+  {label:'LO OCT',  get:()=>randomCfg.hiOct,   set:v=>randomCfg.hiOct=v,   min:0,max:10,              fmt:v=>''+v},
+  {label:'VEL MIN', get:()=>randomCfg.velMin,  set:v=>randomCfg.velMin=v,  min:1,max:127,             fmt:v=>''+v},
+  {label:'GATE MIN',get:()=>nearestGateIdx(randomCfg.gateMin), set:i=>randomCfg.gateMin=RAND_GATES[i], min:0,max:RAND_GATES.length-1, fmt:i=>fmtGate(RAND_GATES[i])},
+];
+let randomPanelActive=false;
+function showRandomParams(){
+  randomPanelActive=true;
+  const grid=document.getElementById('smd-grid');
+  grid.innerHTML='';
+  grid.style.display=''; grid.style.flexDirection=''; grid.style.minHeight='';
+  const lbl=document.getElementById('smd-mode-label');
+  if(lbl) lbl.textContent='RANDOM RANGE — PART '+(activePart+1);
+  RANDOM_PARAM_DEFS.forEach((def,idx)=>{
+    const cell=document.createElement('div');
+    cell.className='smd-cell draggable';
+    cell.title='Drag up/down — '+def.label;
+    cell.innerHTML=`
+      <div class="smd-cell-label">${def.label}</div>
+      <div class="smd-cell-val" id="rnd-cell-${idx}-val" style="color:#fff;white-space:nowrap;">${def.fmt(def.get())}</div>
+      <div class="snap-hint"></div>`;
+    // Prepend the same (hidden) CC-input wrapper the regular display cells have,
+    // so the label/value sit in the exact same vertical position as every other
+    // display panel.
+    const ccWrap=document.createElement('div');
+    ccWrap.className='cc-input-wrap';
+    ccWrap.innerHTML='<span class="cc-label">CC</span><input class="cc-num-input" type="number" tabindex="-1">';
+    cell.prepend(ccWrap);
+    const repaint=()=>{ const el=document.getElementById('rnd-cell-'+idx+'-val'); if(el){ el.textContent=def.fmt(def.get()); } };
+    const adjust=d=>{ const nv=Math.max(def.min,Math.min(def.max,def.get()+d)); if(nv!==def.get()){ def.set(nv); repaint(); } };
+    // Vertical drag to adjust
+    let drag=false,sY=0,sV=0,tid=null;
+    cell.addEventListener('mousedown',e=>{ paramDragActive=true; drag=true; sY=e.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); });
+    document.addEventListener('mousemove',e=>{ if(!drag)return; const nv=Math.max(def.min,Math.min(def.max,sV+Math.round((sY-e.clientY)/8))); if(nv!==def.get()){ def.set(nv); repaint(); } });
+    document.addEventListener('mouseup',()=>{ if(drag){ drag=false; cell.classList.remove('dragging'); } });
+    cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; tid=t.identifier; drag=true; sY=t.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); },{passive:false});
+    cell.addEventListener('touchmove',e=>{ if(!drag)return; const t=Array.from(e.touches).find(x=>x.identifier===tid); if(!t)return; const nv=Math.max(def.min,Math.min(def.max,sV+Math.round((sY-t.clientY)/8))); if(nv!==def.get()){ def.set(nv); repaint(); } e.preventDefault(); },{passive:false});
+    cell.addEventListener('touchend',e=>{ if(Array.from(e.changedTouches).some(x=>x.identifier===tid)){ drag=false; cell.classList.remove('dragging'); } });
+    cell._wheelAdjust=(d)=>adjust(d);
+    grid.appendChild(cell);
+  });
+}
+function isRandomPanelOpen(){ return randomPanelActive; }
+function closeRandomParams(){ randomPanelActive=false; randomTrigger=null; }
+let randomTrigger=null; // 'mouse' | 'key' | 'touch' — how the panel was opened
+
 document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ flashCtrlBtn('ctrl-none'); return; } // NONE — no function
   if(currentMode==='key') engageRoll(0.5); else if(currentMode==='pat') engageLooper(0.5);
   else if(currentMode==='ctrl'){ ctrlAllHeld=true; pressOn(document.getElementById('ctrl-none')); setStatus('All: hold + Save/Reload/Clear for every part'); }
+  else if(currentMode==='step'){ pressOn(document.getElementById('ctrl-none')); showRandomParams(); randomTrigger='mouse'; setStatus('Random range — release to randomize'); }
 });
 document.addEventListener('mouseup',()=>{
   if(_touchHoldCount>0) return; // touch is driving holds; ignore synthesized mouseups
@@ -4980,6 +5065,15 @@ document.addEventListener('mouseup',()=>{
   if(looperActive&&(currentMode==='pat'||currentMode==='set')) releaseLooper();
   if(rollActive) releaseRoll();
   if(ctrlAllHeld){ ctrlAllHeld=false; pressOff(document.getElementById('ctrl-none')); }
+  // STEP-mode Random: range params were shown on press; randomize on release.
+  // STEP-mode Random: only the MOUSE-held Random button randomizes on mouseup.
+  // When the panel was opened via the keyboard ']' or a touch hold, the random
+  // fires on THAT release instead — so releasing the mouse after dragging a
+  // parameter cell must NOT trigger it.
+  if(isRandomPanelOpen() && randomTrigger==='mouse'){
+    closeRandomParams(); pressOff(document.getElementById('ctrl-none'));
+    randomFillPart(); restoreSequencerDisplay();
+  }
 });
 
 // ── Touch support for the hold-capable action buttons ────────────────
@@ -5008,6 +5102,10 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     else if(currentMode==='step' && id==='ctrl-save'){
       if(saveHeld){ endSaveHold(); } else { beginSaveHold(); }
     }
+    // STEP Random: show the random-range params while held; randomize on release.
+    else if(currentMode==='step' && id==='ctrl-none'){
+      showRandomParams(); randomTrigger='touch'; setStatus('Random range — release to randomize');
+    }
   },{passive:false});
   el.addEventListener('touchend',e=>{
     e.preventDefault();
@@ -5030,9 +5128,16 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       else if(id==='ctrl-clear'){ newProject(); flashCtrlBtn('ctrl-clear'); }
       return;
     }
+    // STEP Random: range params were shown on touchstart — apply the randomize
+    // now (on release), regardless of tap duration, then restore the display.
+    if(currentMode==='step' && id==='ctrl-none' && isRandomPanelOpen()){
+      closeRandomParams();
+      randomFillPart(); restoreSequencerDisplay();
+      return;
+    }
     // Other tap actions: fire the click handler for a quick tap in modes where
     // the button is a tap-action. Exclude STEP ctrl-save (latched, above).
-    if(wasQuick && !isStepSaveHold && (currentMode==='step'||currentMode==='ctrl')){
+    if(wasQuick && !isStepSaveHold && id!=='ctrl-none' && (currentMode==='step'||currentMode==='ctrl')){
       el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
     }
   },{passive:false});
@@ -5041,6 +5146,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     if(currentMode==='key') releaseRoll(div);
     else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none') ctrlAllHeld=false;
+    else if(currentMode==='step' && id==='ctrl-none' && isRandomPanelOpen()){ closeRandomParams(); restoreSequencerDisplay(); }
   });
 });
 
@@ -5077,7 +5183,7 @@ document.getElementById('ctrl-clear').addEventListener('click',()=>{
 document.getElementById('ctrl-none').addEventListener('click',()=>{
   if(isPatLike()) return;
   if(currentMode==='ctrl') return; // 'All' is a hold-modifier for Save/Reload/Clear
-  if(currentMode==='step'){ randomFillPart(); flashCtrlBtn('ctrl-none'); return; } // Random fill
+  if(currentMode==='step') return; // Random is handled on press (show range) + release (randomize)
   setStatus('None');
 });
 // (ctrl-btn Solo is now a hold button — see the unified modifier hold system above)
