@@ -3672,6 +3672,137 @@ function getMasterGain(){
   return masterGain;
 }
 
+// ── Per-part STEREO PAN ──────────────────────────────────────────────
+// Each instrument (channel 0-7) gets its own StereoPannerNode sitting
+// between its voices and the master gain:
+//     voice nodes → panner[ch] → masterGain → (FX chain) → destination
+// The pan value is stored on parts[ch].pan  (-1 = hard left … 0 = centre …
+// +1 = hard right). getPartOut() is what _voice() connects to instead of the
+// raw master gain, so EVERY synth type (kick/snare/hihat/clap/tom/rim/
+// cowbell/fm/sample) is panned uniformly with no per-case edits.
+const _partPanners=Array(8).fill(null);
+function getPartOut(ch){
+  const mg=getMasterGain();
+  if(ch==null||ch<0||ch>7) return mg;           // unknown channel → straight to master
+  const ctx=mg.context;
+  if(!_partPanners[ch]){
+    let node;
+    if(ctx.createStereoPanner){
+      node=ctx.createStereoPanner();
+    }else{
+      // Very old Safari with no StereoPanner: fall back to a plain gain so the
+      // graph still works (audio stays centred). The .pan shim keeps the
+      // setter calls below harmless.
+      node=ctx.createGain();
+      node.pan={value:0,setValueAtTime(){}};
+    }
+    node.connect(mg);            // dry path
+    _partPanners[ch]=node;
+    // Post-pan SEND taps → global reverb / delay buses (see Send FX below).
+    const fx=buildSendFX();
+    const rs=ctx.createGain(); rs.gain.value=(parts[ch]&&typeof parts[ch].revSend==='number')?parts[ch].revSend:0;
+    const ds=ctx.createGain(); ds.gain.value=(parts[ch]&&typeof parts[ch].dlySend==='number')?parts[ch].dlySend:0;
+    node.connect(rs); rs.connect(fx.revIn);
+    node.connect(ds); ds.connect(fx.dlyIn);
+    _revSendGain[ch]=rs; _dlySendGain[ch]=ds;
+  }
+  const p=parts[ch];
+  const v=(p&&typeof p.pan==='number')?p.pan:0;
+  if(_partPanners[ch].pan){ try{ _partPanners[ch].pan.value=v; }catch(e){} }
+  return _partPanners[ch];
+}
+// Live pan update (used by the Pan slider so it moves the field AND the node).
+function setPartPan(ch,v){
+  v=Math.max(-1,Math.min(1,v));
+  if(parts[ch]) parts[ch].pan=v;
+  getPartOut(ch); // ensure the node exists
+  const node=_partPanners[ch];
+  if(node&&node.pan){
+    try{ node.pan.setValueAtTime(v,getCtx().currentTime); }
+    catch(e){ try{ node.pan.value=v; }catch(_e){} }
+  }
+}
+
+// ── Send FX: global REVERB + DELAY buses ─────────────────────────────
+// Two shared effect processors fed by per-part SEND gains (tapped post-pan):
+//     panner[ch] → revSend[ch] → revIn → convolver → revLP(damp) → revRet ┐
+//     panner[ch] → dlySend[ch] → dlyIn → delay → dlyRet ─────────────────┤→ masterGain
+//                                          ↑__ fb(×) ← dlyLP ←┘ (feedback) │
+// Per-part send amounts live on parts[ch].revSend / parts[ch].dlySend and
+// DEFAULT TO 0 (effects silent until dialled in). The global tone of each
+// effect is shaped by the sendFX params below. Returns sum into masterGain so
+// ALL MUTE and master volume affect the wet signal too.
+const sendFX={
+  revDecay:2.0,   // s   reverb tail length     0.2 .. 8
+  revDamp:50,     // %   high-freq damping      0 .. 100
+  revReturn:1.0,  // ×   reverb wet return      0 .. 1.5
+  dlyTime:300,    // ms  delay time             10 .. 1000
+  dlyFb:0.35,     // ×   delay feedback         0 .. 0.95
+  dlyReturn:1.0,  // ×   delay wet return       0 .. 1.5
+};
+let _sendFXNodes=null;                // {revIn,conv,revLP,revRet,dlyIn,delay,dlyLP,fb,dlyRet}
+const _revSendGain=Array(8).fill(null);
+const _dlySendGain=Array(8).fill(null);
+
+// Reverb impulse response: stereo exponentially-decaying noise of `seconds`.
+function makeReverbIR(ctx,seconds){
+  seconds=Math.max(0.1,Math.min(10,seconds));
+  const rate=ctx.sampleRate, len=Math.max(1,Math.floor(rate*seconds));
+  const ir=ctx.createBuffer(2,len,rate);
+  for(let c=0;c<2;c++){
+    const d=ir.getChannelData(c);
+    for(let i=0;i<len;i++){
+      const env=Math.pow(1-i/len,2.5);          // smooth exponential-ish tail
+      d[i]=(Math.random()*2-1)*env;
+    }
+  }
+  return ir;
+}
+// Damping % → lowpass cutoff (0% = bright/open, 100% = dark/closed).
+function dampToFreq(pct){ return 18000*Math.pow(0.04,Math.max(0,Math.min(100,pct))/100); }
+
+function buildSendFX(){
+  if(_sendFXNodes) return _sendFXNodes;
+  const ctx=getCtx();
+  const mg=getMasterGain();
+  // Reverb chain
+  const revIn=ctx.createGain();
+  const conv=ctx.createConvolver(); conv.buffer=makeReverbIR(ctx,sendFX.revDecay);
+  const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=dampToFreq(sendFX.revDamp);
+  const revRet=ctx.createGain(); revRet.gain.value=sendFX.revReturn;
+  revIn.connect(conv); conv.connect(revLP); revLP.connect(revRet); revRet.connect(mg);
+  // Delay chain (feedback loop softened by a fixed lowpass for analog-ish repeats)
+  const dlyIn=ctx.createGain();
+  const delay=ctx.createDelay(2.0); delay.delayTime.value=sendFX.dlyTime/1000;
+  const dlyLP=ctx.createBiquadFilter(); dlyLP.type='lowpass'; dlyLP.frequency.value=6000;
+  const fb=ctx.createGain(); fb.gain.value=sendFX.dlyFb;
+  const dlyRet=ctx.createGain(); dlyRet.gain.value=sendFX.dlyReturn;
+  dlyIn.connect(delay);
+  delay.connect(dlyLP); dlyLP.connect(fb); fb.connect(delay);   // feedback
+  delay.connect(dlyRet); dlyRet.connect(mg);                    // wet out
+  _sendFXNodes={revIn,conv,revLP,revRet,dlyIn,delay,dlyLP,fb,dlyRet};
+  return _sendFXNodes;
+}
+// Rebuild the reverb impulse (only needed when decay length changes).
+function rebuildReverbIR(){ if(_sendFXNodes) _sendFXNodes.conv.buffer=makeReverbIR(getCtx(),sendFX.revDecay); }
+// Push sendFX params (other than IR length) onto the live nodes.
+function applySendFX(){
+  if(!_sendFXNodes) return;
+  const t=getCtx().currentTime, n=_sendFXNodes;
+  n.revLP.frequency.setValueAtTime(dampToFreq(sendFX.revDamp),t);
+  n.revRet.gain.setValueAtTime(sendFX.revReturn,t);
+  n.delay.delayTime.setValueAtTime(sendFX.dlyTime/1000,t);
+  n.fb.gain.setValueAtTime(Math.max(0,Math.min(0.95,sendFX.dlyFb)),t);
+  n.dlyRet.gain.setValueAtTime(sendFX.dlyReturn,t);
+}
+// Live per-part send update (which: 'rev' | 'dly').
+function setPartSend(ch,which,v){
+  v=Math.max(0,Math.min(1,v));
+  if(parts[ch]) parts[ch][which==='rev'?'revSend':'dlySend']=v;
+  const g=which==='rev'?_revSendGain[ch]:_dlySendGain[ch];
+  if(g){ try{ g.gain.setValueAtTime(v,getCtx().currentTime); }catch(e){ try{ g.gain.value=v; }catch(_e){} } }
+}
+
 // Per-channel sample slots (engine-owned; loaded via the Sound panel)
 const partSamples=Array(8).fill(null);
 const partSampleNames=Array(8).fill(null);
@@ -3726,7 +3857,7 @@ window.SoundEngine={
   // Synthesize one voice from MIDI data + channel config
   _voice(p, note, vel, when, durSec, ch){
     const _rawCtx=getCtx();
-    const out=getMasterGain();
+    const out=getPartOut(ch);  // per-part stereo panner → masterGain (was getMasterGain())
     // ── Voice node cleanup (prevents an iOS audio-graph leak) ──────────
     // Every node created for this voice is tracked, then disconnected once the
     // voice has finished. Without this, stopped-but-connected nodes accumulate
@@ -3960,6 +4091,198 @@ document.getElementById('mute-all-btn').addEventListener('click',e=>{
   btn.textContent=allMuted?'ALL MUTED':'ALL MUTE';
   setStatus(allMuted?'Audio muted':'Audio unmuted');
 });
+
+// ── Pan slider UI (engine-owned) ─────────────────────────────────────
+// The Sound panel's static markup lives outside this fenced block, so the
+// engine injects its own Pan row directly under the Volume row at load time.
+// One slider edits parts[activePart].pan and applies live via setPartPan().
+// If this whole fenced block is deleted, the row is simply never added and
+// the rest of the app is unaffected.
+(function installPanUI(){
+  const fmtPan=v=> Math.abs(v)<0.005 ? 'C' : (v<0?'L':'R')+Math.round(Math.abs(v)*100);
+  const volSlider=document.getElementById('se-vol');
+  const volRow=volSlider?volSlider.closest('.se-row'):null;
+  if(!volRow||document.getElementById('se-pan')) return;
+  const row=document.createElement('div');
+  row.className='se-row';
+  row.innerHTML='<div class="se-label">Pan</div>'
+    +'<input type="range" class="se-slider" id="se-pan" min="-1" max="1" step="0.01" value="0">'
+    +'<div class="se-val" id="se-pan-val">C</div>';
+  volRow.insertAdjacentElement('afterend',row);
+  const slider=document.getElementById('se-pan');
+  const valEl=document.getElementById('se-pan-val');
+  slider.addEventListener('input',e=>{
+    const v=parseFloat(e.target.value);
+    setPartPan(activePart,v);
+    valEl.textContent=fmtPan(v);
+    if(typeof markSaveDirty==='function') markSaveDirty();
+  });
+  // Double-click / double-tap the slider to snap back to centre.
+  slider.addEventListener('dblclick',()=>{ slider.value=0; setPartPan(activePart,0); valEl.textContent='C'; });
+  // Refresh the Pan row whenever the editor rebuilds (e.g. switching parts).
+  if(typeof buildSoundEditor==='function'){
+    const _origBuildSoundEditor=buildSoundEditor;
+    buildSoundEditor=function(){
+      _origBuildSoundEditor.apply(this,arguments);
+      const p=parts[activePart];
+      if(p&&p.pan===undefined) p.pan=0;
+      const s=document.getElementById('se-pan'), vv=document.getElementById('se-pan-val');
+      if(s){ const pv=p?(p.pan||0):0; s.value=pv; if(vv) vv.textContent=fmtPan(pv); }
+    };
+  }
+  // Initialise for the currently active part.
+  const p0=parts[activePart];
+  if(p0&&p0.pan===undefined) p0.pan=0;
+  const pv0=p0?(p0.pan||0):0;
+  slider.value=pv0; valEl.textContent=fmtPan(pv0);
+})();
+
+// ── Send FX UI (engine-owned) ────────────────────────────────────────
+// Adds, all from inside this fenced block:
+//   • per-instrument REVERB + DELAY send sliders, placed between Pan and Tune
+//     (default 0), editing parts[activePart].revSend / .dlySend
+//   • a global REVERB/DELAY parameter group, placed between the instrument
+//     controls and the MASTER FX section.
+// Deleting this fenced block removes all of it cleanly.
+(function installSendUI(){
+  if(document.getElementById('se-rev-send')) return;
+  const panSlider=document.getElementById('se-pan');
+  const volSlider=document.getElementById('se-vol');
+  const anchor=panSlider?panSlider.closest('.se-row')
+              :(volSlider?volSlider.closest('.se-row'):null);     // fallback: after Volume
+  const toneRow=(document.getElementById('se-tone')||{}).closest
+               ?document.getElementById('se-tone').closest('.se-row'):null;
+  if(!anchor) return;
+
+  const pct=v=>Math.round(v*100)+'%';
+  const mkSendRow=(id,label)=>{
+    const r=document.createElement('div'); r.className='se-row';
+    r.innerHTML='<div class="se-label">'+label+'</div>'
+      +'<input type="range" class="se-slider" id="'+id+'" min="0" max="1" step="0.01" value="0">'
+      +'<div class="se-val" id="'+id+'-val">0%</div>';
+    return r;
+  };
+  // Insert Delay then Reverb directly after the Pan row so order is
+  // Pan → Reverb → Delay → Tune.
+  const revRow=mkSendRow('se-rev-send','Reverb');
+  const dlyRow=mkSendRow('se-dly-send','Delay');
+  anchor.insertAdjacentElement('afterend',revRow);
+  revRow.insertAdjacentElement('afterend',dlyRow);
+
+  const wireSend=(id,which)=>{
+    const s=document.getElementById(id), v=document.getElementById(id+'-val');
+    s.addEventListener('input',e=>{
+      const val=parseFloat(e.target.value);
+      setPartSend(activePart,which,val);
+      v.textContent=pct(val);
+      if(typeof markSaveDirty==='function') markSaveDirty();
+    });
+  };
+  wireSend('se-rev-send','rev');
+  wireSend('se-dly-send','dly');
+
+  // ── Global reverb / delay parameter group (between instruments & MASTER FX)
+  const grp=document.createElement('div');
+  grp.style.cssText='display:flex;flex-direction:column;gap:5px;';
+  grp.innerHTML=
+     '<div style="border-top:1px solid var(--seq-border);margin:6px 0 2px;"></div>'
+    +'<div class="se-row"><div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">REVERB</div>'
+      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Global send reverb</div></div>'
+    +'<div class="se-row"><div class="se-label">Decay</div><input type="range" class="se-slider" id="se-rev-decay" min="0.2" max="8" step="0.1" value="2"><div class="se-val" id="se-rev-decay-val">2.0s</div></div>'
+    +'<div class="se-row"><div class="se-label">Damp</div><input type="range" class="se-slider" id="se-rev-damp" min="0" max="100" step="1" value="50"><div class="se-val" id="se-rev-damp-val">50%</div></div>'
+    +'<div class="se-row"><div class="se-label">Return</div><input type="range" class="se-slider" id="se-rev-return" min="0" max="1.5" step="0.01" value="1"><div class="se-val" id="se-rev-return-val">100%</div></div>'
+    +'<div class="se-row"><div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">DELAY</div>'
+      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Global send delay</div></div>'
+    +'<div class="se-row"><div class="se-label">Time</div><input type="range" class="se-slider" id="se-dly-time" min="10" max="1000" step="1" value="300"><div class="se-val" id="se-dly-time-val">300 ms</div></div>'
+    +'<div class="se-row"><div class="se-label">Feedback</div><input type="range" class="se-slider" id="se-dly-fb" min="0" max="0.95" step="0.01" value="0.35"><div class="se-val" id="se-dly-fb-val">35%</div></div>'
+    +'<div class="se-row"><div class="se-label">Return</div><input type="range" class="se-slider" id="se-dly-return" min="0" max="1.5" step="0.01" value="1"><div class="se-val" id="se-dly-return-val">100%</div></div>';
+  // Place after the Tone row (the last instrument control); the existing
+  // separator + MASTER FX section follow, so this sits between them.
+  if(toneRow){ toneRow.insertAdjacentElement('afterend',grp); }
+  else { dlyRow.insertAdjacentElement('afterend',grp); }
+
+  // Wire the global params. Decay rebuilds the IR; the rest just re-apply.
+  const params=[
+    ['se-rev-decay','revDecay',v=>v.toFixed(1)+'s',true],
+    ['se-rev-damp','revDamp',v=>Math.round(v)+'%',false],
+    ['se-rev-return','revReturn',v=>Math.round(v*100)+'%',false],
+    ['se-dly-time','dlyTime',v=>Math.round(v)+' ms',false],
+    ['se-dly-fb','dlyFb',v=>Math.round(v*100)+'%',false],
+    ['se-dly-return','dlyReturn',v=>Math.round(v*100)+'%',false],
+  ];
+  params.forEach(([id,key,fmt,rebuild])=>{
+    const el=document.getElementById(id), v=document.getElementById(id+'-val'); if(!el) return;
+    el.addEventListener('input',e=>{
+      sendFX[key]=parseFloat(e.target.value);
+      if(v) v.textContent=fmt(sendFX[key]);
+      buildSendFX();
+      if(rebuild) rebuildReverbIR();
+      applySendFX();
+      if(typeof markSaveDirty==='function') markSaveDirty();
+    });
+  });
+
+  // Refresh the per-part send sliders whenever the editor rebuilds (part switch).
+  if(typeof buildSoundEditor==='function'){
+    const _prev=buildSoundEditor;
+    buildSoundEditor=function(){
+      _prev.apply(this,arguments);
+      const p=parts[activePart];
+      if(p){ if(p.revSend===undefined)p.revSend=0; if(p.dlySend===undefined)p.dlySend=0; }
+      const rs=document.getElementById('se-rev-send'), rv=document.getElementById('se-rev-send-val');
+      const ds=document.getElementById('se-dly-send'), dv=document.getElementById('se-dly-send-val');
+      if(rs){ const x=p?(p.revSend||0):0; rs.value=x; if(rv) rv.textContent=pct(x); }
+      if(ds){ const x=p?(p.dlySend||0):0; ds.value=x; if(dv) dv.textContent=pct(x); }
+    };
+  }
+  // Initialise for the active part.
+  const p=parts[activePart];
+  if(p){ if(p.revSend===undefined)p.revSend=0; if(p.dlySend===undefined)p.dlySend=0;
+    document.getElementById('se-rev-send').value=p.revSend;
+    document.getElementById('se-rev-send-val').textContent=pct(p.revSend);
+    document.getElementById('se-dly-send').value=p.dlySend;
+    document.getElementById('se-dly-send-val').textContent=pct(p.dlySend);
+  }
+})();
+
+// ── Factory reset for ALL sound-engine settings (used by the NEW button) ──
+// Restores per-part synth config (DEFAULTS), pan + reverb/delay sends (0),
+// loaded samples (cleared), Master FX, and global Send FX to their defaults,
+// then refreshes the related UI. Lives in the fence so the engine owns its
+// own defaults; newProject() just calls it (guarded), so deleting the fence
+// leaves newProject working.
+function resetSoundEngineDefaults(){
+  for(let i=0;i<8;i++){
+    const d=DEFAULTS[i]||{};
+    parts[i].type=d.type; parts[i].vol=d.vol; parts[i].freq=d.freq;
+    parts[i].decay=d.decay; parts[i].tone=d.tone;
+    parts[i].pan=0; parts[i].revSend=0; parts[i].dlySend=0;
+    // Push 0 onto any live nodes WITHOUT forcing the audio context to exist.
+    if(_partPanners[i]&&_partPanners[i].pan){ try{ _partPanners[i].pan.value=0; }catch(e){} }
+    if(_revSendGain[i]){ try{ _revSendGain[i].gain.value=0; }catch(e){} }
+    if(_dlySendGain[i]){ try{ _dlySendGain[i].gain.value=0; }catch(e){} }
+    partSamples[i]=null; partSampleNames[i]=null;
+  }
+  // Master FX → defaults
+  Object.assign(masterFX,{enabled:false,volume:1.0,gain:1.0,character:0.5,low:0,mid:0,high:0,eqPost:false});
+  // Send FX → defaults
+  Object.assign(sendFX,{revDecay:2.0,revDamp:50,revReturn:1.0,dlyTime:300,dlyFb:0.35,dlyReturn:1.0});
+  // Only touch live audio nodes if the context already exists (don't spin one up).
+  if(audioCtx){
+    buildMasterFX(); rewireMasterFX(); applyMasterFX();
+    buildSendFX(); rebuildReverbIR(); applySendFX();
+  }
+  // UI refresh (always safe)
+  if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
+  const setS=(id,val,txt)=>{const el=document.getElementById(id);if(el)el.value=val;const t=document.getElementById(id+'-val');if(t)t.textContent=txt;};
+  setS('se-rev-decay',sendFX.revDecay,sendFX.revDecay.toFixed(1)+'s');
+  setS('se-rev-damp',sendFX.revDamp,Math.round(sendFX.revDamp)+'%');
+  setS('se-rev-return',sendFX.revReturn,Math.round(sendFX.revReturn*100)+'%');
+  setS('se-dly-time',sendFX.dlyTime,Math.round(sendFX.dlyTime)+' ms');
+  setS('se-dly-fb',sendFX.dlyFb,Math.round(sendFX.dlyFb*100)+'%');
+  setS('se-dly-return',sendFX.dlyReturn,Math.round(sendFX.dlyReturn*100)+'%');
+  if(typeof buildSoundEditor==='function') buildSoundEditor();
+}
 // ╔════════════════════════════════════════════════════════════════╗
 // ║ END SOUND ENGINE                                                 ║
 // ╚════════════════════════════════════════════════════════════════╝
@@ -5582,12 +5905,38 @@ function newProject(){
     midiVel[i]=100;
     for(let j=0;j<8;j++){ ctrlCCVals[i][j]=64; ctrlCCNums[i][j]=CTRL_CC_DEFAULTS[j]; }
     for(const key in ctrlLocks[i]) delete ctrlLocks[i][key];
+    // Per-part step-entry defaults back to factory.
+    partStepDefaults[i]={note:0,accent:1,velManual:false,gate:50,oct:5,vel:100,stepOffset:0};
+    partPage[i]=0;
+    // Per-part MIDI routing back to "inherit global" (keeps connected devices).
+    partMidiIn[i].deviceId=null;  partMidiIn[i].channel=-1;
+    partMidiOut[i].deviceId=null; partMidiOut[i].channel=-1;
   }
+  // ── Global / settings state back to defaults ──
+  metroOn=false;
+  const metroPad=document.getElementById('pad-metro'); if(metroPad) metroPad.classList.remove('mode-on');
+  keyOctave=5; keyVelocity=100; keyArpMode=0; keyArpRate=3; keyArpRange=1; keyArpGate=50;
+  keyScale=0; keyScaleRoot=0; keyShift=0;
+  // Display-control CC map back to factory.
+  [73,72,74,71,5,84,93,10].forEach((v,i)=>{ cellCCs[i]=v; });
+  // Settings-page values (read as 64 when absent).
+  for(const k in settingsVals) delete settingsVals[k];
+  // MIDI channels back to default (global = auto); leave physical connections.
+  midiInChannel=0; midiOutChannel=0;
+  const inSel=document.getElementById('midi-in-ch'); if(inSel) inSel.value='0';
+  // (The out-channel select is rebuilt by showSettingsPanel() from midiOutChannel.)
+  // ── Sound engine (synth config, pan, sends, master + send FX) → defaults ──
+  if(typeof resetSoundEngineDefaults==='function') resetSoundEngineDefaults();
+
   activeBank=0; activePattern=0; activePart=0; patternPage=0;
   patternDirty=false;
+  if(typeof setTempoVal==='function') setTempoVal(120); else tempo=120;
   for(let i=0;i<8;i++){resetPartPlayState(i);partInPhase[i]=true;}
   buildParts();buildSteps();buildRangeBar();buildSoundEditor();buildPatternGrids();
   updateSmdDisplay();updatePartIndicator();restoreSequencerDisplay();
+  // Refresh whichever side-panel is showing so it reflects the reset.
+  if(currentMode==='set'&&typeof showSettingsPanel==='function') showSettingsPanel();
+  if(currentMode==='key'&&typeof showKeyPanel==='function') showKeyPanel();
   persistNow();
   setStatus('New project');
 }
