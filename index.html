@@ -281,16 +281,16 @@
 </style>
 </head>
 <body>
-<button id="view-toggle" title="Toggle portrait / wide layout">⬍ Portrait</button>
+<button id="view-toggle" title="Toggle portrait / wide layout">Portrait</button>
 <div id="scale-wrap">
 <div id="seq-root">
   <div class="seq-top-bar">
     <div class="topbar-left-half" style="display:flex;align-items:stretch;gap:2px;flex:1;">
     <div style="display:flex;gap:2px;align-items:stretch;flex:1;">
-      <div class="tport-top-btn" id="btn-play"><div class="tport-top-pad" id="pad-play">▶</div><div class="tport-top-kbd">SPC</div></div>
-      <div class="tport-top-btn" id="btn-stop"><div class="tport-top-pad" id="pad-pause">❚❚</div><div class="tport-top-kbd">BKSP</div></div>
-      <div class="tport-top-btn" id="btn-record"><div class="tport-top-pad" id="pad-record">●</div><div class="tport-top-kbd">ENT</div></div>
-      <div class="tport-top-btn" id="btn-settings" data-pressable="1"><div class="tport-top-pad" id="pad-settings">⚙</div><div class="tport-top-kbd">ESC</div></div>
+      <div class="tport-top-btn" id="btn-play"><div class="tport-top-pad" id="pad-play"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Play"><path d="M7 4.5v15l13-7.5z"></path></svg></div><div class="tport-top-kbd">SPC</div></div>
+      <div class="tport-top-btn" id="btn-stop"><div class="tport-top-pad" id="pad-pause"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Pause"><rect x="6" y="4.5" width="4" height="15"></rect><rect x="14" y="4.5" width="4" height="15"></rect></svg></div><div class="tport-top-kbd">BKSP</div></div>
+      <div class="tport-top-btn" id="btn-record"><div class="tport-top-pad" id="pad-record"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Record"><circle cx="12" cy="12" r="6.5"></circle></svg></div><div class="tport-top-kbd">ENT</div></div>
+      <div class="tport-top-btn" id="btn-settings" data-pressable="1"><div class="tport-top-pad" id="pad-settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Settings"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M4.4 7l2.6 1.5M17 15.5l2.6 1.5M19.6 7L17 8.5M7 15.5L4.4 17"></path></svg></div><div class="tport-top-kbd">ESC</div></div>
     </div>
     <div class="top-bar-sep"></div>
     <div style="flex:1;display:flex;align-items:stretch;gap:2px;">
@@ -383,7 +383,7 @@
     <div class="bottom-bar-sep" id="midi-bar-sep" style="display:none;"></div>
     <div class="sound-editor" style="border-radius:0 0 3px 3px;">
       <div class="sound-editor-header" id="se-header">
-        <span class="sound-editor-title" id="se-title">▶ Sound — Part 1: Kick</span>
+        <span class="sound-editor-title" id="se-title">&#9654;&#65038; Sound — Part 1: Kick</span>
         <div style="display:flex;align-items:center;gap:6px;">
           <button id="mute-all-btn" style="font-family:var(--seq-font);font-size:9px;font-weight:bold;padding:2px 7px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;color:var(--seq-text-dim);cursor:pointer;" title="Mute / unmute all parts">ALL MUTE</button>
           <span style="font-size:9px;color:var(--seq-text-dim)">click to expand</span>
@@ -481,7 +481,7 @@ function snapPointsForStart(seqEnd){return [1,17,33,49].filter(p=>p<=seqEnd);}
 // Bar-end snap points: the four bar ends that stay at/above seqStart.
 function snapPointsForEnd(seqStart){return SNAP_POINTS_END.filter(p=>p>=seqStart);}
 function snapNearest(v,points){let b=points[0],bd=Math.abs(v-b);for(const s of points){const d=Math.abs(v-s);if(d<bd){bd=d;b=s;}}return b;}
-const DIR_SYMS=['→','←','↔','⇄','?'];
+const DIR_SYMS=['\u2192\uFE0E','\u2190\uFE0E','\u2194\uFE0E','\u21C4\uFE0E','?'];
 const DIR_NAMES=['Forward','Backward','Ping-Pong','Rev Ping-Pong','Random'];
 const SPEEDS=[
   {label:'÷8',ratio:8},{label:'÷4',ratio:4},{label:'÷3',ratio:3},{label:'÷2',ratio:2},
@@ -1001,7 +1001,7 @@ function reloadPatternLive(){
 function queuePatternChange(bank,pattern){
   tempModeMarkChanged();
   pendingBank=bank; pendingPattern=pattern;
-  setStatus('Bank '+(bank+1)+' Pat '+(pattern+1)+' — queued on next bar ↓');
+  setStatus('Bank '+(bank+1)+' Pat '+(pattern+1)+' — queued on next bar \u2193\uFE0E');
   buildPatternGrids();
 }
 
@@ -2179,6 +2179,12 @@ function showSettingsPanel(){
   const grid=document.getElementById('smd-grid');
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
+  // Keep the display panel the SAME height on the column-layout pages (MIDI
+  // IN/OUT) as on the normal 8-cell pages: the normal grid uses aspect-ratio
+  // 4/2 (height = width/2), so we apply that as a min-height here too. Without
+  // this the MIDI pages collapse to ~2 short rows and the display looks smaller.
+  const matchGridHeight=()=>{ const w=grid.clientWidth||grid.offsetWidth; if(w) grid.style.minHeight=Math.round(w/2)+'px'; };
+  grid.style.minHeight='';  // cleared by default; column-mode pages re-apply it
 
   // ── Page 1: MIDI IN (device + channel) ──
   // Global view (no part selected) edits the global midiInputPort/midiInChannel.
@@ -2236,6 +2242,7 @@ function showSettingsPanel(){
       }
     });
     r2.appendChild(csel); grid.appendChild(r2);
+    matchGridHeight();
     return;
   }
 
@@ -2292,6 +2299,7 @@ function showSettingsPanel(){
       else midiOutChannel=parseInt(e.target.value);
     });
     r2.appendChild(csel); grid.appendChild(r2);
+    matchGridHeight();
     return;
   }
 
@@ -2860,12 +2868,12 @@ function attachDragHandlers(){
   const cell=document.getElementById(cellId);const hint=document.getElementById(hintId);if(!cell)return;
   let sY=0,sV=0,drag=false;
   function apply(raw){const p=parts[activePart];const isRange=(isStart===true||isStart===false)&&doSnap;if(!shiftHeld){if(isStart===true&&doSnap){const pts=snapPointsForStart(p.seqEnd);const s=pts.length?snapNearest(raw,pts):Math.max(1,Math.min(p.seqEnd-MIN_GAP,raw));return Math.max(1,Math.min(p.seqEnd,s));}if(isStart===false&&doSnap){const pts=snapPointsForEnd(p.seqStart);const s=pts.length?snapNearest(raw,pts):Math.max(p.seqStart+MIN_GAP,Math.min(64,raw));return Math.max(p.seqStart,Math.min(64,s));}}if(isStart===true&&isRange)return Math.max(1,Math.min(p.seqEnd,raw));if(isStart===false&&isRange)return Math.max(p.seqStart,Math.min(64,raw));return Math.max(getMin(),Math.min(getMax(),raw));}
-  function move(cy){const nv=apply(sV+Math.round((sY-cy)/pxPerStep));if(nv!==getV()){setV(nv);const el=document.getElementById(cellId+'-val');if(el)el.textContent=CELL_DEFS.find(d=>d.id===cellId)?.fmtVal()??nv;if(hint)hint.textContent=fmtHint?fmtHint(nv):(doSnap?(!shiftHeld?'⌂ bar snap':'free'):'');}if(doSnap)cell.classList.toggle('snap-mode',!shiftHeld);}
-  cell.addEventListener('mousedown',e=>{if(e.target.tagName==='SELECT')return;drag=true;sY=e.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'⌂ bar snap':'free';}e.preventDefault();});
+  function move(cy){const nv=apply(sV+Math.round((sY-cy)/pxPerStep));if(nv!==getV()){setV(nv);const el=document.getElementById(cellId+'-val');if(el)el.textContent=CELL_DEFS.find(d=>d.id===cellId)?.fmtVal()??nv;if(hint)hint.textContent=fmtHint?fmtHint(nv):(doSnap?(!shiftHeld?'\u2302\uFE0E bar snap':'free'):'');}if(doSnap)cell.classList.toggle('snap-mode',!shiftHeld);}
+  cell.addEventListener('mousedown',e=>{if(e.target.tagName==='SELECT')return;drag=true;sY=e.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();});
   document.addEventListener('mousemove',e=>{if(drag)move(e.clientY);});
   document.addEventListener('mouseup',()=>{if(drag){drag=false;cell.classList.remove('dragging','snap-mode');if(hint)hint.textContent='';}});
   let tid=null;
-  cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'⌂ bar snap':'free';}e.preventDefault();},{passive:false});
+  cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();},{passive:false});
   document.addEventListener('touchmove',e=>{if(!drag)return;const t=Array.from(e.touches).find(x=>x.identifier===tid);if(!t)return;e.preventDefault();move(t.clientY);},{passive:false});
   document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;cell.classList.remove('dragging','snap-mode');if(hint)hint.textContent='';}});
   // Scroll-wheel adjust — invoked by the global delegated wheel listener.
@@ -2933,6 +2941,10 @@ function updatePatDisp(){
 function updatePartIndicator(){
   updatePatDisp();
   if(typeof markSaveDirty==='function') markSaveDirty();
+  // Parts panel header (top-right) always shows the current pattern BANK in
+  // yellow, mirroring how the active part is shown by the Step Sequencer header.
+  const setBankInfo=()=>{ const b=document.getElementById('parts-pat-info'); if(b) b.innerHTML='Bank '+(activeBank+1); };
+  setBankInfo();
   if(currentMode==='set'){
     const pi2=document.getElementById('part-indicator');
     const pageName=settingsPage===0?'MIDI IN':settingsPage===1?'CC IN':settingsPage===8?'MIDI OUT':settingsPage===9?'CTRL CC OUT':('PAGE '+(settingsPage+1));
@@ -2941,21 +2953,15 @@ function updatePartIndicator(){
     else if(settingsPage===9) sub=' · PART '+((settingsPartSel>=0?settingsPartSel:0)+1);
     else sub=(settingsPartSel>=0?(' · PART '+(settingsPartSel+1)):' · GLOBAL');
     if(pi2) pi2.innerHTML='Settings · '+pageName+sub;
-    const ppi2=document.getElementById('parts-pat-info');
-    if(ppi2) ppi2.innerHTML='';
     return;
   }
   if(currentMode==='key'){
     const pi2=document.getElementById('part-indicator');
     if(pi2) pi2.innerHTML='Oct '+keyOctave+' · Vel '+keyVelocity+(keyShift?' · shift '+(keyShift>=0?'+':'')+keyShift:'');
-    const ppi2=document.getElementById('parts-pat-info');
-    if(ppi2) ppi2.innerHTML='';
     return;
   }
-  // Pattern info next to Parts header: shown in PAT mode only now.
-  // STEP and CTRL modes show it in the display header instead, so blank it here.
-  const ppi=document.getElementById('parts-pat-info');
-  if(ppi) ppi.innerHTML='';
+  // Pattern info next to Parts header: in PAT mode show the full Bank/Pat/state;
+  // other modes keep just the bank (set above by setBankInfo).
   if(isPatLike()){
     const pending=pendingBank!==null?' → Bank '+(pendingBank+1)+' Pat '+(pendingPattern+1):'';
     const saved=patternStore[activeBank][activePattern]!==null;
@@ -2967,7 +2973,7 @@ function updatePartIndicator(){
   }
   const p=parts[activePart];const tag=p.muted?' [MUTED]':p.soloed?' [SOLO]':'';
   const len=p.seqEnd-p.seqStart+1;
-  const oos=isOutOfSync(activePart)?' ⚠':'';
+  const oos=isOutOfSync(activePart)?' \u26A0\uFE0E':'';
   document.getElementById('part-indicator').textContent='Part '+(activePart+1)+tag+oos+' ('+len+'st)';
 }
 
@@ -3357,7 +3363,7 @@ function buildRangeBar(){
       bar.appendChild(div);
     });
     // Backward / forward: offset the whole keyboard by a semitone
-    [['◀',1],['▶',-1]].forEach(([label,delta],j)=>{
+    [['\u25C0\uFE0E',1],['\u25B6\uFE0E',-1]].forEach(([label,delta],j)=>{
       const i=j+2;
       const div=document.createElement('div');div.className='range-btn';
       div.innerHTML=`<span>${label}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
@@ -3433,7 +3439,7 @@ function setPage(i){
 
 function buildSoundEditor(){
   const p=parts[activePart];
-  document.getElementById('se-title').textContent=(seOpen?'▼':'▶')+` Sound — Part ${activePart+1}: ${DRUM_NAMES[DRUM_TYPES.indexOf(p.type)]}`;
+  document.getElementById('se-title').textContent=(seOpen?'\u25BC\uFE0E':'\u25B6\uFE0E')+` Sound — Part ${activePart+1}: ${DRUM_NAMES[DRUM_TYPES.indexOf(p.type)]}`;
   const row=document.getElementById('se-type-row');row.innerHTML='';
   DRUM_TYPES.forEach((t,i)=>{
     const btn=document.createElement('div');btn.className='se-type-btn'+(p.type===t?' active':'');
@@ -4171,7 +4177,7 @@ function isBarDownbeat(){ return (globalTick * TICK) % barMs() < TICK; }
 
 function queueResync(pi){
   pendingResync[pi]=true;
-  setStatus('Part '+(pi+1)+' — align queued, fires on next bar ↓');
+  setStatus('Part '+(pi+1)+' — align queued, fires on next bar \u2193\uFE0E');
   // flash the part button amber to show it's pending
   const el=document.getElementById('pnum-'+pi);
   if(el){ el.style.outline='2px solid #ff9900'; el.style.outlineOffset='-2px'; }
@@ -5466,7 +5472,7 @@ function applyPortrait(){
     appScale=1;
   }
   const tg=document.getElementById('view-toggle');
-  if(tg) tg.textContent = on ? '⬍ Portrait' : '⬌ Wide';
+  if(tg) tg.textContent = on ? 'Portrait' : 'Wide';
 }
 
 let _scaling=false;
