@@ -552,6 +552,10 @@ const parts=DEFAULTS.map(d=>({
   steps:Array(64).fill(false),
   skip:Array(64).fill(false), // per-step skip flag — playhead jumps over these
   stepParams:Array.from({length:64},()=>defaultStepParams()),
+  // Tracks steps that have been placed at least once. A step keeps its params
+  // when toggled off, so re-activating a "seen" step restores them instead of
+  // resetting to the part's step-entry defaults.
+  stepSeen:Array(64).fill(false),
   seqStart:1,seqEnd:16,dirIndex:0,speedIndex:DEFAULT_SPEED_IDX,swing:0,seqOffset:0,midiDly:0,midiDlyTime:DEFAULT_DLY_TIME_IDX,dlyFb:0,dlyPitch:0,muted:false,soloed:false,...d
 }));
 // seqOffset shifts all active steps forward/backward within the loop, wrapping at boundaries
@@ -903,6 +907,7 @@ function snapshotParts(){
       steps:[...p.steps],
       skip:[...(p.skip||Array(64).fill(false))],
       stepParams:p.stepParams.map(sp=>({...sp})),
+      stepSeen:[...(p.stepSeen||Array(64).fill(false))],
       // Per-part CTRL setup is stored IN the pattern: live values, the output
       // CC numbers, and all parameter locks.
       ctrl:{
@@ -929,6 +934,9 @@ function restoreParts(snapshot){
     parts[i].steps=[...saved.steps];
     parts[i].skip=[...(saved.skip||Array(64).fill(false))];
     parts[i].stepParams=saved.stepParams.map(sp=>({...sp}));
+    // Older snapshots predate stepSeen: treat any currently-on step as "seen"
+    // so its params are remembered if removed and re-added.
+    parts[i].stepSeen=saved.stepSeen?[...saved.stepSeen]:[...saved.steps];
     // Restore per-part CTRL setup from the pattern (if present)
     if(ctrl){
       for(let k=0;k<8;k++){
@@ -963,6 +971,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
     parts.forEach(p=>{
       p.steps=Array(64).fill(false);
       p.stepParams=Array.from({length:64},()=>defaultStepParams());
+      p.stepSeen=Array(64).fill(false);
       p.seqStart=1;p.seqEnd=16;p.dirIndex=0;p.speedIndex=DEFAULT_SPEED_IDX;
       p.swing=0;p.seqOffset=0;p.midiDly=0;p.midiDlyTime=DEFAULT_DLY_TIME_IDX;p.dlyFb=0;p.dlyPitch=0;
     });
@@ -1006,6 +1015,7 @@ function reloadPatternLive(){
     parts.forEach(p=>{
       p.steps=Array(64).fill(false);
       p.stepParams=Array.from({length:64},()=>defaultStepParams());
+      p.stepSeen=Array(64).fill(false);
     });
   } else {
     restoreParts(snap);
@@ -4581,8 +4591,16 @@ function toggleStep(abs){
   patternDirty=true;
 
   if(parts[activePart].steps[abs]){
-    // Newly entered step: apply the part's global step defaults
-    parts[activePart].stepParams[abs]=newStepParams(activePart);
+    const ap=activePart;
+    if(!parts[ap].stepSeen||!parts[ap].stepSeen[abs]){
+      // First time this step is placed: seed it with the part's step defaults.
+      if(!parts[ap].stepSeen) parts[ap].stepSeen=Array(64).fill(false);
+      parts[ap].stepParams[abs]=newStepParams(ap);
+      parts[ap].stepSeen[abs]=true;
+    }
+    // else: this step was placed before and removed — its params were kept, so
+    // reactivating restores everything (pitch, octave, velocity, gate, offset,
+    // retrigger, …) exactly as it was.
     const stepNum=abs+1;
     // If the new step is beyond the current loop end, extend the END to the end
     // of the PAGE that step falls on (16/32/48/64), so the loop covers the whole
@@ -5498,6 +5516,8 @@ function randomFillPart(){
       const vel=vLo+Math.floor(Math.random()*(vHi-vLo+1));
       p.stepParams[abs]={...newStepParams(activePart), note, oct, gate,
         vel, velManual:true, accent:1};
+      if(!p.stepSeen) p.stepSeen=Array(64).fill(false);
+      p.stepSeen[abs]=true;
     }
   }
   patternDirty=true;
@@ -5684,6 +5704,8 @@ document.getElementById('ctrl-clear').addEventListener('click',()=>{
   }
   {
     parts[activePart].steps=Array(64).fill(false);
+    parts[activePart].stepParams=Array.from({length:64},()=>defaultStepParams());
+    parts[activePart].stepSeen=Array(64).fill(false);
     patternDirty=true;
     buildSteps();buildRangeBar();buildParts();
     setStatus('Part '+(activePart+1)+' steps cleared');
@@ -5760,6 +5782,8 @@ function recordStep(pi,spOverride){
   if(!p.steps[abs]){
     p.steps[abs]=true;
     p.stepParams[abs]={...newStepParams(pi),...(spOverride||{})};
+    if(!p.stepSeen) p.stepSeen=Array(64).fill(false);
+    p.stepSeen[abs]=true;
     patternDirty=true;
     buildSteps();
     setStatus('Recorded step '+(abs+1)+' on Part '+(pi+1));
@@ -6082,6 +6106,7 @@ function newProject(){
     parts[i].steps=Array(64).fill(false);
     parts[i].skip=Array(64).fill(false);
     parts[i].stepParams=Array.from({length:64},()=>defaultStepParams());
+    parts[i].stepSeen=Array(64).fill(false);
     parts[i].seqStart=1; parts[i].seqEnd=16; parts[i].dirIndex=0;
     parts[i].speedIndex=DEFAULT_SPEED_IDX; parts[i].swing=0; parts[i].seqOffset=0;
     parts[i].midiDly=0; parts[i].midiDlyTime=DEFAULT_DLY_TIME_IDX; parts[i].dlyFb=0; parts[i].dlyPitch=0;
