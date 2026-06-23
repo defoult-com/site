@@ -3657,8 +3657,60 @@ function buildRangeBar(){
   }
 }
 
+// ── Mute + page-button: duplicate/expand pages (STEP mode) ──────────────
+// Holding Mute (shift) and clicking a page button copies the active part's
+// pages to build a longer loop, based on which pages already have notes:
+//   Page 2: copy page 1 → 2.
+//   Page 3: pages 1&2 filled → copy 1 → 3; page 2 empty → copy 1 → 2 and 3.
+//   Page 4: only page 1 → copy 1 → 2,3,4; pages 1&2 → copy 1→3 and 2→4;
+//           pages 1,2,3 → copy 2 → 4.
+// The play range (seqEnd) is extended to cover the copied pages so they sound.
+function applyMutePageCopy(target){
+  const p=parts[activePart];
+  const has=idx=>p.steps.slice(PAGE_OFFSET[idx],PAGE_OFFSET[idx]+16).some(Boolean);
+  const copyPage=(src,dst)=>{
+    if(src===dst) return;
+    const so=PAGE_OFFSET[src], dofs=PAGE_OFFSET[dst];
+    for(let k=0;k<16;k++){
+      p.steps[dofs+k]=p.steps[so+k];
+      p.stepParams[dofs+k]={...p.stepParams[so+k]};
+      if(p.stepSeen) p.stepSeen[dofs+k]=p.stepSeen[so+k];
+      if(p.skip) p.skip[dofs+k]=p.skip[so+k];
+    }
+  };
+  const h1=has(0),h2=has(1),h3=has(2);
+  let did=false, maxPage=0;
+  if(target===1){                       // ── Page 2 ──
+    copyPage(0,1); did=true; maxPage=1;
+  } else if(target===2){                // ── Page 3 ──
+    if(h1){
+      if(!h2){ copyPage(0,1); copyPage(0,2); }   // page 2 empty → fill 2 and 3 from 1
+      else   { copyPage(0,2); }                  // 1&2 present → copy 1 → 3
+      did=true; maxPage=2;
+    }
+  } else if(target===3){                // ── Page 4 ──
+    if(h1){
+      if(!h2){ copyPage(0,1); copyPage(0,2); copyPage(0,3); }  // only page 1 → fill 2,3,4
+      else if(!h3){ copyPage(0,2); copyPage(1,3); }            // 1&2 → 3=1, 4=2
+      else { copyPage(1,3); }                                  // 1,2,3 → 4=2
+      did=true; maxPage=3;
+    }
+  }
+  if(did){
+    p.seqEnd=Math.max(p.seqEnd, PAGE_OFFSET[maxPage]+16);
+    patternDirty=true;
+    partPage[activePart]=target;
+    buildSteps();buildRangeBar();buildParts();
+    if(typeof markSaveDirty==='function') markSaveDirty();
+    setStatus('Copied pages → page '+(target+1));
+  } else {
+    setStatus('Nothing on page 1 to copy');
+  }
+}
+
 function setPage(i){
   if(saveBrowsing){patternPage=i;buildSteps();buildRangeBar();return;}
+  if(shiftHeld && currentMode==='step'){ applyMutePageCopy(i); return; }
   if(currentMode==='key'){
     if(i===0||i===1){
       keyOctave=Math.max(0,Math.min(10,keyOctave+(i===0?-1:1)));
