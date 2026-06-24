@@ -961,11 +961,13 @@ function restoreParts(snapshot){
 }
 
 function savePattern(){
+  if(typeof undoCheckpoint==='function') undoCheckpoint(); // so Solo+Page1 can restore the slot's prior contents
   patternStore[activeBank][activePattern]=snapshotParts();
   patternDirty=false;
   setStatus('Saved → Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
   buildPatternGrids();
   buildParts();
+  if(typeof markSaveDirty==='function') markSaveDirty();
 }
 
 function loadPattern(bank,pattern,immediate,downbeatTime){
@@ -3522,7 +3524,20 @@ function buildRangeBar(){
     const div=document.createElement('div');div.className=cls;
     div.innerHTML=`<span>${RANGE_LABELS[i]}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
     div.dataset.pressable='1';
-    div.addEventListener('click',()=>setPage(i));
+    // On touch, a second simultaneous finger (while Solo/Mute is held with the
+    // first) often fires NO synthesized click on iOS, so the modifier+page
+    // combos (Solo+Page1 = undo/redo, Mute+page = page copy) would be lost.
+    // Handle those directly on touchstart and suppress the ghost click.
+    let _comboTs=0;
+    div.addEventListener('touchstart',e=>{
+      if((ctrlHeld && i===0) || (shiftHeld && currentMode==='step')){
+        e.preventDefault();
+        _comboTs=Date.now();
+        setPage(i);
+        pressOn(div); setTimeout(()=>pressOff(div),120);
+      }
+    },{passive:false});
+    div.addEventListener('click',()=>{ if(Date.now()-_comboTs<600) return; setPage(i); });
     bar.appendChild(div);
   }
 }
@@ -3580,6 +3595,7 @@ function applyMutePageCopy(target){
 
 function setPage(i){
   if(saveBrowsing){patternPage=i;buildSteps();buildRangeBar();return;}
+  if(ctrlHeld && i===0){ undoRedoToggle(); return; } // Solo + Page 1 = undo / redo
   if(shiftHeld && currentMode==='step'){ applyMutePageCopy(i); return; }
   if(currentMode==='key'){
     if(i===0||i===1){
@@ -5507,6 +5523,7 @@ function beginSaveHold(){
 
 function saveToSlot(patIdx){
   if(!saveSnapshot) return;
+  if(saveClickCount===0 && typeof undoCheckpoint==='function') undoCheckpoint(); // checkpoint before the first overwrite so Solo+Page1 restores it
   patternStore[activeBank][patIdx]=saveSnapshot;
   saveClickCount++;
   if(activeBank===saveOrigBank&&patIdx===saveOrigPattern) patternDirty=false;
@@ -5522,6 +5539,8 @@ function endSaveHold(){
   // Quick tap with no destination chosen: cancel, don't save
   if(saveClickCount===0){
     setStatus('Save cancelled — no destination chosen');
+  } else if(typeof undoCommit==='function'){
+    undoCommit();   // refresh undo baseline + persist the new pattern store
   }
   saveSnapshot=null;
   saveBrowsing=false;
@@ -5551,6 +5570,7 @@ document.getElementById('ctrl-clear').addEventListener('mousedown',()=>{
 // SCALE/ROOT, octaves within LO..HI, velocity within MIN..MAX, gate within
 // MIN..MAX. The actual fill runs on Random-button RELEASE (see handlers).
 function randomFillPart(){
+  if(typeof undoCheckpoint==='function') undoCheckpoint(); // so Solo+Page1 restores the pre-random sequence
   const p=parts[activePart];
   const lo=p.seqStart-1, hi=p.seqEnd-1;
   const sc=SCALES[randomCfg.scale];
@@ -5763,6 +5783,7 @@ document.getElementById('ctrl-clear').addEventListener('click',()=>{
     return;
   }
   {
+    if(typeof undoCheckpoint==='function') undoCheckpoint(); // so Solo+Page1 restores the cleared steps
     parts[activePart].steps=Array(64).fill(false);
     parts[activePart].stepParams=Array.from({length:64},()=>defaultStepParams());
     parts[activePart].stepSeen=Array(64).fill(false);
@@ -6040,7 +6061,64 @@ async function idbDel(key){
   try{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).delete(key); }catch(e){}
 }
 
-function markSaveDirty(){ _saveDirty=true; }
+function markSaveDirty(){ _saveDirty=true; noteUndoEdit(); }
+
+// ── Single-level undo / redo (Solo + Page 1) ───────────────────────────
+// One level, A/B toggle: first Solo+Page1 undoes, the next redoes, and so on.
+// Two ways a state gets captured as the undo target:
+//   • undoCheckpoint() is called *before* a discrete destructive action
+//     (Random, Save) — this snapshots the exact pre-action state, so it is
+//     always reliable regardless of timing.
+//   • noteUndoEdit() groups ordinary edits: the state from before a burst of
+//     edits becomes the target once the burst settles (~500ms).
+// Snapshots are whole-state (serializeAll), so undo restores the live sequence
+// AND the saved pattern slots.
+var _undoSnap=null, _redoSnap=null, _undoIdle=null, _undoIsUndone=false, _undoApplying=false, _undoGroupOpen=false, _undoTimer=null;
+function _undoStr(){ try{ return JSON.stringify(serializeAll()); }catch(e){ return null; } }
+function _undoSettle(){
+  clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(function s(){
+    if(paramDragActive){ _undoTimer=setTimeout(s,200); return; } // don't serialize mid-gesture
+    _undoGroupOpen=false;
+    const snap=_undoStr(); if(snap!=null) _undoIdle=snap;        // burst settled → new baseline
+  },500);
+}
+function noteUndoEdit(){          // called AFTER an edit (groups a burst into one step)
+  if(_undoApplying||!_restoreDone) return;
+  if(!_undoGroupOpen){
+    _undoSnap=_undoIdle;          // state before this burst becomes the undo target
+    _redoSnap=null; _undoIsUndone=false; _undoGroupOpen=true;
+  }
+  _undoSettle();
+}
+function undoCheckpoint(){        // call BEFORE a discrete destructive action (Random / Save / etc.)
+  if(_undoApplying||!_restoreDone) return;
+  const snap=_undoStr(); if(snap==null) return;
+  _undoSnap=snap;                 // exact pre-action state — reliable
+  _undoIdle=snap; _redoSnap=null; _undoIsUndone=false;
+  _undoGroupOpen=true;            // armed, so the action's own markSaveDirty won't overwrite the target
+  _undoSettle();
+}
+function undoCommit(){            // after a multi-write action: refresh baseline + flag autosave, keep the undo target
+  if(_undoApplying||!_restoreDone) return;
+  clearTimeout(_undoTimer); _undoGroupOpen=false;
+  const snap=_undoStr(); if(snap!=null) _undoIdle=snap;
+  _saveDirty=true;
+}
+function undoRedoToggle(){
+  if(_undoIsUndone){                              // REDO
+    if(_redoSnap==null){ setStatus('Nothing to redo'); return; }
+    _undoApplying=true; try{ deserializeAll(JSON.parse(_redoSnap)); }catch(e){} _undoApplying=false;
+    _undoIsUndone=false; _undoGroupOpen=false; _undoIdle=_undoStr(); setStatus('Redo'); return;
+  }
+  clearTimeout(_undoTimer); _undoGroupOpen=false; // UNDO
+  if(_undoSnap==null){ setStatus('Nothing to undo'); return; }
+  const live=_undoStr();
+  if(live===_undoSnap){ setStatus('Nothing to undo'); return; }
+  _redoSnap=live;
+  _undoApplying=true; try{ deserializeAll(JSON.parse(_undoSnap)); }catch(e){} _undoApplying=false;
+  _undoIsUndone=true; _undoIdle=_undoStr(); setStatus('Undo');
+}
 function persistNow(){    // write full state to the store(s)
   if(!_restoreDone) return;   // never overwrite the saved data before restore finishes
   try{
@@ -6544,6 +6622,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   }catch(e){}
   _restoreDone=true;   // now safe to let autosave write
   _saveDirty=false;    // don't immediately re-persist the just-restored state
+  _undoIdle=_undoStr(); // baseline for undo (the restored/default starting state)
   refreshAutoSaveBtn();
   // Verify storage actually persists. Some setups (opening the file directly via
   // file://, or private/incognito mode) block IndexedDB *and* localStorage, in
