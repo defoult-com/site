@@ -4095,18 +4095,37 @@ window.SoundEngine={
     // ── MONO voice mode ───────────────────────────────────────────────
     // If this part is monophonic, fade the previous voice's output to silence
     // exactly as this one starts, so only one voice ever sounds at a time.
+    //
+    // This fade must be click-free on every platform. We deliberately AVOID
+    // two things that caused clicks on mobile (Safari/WebKit) but not desktop:
+    //   1. cancelAndHoldAtTime() — buggy / unevenly implemented on mobile, it
+    //      can jump the gain to a wrong value before ramping (audible click).
+    //   2. reading AudioParam.value — that returns the value at the CURRENT
+    //      time, not at the future `fadeStart` the scheduler targets, so the
+    //      ramp's anchor point is wrong.
+    // Instead we compute the previous voice's `out` gain analytically: every
+    // voice's `out` ramps linearly 0→1 over its attack and then holds at
+    // exactly 1, so its value at any time is known. We anchor that exact value
+    // with setValueAtTime, then ramp down — deterministic on all platforms.
     if(p.mono!==false && ch>=0 && ch<8){
       const prev=_monoVoice[ch];
       if(prev && prev.out && prev.end>when){
         const pg=prev.out.gain;
-        const fadeStart=Math.max(prev.when||0, when-0.006); // ~6ms click-free fade
+        const FADE=0.008; // 8ms — click-free even with larger mobile audio buffers
+        const fadeStart=Math.max(prev.when||0, when-FADE);
+        // Exact value of the previous voice's `out` gain at fadeStart.
+        let v0=1;
+        const pa=prev.attack||0;
+        if(pa>0 && fadeStart < (prev.when||0)+pa){
+          v0=Math.max(0,Math.min(1,(fadeStart-(prev.when||0))/pa));
+        }
         try{
-          if(pg.cancelAndHoldAtTime) pg.cancelAndHoldAtTime(fadeStart);
-          else { pg.cancelScheduledValues(fadeStart); pg.setValueAtTime(pg.value, fadeStart); }
+          pg.cancelScheduledValues(fadeStart);
+          pg.setValueAtTime(v0, fadeStart);
           pg.linearRampToValueAtTime(0.0001, when);
         }catch(e){}
       }
-      _monoVoice[ch]={out, when, end:when+decay+0.1};
+      _monoVoice[ch]={out, when, attack, end:when+decay+0.1};
     }
   // One shared envelope node for voices that want it
     const gain=ctx.createGain();gain.connect(out);gain.gain.setValueAtTime(vol,when);
