@@ -405,11 +405,14 @@
       </div>
       <div class="sound-editor-body" id="se-body">
         <div class="se-row"><div class="se-label">Type</div><div class="se-type-row" id="se-type-row"></div></div>
+        <div class="se-row"><div class="se-label">Voice</div><div class="se-type-btn" id="se-mono" style="cursor:pointer;flex:0 0 auto;padding:2px 12px;">MONO</div><div class="se-val" id="se-mono-desc" style="flex:1;text-align:left;color:var(--seq-text-dim);">one voice at a time</div></div>
         <div class="se-row"><div class="se-label">Volume</div><input type="range" class="se-slider" id="se-vol" min="0" max="1" step="0.01" value="0.8"><div class="se-val" id="se-vol-val">80%</div></div>
-        <div class="se-row"><div class="se-label">Tune / Freq</div><input type="range" class="se-slider" id="se-tune" min="20" max="800" step="1" value="60"><div class="se-val" id="se-tune-val">60 Hz</div></div>
+        <div class="se-row" id="se-row-tune"><div class="se-label">Tune / Freq</div><input type="range" class="se-slider" id="se-tune" min="20" max="800" step="1" value="60"><div class="se-val" id="se-tune-val">60 Hz</div></div>
         <div class="se-row"><div class="se-label">Attack</div><input type="range" class="se-slider" id="se-attack" min="0" max="0.2" step="0.001" value="0"><div class="se-val" id="se-attack-val">0 ms</div></div>
         <div class="se-row"><div class="se-label">Decay</div><input type="range" class="se-slider" id="se-decay" min="0.02" max="2" step="0.01" value="0.5"><div class="se-val" id="se-decay-val">0.50s</div></div>
-        <div class="se-row"><div class="se-label">Tone</div><input type="range" class="se-slider" id="se-tone" min="0" max="1" step="0.01" value="0.5"><div class="se-val" id="se-tone-val">50%</div></div>
+        <div class="se-row" id="se-row-tone"><div class="se-label" id="se-tone-label">Tone</div><input type="range" class="se-slider" id="se-tone" min="0" max="1" step="0.01" value="0.5"><div class="se-val" id="se-tone-val">50%</div></div>
+        <div class="se-row" id="se-row-det2" style="display:none;"><div class="se-label">Tune 2</div><input type="range" class="se-slider" id="se-det2" min="-24" max="24" step="1" value="0"><div class="se-val" id="se-det2-val">0</div></div>
+        <div class="se-row" id="se-row-det3" style="display:none;"><div class="se-label">Tune 3</div><input type="range" class="se-slider" id="se-det3" min="-24" max="24" step="1" value="0"><div class="se-val" id="se-det3-val">0</div></div>
         <!-- ── Master distortion + EQ (applies to ALL internal sounds) ── -->
         <div style="border-top:1px solid var(--seq-border);margin:6px 0 2px;"></div>
         <div class="se-row">
@@ -485,11 +488,11 @@ const STEP_KEYS=['Q','W','E','R','T','Y','U','I','A','S','D','F','G','H','J','K'
 const RANGE_LABELS=['1–16','17–32','33–48','49–64'];
 const RANGE_KEYS=['Z','X','C','V'];
 const PAGE_OFFSET=[0,16,32,48];
-const DRUM_TYPES=['kick','snare','tom','rim','clap','hihat','fm','sample'];
-const DRUM_NAMES=['Kick','Snare','Tom','Perc','Clap','Cymbal','FM','Sample'];
+const DRUM_TYPES=['kick','snare','tom','rim','clap','hihat','fm','chrd','sample'];
+const DRUM_NAMES=['Kick','Snare','Tom','Perc','Clap','Cymbal','FM','Chord','Sample'];
 // Compact names for the small part-label under each part number (button sizes
 // unchanged). DRUM_NAMES above is still used for the sound-editor buttons/title.
-const DRUM_NAMES_SHORT=['Kick','Snare','Tom','PERC','Clap','CYM','FM','Smpl'];
+const DRUM_NAMES_SHORT=['Kick','Snare','Tom','PERC','Clap','CYM','FM','CHRD','Smpl'];
 const SNAP_POINTS_END=[16,32,48,64]; const MIN_GAP=15;
 // Bar-start snap points: the four bar starts that stay below seqEnd.
 function snapPointsForStart(seqEnd){return [1,17,33,49].filter(p=>p<=seqEnd);}
@@ -525,7 +528,7 @@ const DEFAULTS=[
   {type:'clap',vol:0.75,freq:300,attack:0,decay:0.15,tone:0.7},
   {type:'hihat',vol:0.6,freq:800,attack:0,decay:0.06,tone:0.8},
   {type:'fm',vol:0.7,freq:220,attack:0,decay:0.3,tone:0.5},
-  {type:'sample',vol:0.8,freq:600,attack:0,decay:0.3,tone:0.5},
+  {type:'chrd',vol:0.5,freq:220,attack:0.005,decay:0.6,tone:0.7,detune2:0,detune3:0},
 ];
 
 // Default step params factory (the params attached to each step).
@@ -556,6 +559,12 @@ const parts=DEFAULTS.map(d=>({
   // when toggled off, so re-activating a "seen" step restores them instead of
   // resetting to the part's step-entry defaults.
   stepSeen:Array(64).fill(false),
+  // Voice mode: true = MONO (one voice at a time, like a monophonic synth —
+  // a new note cuts the previous one), false = POLY (overlapping voices).
+  // Part of the (global) sound config, default MONO.
+  mono:true,
+  // CHRD synth: OSC2/OSC3 detune in semitones (-24..+24). Ignored by other types.
+  detune2:0, detune3:0,
   seqStart:1,seqEnd:16,dirIndex:0,speedIndex:DEFAULT_SPEED_IDX,swing:0,seqOffset:0,midiDly:0,midiDlyTime:DEFAULT_DLY_TIME_IDX,dlyFb:0,dlyPitch:0,muted:false,soloed:false,...d
 }));
 // seqOffset shifts all active steps forward/backward within the loop, wrapping at boundaries
@@ -926,7 +935,7 @@ function restoreParts(snapshot){
     const keepMuted=parts[i].muted, keepSoloed=parts[i].soloed;
     // Preserve the GLOBAL sound config — never let a pattern change the chosen
     // sound (covers old snapshots/projects that may still contain these keys).
-    const keepSound={type:parts[i].type,vol:parts[i].vol,freq:parts[i].freq,attack:parts[i].attack,decay:parts[i].decay,tone:parts[i].tone};
+    const keepSound={type:parts[i].type,vol:parts[i].vol,freq:parts[i].freq,attack:parts[i].attack,decay:parts[i].decay,tone:parts[i].tone,mono:parts[i].mono,detune2:parts[i].detune2,detune3:parts[i].detune3};
     const {ctrl,type,vol,freq,attack,decay,tone,...partData}=saved;
     Object.assign(parts[i],partData);
     parts[i].muted=keepMuted; parts[i].soloed=keepSoloed;
@@ -1200,6 +1209,26 @@ function stopSchedClock(){
   if(playInterval){ clearInterval(playInterval); playInterval=null; }
 }
 let shiftHeld=false,ctrlHeld=false,altHeld=false,triggerHeld=false;
+
+// ── Shared pointer-drag dispatcher ──────────────────────────────────────
+// Draggable display cells used to each attach their own mousemove/mouseup/
+// touchmove/touchend listeners to `document` every time their panel rebuilt,
+// and never removed them — so over a session hundreds of stale listeners piled
+// up and fired on every pointer move, burdening the main thread (which starves
+// the audio scheduler → crackle). Instead, ONE set of document listeners is
+// installed once here; a cell registers its move/end callbacks via beginDrag()
+// on pointer-down, and they are cleared on release. Only one drag is ever
+// active at a time (a single pointer), so this is behaviour-identical.
+const _activeDrag={fn:null,end:null,touch:false,tid:0};
+function beginDrag(isTouch,tid,onMove,onEnd){ _activeDrag.fn=onMove; _activeDrag.end=onEnd||null; _activeDrag.touch=!!isTouch; _activeDrag.tid=tid; }
+function _endActiveDrag(e){ const end=_activeDrag.end; _activeDrag.fn=null; _activeDrag.end=null; if(end) end(e); }
+(function installDragDispatcher(){
+  document.addEventListener('mousemove',e=>{ if(_activeDrag.fn&&!_activeDrag.touch) _activeDrag.fn(e.clientY,e); });
+  document.addEventListener('mouseup',e=>{ if(_activeDrag.fn&&!_activeDrag.touch) _endActiveDrag(e); });
+  document.addEventListener('touchmove',e=>{ if(!_activeDrag.fn||!_activeDrag.touch) return; const t=Array.prototype.find.call(e.touches,x=>x.identifier===_activeDrag.tid); if(!t) return; e.preventDefault(); _activeDrag.fn(t.clientY,e); },{passive:false});
+  document.addEventListener('touchend',e=>{ if(_activeDrag.fn&&_activeDrag.touch&&Array.prototype.some.call(e.changedTouches,x=>x.identifier===_activeDrag.tid)) _endActiveDrag(e); });
+  document.addEventListener('touchcancel',e=>{ if(_activeDrag.fn&&_activeDrag.touch) _endActiveDrag(e); });
+})();
 
 // MIDI input state
 let midiAccess=null,midiInputPort=null,midiInChannel=0;
@@ -1869,33 +1898,17 @@ function showStepParams(abs){
       if(sp[def.key]) cell.classList.add('cc-active');
     } else {
       // drag to change
-      let sY=0,sV=0,drag=false;
-      cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();});
-      document.addEventListener('mousemove',e=>{
-        if(!drag)return;
-        const delta=Math.round((sY-e.clientY)/def.pxPerStep);
+      let sY=0,sV=0;
+      const _mv=cy=>{
+        const delta=Math.round((sY-cy)/def.pxPerStep);
         const nv=Math.max(def.min,Math.min(def.max,sV+delta));
         if(nv!==sp[def.key]){sp[def.key]=nv;heldStepParamChanged=true;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
         const el=document.getElementById('sp-cell-'+idx+'-val');
         if(el) el.textContent=def.fmt(nv);
         if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
-      });
-      document.addEventListener('mouseup',()=>{drag=false;});
-      let tid=null;
-      cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=sp[def.key];e.preventDefault();},{passive:false});
-      document.addEventListener('touchmove',e=>{
-        if(!drag)return;
-        const t=Array.from(e.touches).find(x=>x.identifier===tid);
-        if(!t)return;
-        e.preventDefault();
-        const delta=Math.round((sY-t.clientY)/def.pxPerStep);
-        const nv=Math.max(def.min,Math.min(def.max,sV+delta));
-        if(nv!==sp[def.key]){sp[def.key]=nv;heldStepParamChanged=true;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
-        const el=document.getElementById('sp-cell-'+idx+'-val');
-        if(el) el.textContent=def.fmt(nv);
-        if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
-      },{passive:false});
-      document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+      };
+      cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+      cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=sp[def.key];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     }
     // Scroll-wheel adjust for this step-param cell.
     cell._wheelAdjust=(dir)=>{
@@ -1960,33 +1973,17 @@ function showPartDefaults(pi){
       updatePartDefGrey(sp);
     });
 
-    let sY=0,sV=0,drag=false;
-    cell.addEventListener('mousedown',e=>{drag=true;sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      const delta=Math.round((sY-e.clientY)/def.pxPerStep);
+    let sY=0,sV=0;
+    const _mv=cy=>{
+      const delta=Math.round((sY-cy)/def.pxPerStep);
       const nv=Math.max(def.min,Math.min(def.max,sV+delta));
       if(nv!==sp[def.key]){sp[def.key]=nv;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
       const el=document.getElementById('pd-cell-'+idx+'-val');
       if(el) el.textContent=def.fmt(nv);
       if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
-    });
-    document.addEventListener('mouseup',()=>{drag=false;});
-    let tid=null;
-    cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=sp[def.key];e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      const delta=Math.round((sY-t.clientY)/def.pxPerStep);
-      const nv=Math.max(def.min,Math.min(def.max,sV+delta));
-      if(nv!==sp[def.key]){sp[def.key]=nv;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
-      const el=document.getElementById('pd-cell-'+idx+'-val');
-      if(el) el.textContent=def.fmt(nv);
-      if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    };
+    cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=sp[def.key];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{
       const nv=Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
       if(nv!==sp[def.key]){ sp[def.key]=nv; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
@@ -2026,24 +2023,10 @@ function showVelMixer(){
     const valEl=()=>document.getElementById('vmix-'+pi+'-val');
     const paint=()=>{const el=valEl();if(el){el.textContent=midiVel[pi];el.style.color=midiVel[pi]===100?'':'var(--seq-yellow)';el.style.opacity=midiVel[pi]===0?0.35:1;}};
     cell.addEventListener('dblclick',()=>{midiVel[pi]=100;paint();});
-    let sY=0,sV=0,drag=false,tid=null;
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=midiVel[pi];paramDragActive=true;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      midiVel[pi]=Math.max(0,Math.min(100,sV+Math.round((sY-e.clientY)/3)));
-      paint();
-    });
-    document.addEventListener('mouseup',()=>{drag=false;});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=midiVel[pi];e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      midiVel[pi]=Math.max(0,Math.min(100,sV+Math.round((sY-t.clientY)/3)));
-      paint();
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    let sY=0,sV=0;
+    const _mv=cy=>{ midiVel[pi]=Math.max(0,Math.min(100,sV+Math.round((sY-cy)/3))); paint(); };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=midiVel[pi];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=midiVel[pi];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{ midiVel[pi]=Math.max(0,Math.min(100,midiVel[pi]+dir)); paint(); };
     grid.appendChild(cell);
     paint();
@@ -2150,24 +2133,10 @@ function showCtrlPanel(){
       if(lockAbs>=0){ const s=ctrlLocks[activePart][lockAbs]; if(s){delete s[idx];} markStepLockDot(activePart,lockAbs); paint(); }
       else { ctrlCCVals[activePart][idx]=64; sendCtrlCC(idx); paint(); }
     });
-    let sY=0,sV=0,drag=false,tid=null;
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=shownVal();paramDragActive=true;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-e.clientY)/2)));
-      if(nv!==shownVal()) applyVal(nv);
-    });
-    document.addEventListener('mouseup',()=>{drag=false;});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=shownVal();e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-t.clientY)/2)));
-      if(nv!==shownVal()) applyVal(nv);
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    let sY=0,sV=0;
+    const _mv=cy=>{ const nv=Math.max(0,Math.min(127,sV+Math.round((sY-cy)/2))); if(nv!==shownVal()) applyVal(nv); };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=shownVal();paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=shownVal();e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,shownVal()+dir)); if(nv!==shownVal()) applyVal(nv); };
     grid.appendChild(cell);
     paint();
@@ -2205,31 +2174,58 @@ function recordCtrlLock(idx,val){
 //                                  row2 ATTACK DECAY TUNE TONE.
 // ════════════════════════════════════════════════════════════════════
 const _sndPct=v=>Math.round(v*100)+'%';
-const SOUND_CTRL_DEFS=[
-  {label:'VOLUME',  min:0,   max:1,   get:p=>p.vol,                              set:(pi,v)=>{parts[pi].vol=v;},      def:p=>DEFAULTS[DRUM_TYPES.indexOf(p.type)].vol,         fmt:_sndPct},
-  {label:'PAN',     min:-1,  max:1,   get:p=>(typeof p.pan==='number'?p.pan:0),  set:(pi,v)=>setPartPan(pi,v),        def:_=>0,                                                fmt:v=>{if(Math.abs(v)<0.01)return'C';const r=Math.round(Math.abs(v)*100);return (v<0?'L':'R')+r;},
+const _sndSemi=v=>{const s=Math.round(v); return (s>0?'+':'')+s;};
+// Per-TYPE factory defaults (used for the CTRL double-click reset). Keyed by
+// type name so it stays correct regardless of which part uses which type.
+const TYPE_DEFAULTS={
+  kick:{vol:0.9,freq:60,attack:0,decay:0.5,tone:0.3},
+  snare:{vol:0.8,freq:180,attack:0,decay:0.18,tone:0.6},
+  tom:{vol:0.8,freq:90,attack:0,decay:0.3,tone:0.4},
+  rim:{vol:0.7,freq:400,attack:0,decay:0.08,tone:0.5},
+  clap:{vol:0.75,freq:300,attack:0,decay:0.15,tone:0.7},
+  hihat:{vol:0.6,freq:800,attack:0,decay:0.06,tone:0.8},
+  fm:{vol:0.7,freq:220,attack:0,decay:0.3,tone:0.5},
+  chrd:{vol:0.5,freq:220,attack:0.005,decay:0.6,tone:0.7,detune2:0,detune3:0},
+  sample:{vol:0.8,freq:600,attack:0,decay:0.3,tone:0.5},
+};
+function typeDefaults(t){ return TYPE_DEFAULTS[t]||TYPE_DEFAULTS.kick; }
+// Shared row-1 controls (identical for every type).
+const _SND_ROW1=[
+  {label:'VOLUME',  min:0,   max:1,   get:p=>p.vol,                              set:(pi,v)=>{parts[pi].vol=v;},      def:p=>typeDefaults(p.type).vol,   fmt:_sndPct},
+  {label:'PAN',     min:-1,  max:1,   get:p=>(typeof p.pan==='number'?p.pan:0),  set:(pi,v)=>setPartPan(pi,v),        def:_=>0,                          fmt:v=>{if(Math.abs(v)<0.01)return'C';const r=Math.round(Math.abs(v)*100);return (v<0?'L':'R')+r;},
    schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].pan=v; getPartOut(pi); const n=_partPanners[pi]; if(n&&n.pan){ try{n.pan.setValueAtTime(v,when);}catch(e){ try{n.pan.value=v;}catch(_e){} } } }},
-  {label:'REV SND', min:0,   max:1,   get:p=>(p.revSend||0),                     set:(pi,v)=>setPartSend(pi,'rev',v), def:_=>0,                                                fmt:_sndPct,
+  {label:'REV SND', min:0,   max:1,   get:p=>(p.revSend||0),                     set:(pi,v)=>setPartSend(pi,'rev',v), def:_=>0,                          fmt:_sndPct,
    schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].revSend=v; getPartOut(pi); const g=_revSendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
-  {label:'DLY SND', min:0,   max:1,   get:p=>(p.dlySend||0),                     set:(pi,v)=>setPartSend(pi,'dly',v), def:_=>0,                                                fmt:_sndPct,
+  {label:'DLY SND', min:0,   max:1,   get:p=>(p.dlySend||0),                     set:(pi,v)=>setPartSend(pi,'dly',v), def:_=>0,                          fmt:_sndPct,
    schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].dlySend=v; getPartOut(pi); const g=_dlySendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
-  {label:'ATTACK',  min:0,   max:0.2, get:p=>(p.attack||0),                      set:(pi,v)=>{parts[pi].attack=v;},   def:p=>DEFAULTS[DRUM_TYPES.indexOf(p.type)].attack||0,    fmt:v=>Math.round(v*1000)+' ms'},
-  {label:'DECAY',   min:0.02,max:2,   get:p=>p.decay,                            set:(pi,v)=>{parts[pi].decay=v;},    def:p=>DEFAULTS[DRUM_TYPES.indexOf(p.type)].decay,        fmt:v=>v.toFixed(2)+'s'},
-  {label:'TUNE',    min:20,  max:800, get:p=>p.freq,                             set:(pi,v)=>{parts[pi].freq=v;},     def:p=>DEFAULTS[DRUM_TYPES.indexOf(p.type)].freq,         fmt:v=>Math.round(v)+' Hz'},
-  {label:'TONE',    min:0,   max:1,   get:p=>p.tone,                             set:(pi,v)=>{parts[pi].tone=v;},     def:p=>DEFAULTS[DRUM_TYPES.indexOf(p.type)].tone,         fmt:_sndPct},
 ];
+const _SND_ATTACK={label:'ATTACK', min:0,   max:0.2, get:p=>(p.attack||0), set:(pi,v)=>{parts[pi].attack=v;}, def:p=>typeDefaults(p.type).attack||0, fmt:v=>Math.round(v*1000)+' ms'};
+const _SND_DECAY ={label:'DECAY',  min:0.02,max:2,   get:p=>p.decay,        set:(pi,v)=>{parts[pi].decay=v;},  def:p=>typeDefaults(p.type).decay,    fmt:v=>v.toFixed(2)+'s'};
+const _SND_TUNE  ={label:'TUNE',   min:20,  max:800, get:p=>p.freq,         set:(pi,v)=>{parts[pi].freq=v;},   def:p=>typeDefaults(p.type).freq,     fmt:v=>Math.round(v)+' Hz'};
+const _SND_TONE  ={label:'TONE',   min:0,   max:1,   get:p=>p.tone,         set:(pi,v)=>{parts[pi].tone=v;},   def:p=>typeDefaults(p.type).tone,     fmt:_sndPct};
+// Standard row-2: ATTACK DECAY TUNE TONE.
+const SOUND_CTRL_DEFS=[..._SND_ROW1, _SND_ATTACK, _SND_DECAY, _SND_TUNE, _SND_TONE];
+// CHRD row-2: FILTER (low-pass = tone), DECAY, TUNE 2 (osc2 detune), TUNE 3 (osc3 detune).
+const SOUND_CTRL_DEFS_CHRD=[..._SND_ROW1,
+  {label:'FILTER', min:0,   max:1,   get:p=>p.tone,            set:(pi,v)=>{parts[pi].tone=v;},                  def:p=>typeDefaults(p.type).tone, fmt:_sndPct},
+  _SND_DECAY,
+  {label:'TUNE 2', min:-24, max:24,  get:p=>(p.detune2||0),    set:(pi,v)=>{parts[pi].detune2=Math.round(v);},   def:_=>0,                         fmt:_sndSemi},
+  {label:'TUNE 3', min:-24, max:24,  get:p=>(p.detune3||0),    set:(pi,v)=>{parts[pi].detune3=Math.round(v);},   def:_=>0,                         fmt:_sndSemi},
+];
+// Pick the right CTRL defs for a part based on its sound type.
+function sndDefs(pi){ return (parts[pi]&&parts[pi].type==='chrd')?SOUND_CTRL_DEFS_CHRD:SOUND_CTRL_DEFS; }
 function sndToKnob(def,v){ return Math.max(0,Math.min(127, Math.round((v-def.min)/(def.max-def.min)*127))); }
 function sndFromKnob(def,k){ return def.min + (k/127)*(def.max-def.min); }
 // Live knob mirror (0-127) per part — always re-derived from the part fields
 // when the panel is shown, so Sound-editor edits stay in sync.
-const soundLive=Array.from({length:8},(_,i)=>SOUND_CTRL_DEFS.map(d=>sndToKnob(d,d.get(parts[i]))));
+const soundLive=Array.from({length:8},(_,i)=>sndDefs(i).map(d=>sndToKnob(d,d.get(parts[i]))));
 // Per-part per-step sound parameter locks: soundCtrlLocks[part][abs]={idx:knob}
 const soundCtrlLocks=Array.from({length:8},()=>({}));
 const soundCtrlSaveStore=Array(8).fill(null);
 function getSoundLock(part,abs,idx){ const s=soundCtrlLocks[part][abs]; return (s&&s[idx]!==undefined)?s[idx]:undefined; }
 function setSoundLock(part,abs,idx,val){ if(!soundCtrlLocks[part][abs]) soundCtrlLocks[part][abs]={}; soundCtrlLocks[part][abs][idx]=val; }
 function soundStepHasLocks(part,abs){ const s=soundCtrlLocks[part][abs]; return !!s && Object.keys(s).length>0; }
-function syncSoundLiveFromParts(pi){ const p=parts[pi]; SOUND_CTRL_DEFS.forEach((d,idx)=>{ soundLive[pi][idx]=sndToKnob(d,d.get(p)); }); }
+function syncSoundLiveFromParts(pi){ const p=parts[pi]; sndDefs(pi).forEach((d,idx)=>{ soundLive[pi][idx]=sndToKnob(d,d.get(p)); }); }
 // Live automation: write a sound lock onto the currently-playing step.
 function recordSoundLock(idx,knob){
   const p=parts[activePart];
@@ -2245,7 +2241,7 @@ function playSoundLocks(pi, shiftedAbs, fireAt){
   const locks=soundCtrlLocks[pi][shiftedAbs];
   if(!locks) return;
   for(const k in locks){
-    const idx=+k, knob=locks[k], def=SOUND_CTRL_DEFS[idx];
+    const idx=+k, knob=locks[k], def=sndDefs(pi)[idx];
     if(!def) continue;
     const v=sndFromKnob(def,knob);
     // FX params (pan/rev/dly) use SHARED per-part nodes, so schedule them at the
@@ -2261,14 +2257,14 @@ function playSoundLocks(pi, shiftedAbs, fireAt){
 }
 function clearSoundCtrlPart(pi){
   for(const k in soundCtrlLocks[pi]) delete soundCtrlLocks[pi][k];
-  SOUND_CTRL_DEFS.forEach((d,idx)=>{ const dv=d.def(parts[pi]); d.set(pi,dv); soundLive[pi][idx]=sndToKnob(d,dv); });
+  sndDefs(pi).forEach((d,idx)=>{ const dv=d.def(parts[pi]); d.set(pi,dv); soundLive[pi][idx]=sndToKnob(d,dv); });
 }
 function saveSoundCtrlPart(pi){ syncSoundLiveFromParts(pi); soundCtrlSaveStore[pi]={ locks:JSON.parse(JSON.stringify(soundCtrlLocks[pi])), live:soundLive[pi].slice() }; }
 function reloadSoundCtrlPart(pi){
   const s=soundCtrlSaveStore[pi]; if(!s) return false;
   for(const k in soundCtrlLocks[pi]) delete soundCtrlLocks[pi][k];
   Object.assign(soundCtrlLocks[pi], JSON.parse(JSON.stringify(s.locks)));
-  SOUND_CTRL_DEFS.forEach((d,idx)=>{ const knob=s.live[idx]; soundLive[pi][idx]=knob; d.set(pi, sndFromKnob(d,knob)); });
+  sndDefs(pi).forEach((d,idx)=>{ const knob=s.live[idx]; soundLive[pi][idx]=knob; d.set(pi, sndFromKnob(d,knob)); });
   return true;
 }
 // DRUM MACHINE variant of the CTRL panel — mirrors showCtrlPanel but edits the
@@ -2281,12 +2277,14 @@ function showSoundCtrlPanel(){
   const lockAbs=(heldStepAbs!==-1)?heldStepAbs:-1;
   const soundShort=DRUM_NAMES_SHORT[DRUM_TYPES.indexOf(parts[activePart].type)]||('PART '+(activePart+1));
   if(lbl) lbl.textContent=lockAbs>=0?('SND LOCK \u2014 STEP '+(lockAbs+1)):('SOUND CTRL \u2014 '+soundShort);
-  SOUND_CTRL_DEFS.forEach((def,idx)=>{
+  sndDefs(activePart).forEach((def,idx)=>{
     const shownKnob=()=> (lockAbs>=0 ? (getSoundLock(activePart,lockAbs,idx)??soundLive[activePart][idx]) : soundLive[activePart][idx]);
     const isLocked=()=> lockAbs>=0 && getSoundLock(activePart,lockAbs,idx)!==undefined;
-    // At rest the live display shows the EXACT engine value (so defaults read
-    // truthfully, e.g. "60 Hz"); a lock shows the knob-quantised value.
-    const dispStr=()=> lockAbs>=0 ? def.fmt(sndFromKnob(def,shownKnob())) : def.fmt(def.get(parts[activePart]));
+    // Show the knob-quantised value ONLY when this step actually has a lock for
+    // this parameter. With no lock, fall back to the EXACT global engine value —
+    // identical to the unheld display — so an unlocked param reads the same
+    // whether or not a step is held (e.g. "60 Hz", not a quantised "63 Hz").
+    const dispStr=()=> isLocked() ? def.fmt(sndFromKnob(def,shownKnob())) : def.fmt(def.get(parts[activePart]));
     const cell=document.createElement('div');
     cell.className='smd-cell draggable'+(isLocked()?' cc-locked':'');
     cell.title='Drag up/down \u2014 '+def.label;
@@ -2312,24 +2310,11 @@ function showSoundCtrlPanel(){
       if(lockAbs>=0){ const s=soundCtrlLocks[activePart][lockAbs]; if(s){delete s[idx];} markStepLockDot(activePart,lockAbs); paint(); }
       else { const dv=def.def(parts[activePart]); def.set(activePart,dv); soundLive[activePart][idx]=sndToKnob(def,dv); paint(); }
     });
-    let sY=0,sV=0,drag=false,tid=null;
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=shownKnob();paramDragActive=true;cell.classList.add('dragging');e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-e.clientY)/2)));
-      if(nv!==shownKnob()) applyVal(nv);
-    });
-    document.addEventListener('mouseup',()=>{if(drag){drag=false;cell.classList.remove('dragging');}});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=shownKnob();cell.classList.add('dragging');e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-t.clientY)/2)));
-      if(nv!==shownKnob()) applyVal(nv);
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;cell.classList.remove('dragging');}});
+    let sY=0,sV=0;
+    const _mv=cy=>{ const nv=Math.max(0,Math.min(127,sV+Math.round((sY-cy)/2))); if(nv!==shownKnob()) applyVal(nv); };
+    const _end=()=>{ cell.classList.remove('dragging'); };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=shownKnob();paramDragActive=true;cell.classList.add('dragging');e.preventDefault();beginDrag(false,0,_mv,_end);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=shownKnob();cell.classList.add('dragging');e.preventDefault();beginDrag(true,t.identifier,_mv,_end);},{passive:false});
     cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,shownKnob()+dir)); if(nv!==shownKnob()) applyVal(nv); };
     grid.appendChild(cell);
     paint();
@@ -2525,23 +2510,10 @@ function showSettingsPanel(){
         <div class="snap-hint"></div>`;
       const paint=()=>{const el=document.getElementById('ccin-'+idx+'-val');if(el)el.textContent=cellCCs[idx];};
       cell.addEventListener('dblclick',()=>{ const defs=[73,72,74,71,5,84,93,10]; cellCCs[idx]=defs[idx]; paint(); });
-      let sY=0,sV=0,drag=false,tid=null;
-      cell.addEventListener('mousedown',e=>{drag=true;sY=e.clientY;sV=cellCCs[idx];e.preventDefault();});
-      document.addEventListener('mousemove',e=>{
-        if(!drag)return;
-        const nv=Math.max(1,Math.min(127,sV+Math.round((sY-e.clientY)/3)));
-        if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();}
-      });
-      document.addEventListener('mouseup',()=>{drag=false;});
-      cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=cellCCs[idx];e.preventDefault();},{passive:false});
-      document.addEventListener('touchmove',e=>{
-        if(!drag)return;
-        const t=Array.from(e.touches).find(x=>x.identifier===tid);
-        if(!t)return;e.preventDefault();
-        const nv=Math.max(1,Math.min(127,sV+Math.round((sY-t.clientY)/3)));
-        if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();}
-      },{passive:false});
-      document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+      let sY=0,sV=0;
+      const _mv=cy=>{ const nv=Math.max(1,Math.min(127,sV+Math.round((sY-cy)/3))); if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();} };
+      cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=cellCCs[idx];e.preventDefault();beginDrag(false,0,_mv);});
+      cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=cellCCs[idx];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
       cell._wheelAdjust=(dir)=>{ const nv=Math.max(1,Math.min(127,cellCCs[idx]+dir)); if(nv!==cellCCs[idx]){cellCCs[idx]=nv;paint();} };
       grid.appendChild(cell);
     }
@@ -2569,23 +2541,10 @@ function showSettingsPanel(){
         <div class="snap-hint"></div>`;
       const paint=()=>{const el=document.getElementById('ctrlnum-'+idx+'-val');if(el)el.textContent=ctrlCCNums[part][idx];};
       cell.addEventListener('dblclick',()=>{ ctrlCCNums[part][idx]=CTRL_CC_DEFAULTS[idx]; paint(); });
-      let sY=0,sV=0,drag=false,tid=null;
-      cell.addEventListener('mousedown',e=>{drag=true;sY=e.clientY;sV=ctrlCCNums[part][idx];e.preventDefault();});
-      document.addEventListener('mousemove',e=>{
-        if(!drag)return;
-        const nv=Math.max(0,Math.min(127,sV+Math.round((sY-e.clientY)/3)));
-        if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();}
-      });
-      document.addEventListener('mouseup',()=>{drag=false;});
-      cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=ctrlCCNums[part][idx];e.preventDefault();},{passive:false});
-      document.addEventListener('touchmove',e=>{
-        if(!drag)return;
-        const t=Array.from(e.touches).find(x=>x.identifier===tid);
-        if(!t)return;e.preventDefault();
-        const nv=Math.max(0,Math.min(127,sV+Math.round((sY-t.clientY)/3)));
-        if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();}
-      },{passive:false});
-      document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+      let sY=0,sV=0;
+      const _mv=cy=>{ const nv=Math.max(0,Math.min(127,sV+Math.round((sY-cy)/3))); if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();} };
+      cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=ctrlCCNums[part][idx];e.preventDefault();beginDrag(false,0,_mv);});
+      cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=ctrlCCNums[part][idx];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
       cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,ctrlCCNums[part][idx]+dir)); if(nv!==ctrlCCNums[part][idx]){ctrlCCNums[part][idx]=nv;paint();} };
       grid.appendChild(cell);
     }
@@ -2613,24 +2572,10 @@ function showSettingsPanel(){
     ccInput.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
     const paint=()=>{const el=document.getElementById('sset-'+idx+'-val');if(el)el.textContent=getSettingVal(idx);};
     cell.addEventListener('dblclick',()=>{setSettingVal(idx,64);paint();});
-    let sY=0,sV=0,drag=false,tid=null;
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=getSettingVal(idx);paramDragActive=true;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-e.clientY)/2)));
-      if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();}
-    });
-    document.addEventListener('mouseup',()=>{drag=false;});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=getSettingVal(idx);e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      const nv=Math.max(0,Math.min(127,sV+Math.round((sY-t.clientY)/2)));
-      if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();}
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    let sY=0,sV=0;
+    const _mv=cy=>{ const nv=Math.max(0,Math.min(127,sV+Math.round((sY-cy)/2))); if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();} };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=getSettingVal(idx);paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=getSettingVal(idx);e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,getSettingVal(idx)+dir)); if(nv!==getSettingVal(idx)){setSettingVal(idx,nv);paint();} };
     grid.appendChild(cell);
   }
@@ -2660,25 +2605,11 @@ function showKeyPanel(){
     ccInput.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
     const paint=()=>{const el=document.getElementById(spec.id);if(el){el.textContent=spec.fmt(spec.get());}updatePartIndicator();};
     if(spec.reset!==undefined) cell.addEventListener('dblclick',()=>{spec.set(spec.reset);paint();});
-    let sY=0,sV=0,drag=false,tid=null;
+    let sY=0,sV=0;
     const stepPx=spec.stepPx||2;
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;drag=true;sY=e.clientY;sV=spec.get();paramDragActive=true;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{
-      if(!drag)return;
-      const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-e.clientY)/stepPx)));
-      if(nv!==spec.get()){spec.set(nv);paint();}
-    });
-    document.addEventListener('mouseup',()=>{drag=false;});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=spec.get();e.preventDefault();},{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-t.clientY)/stepPx)));
-      if(nv!==spec.get()){spec.set(nv);paint();}
-    },{passive:false});
-    document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
+    const _mv=cy=>{ const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-cy)/stepPx))); if(nv!==spec.get()){spec.set(nv);paint();} };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=spec.get();paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=spec.get();e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{ const nv=Math.max(spec.min,Math.min(spec.max,spec.get()+dir)); if(nv!==spec.get()){spec.set(nv);paint();} };
     return cell;
   }
@@ -2790,7 +2721,7 @@ function getPage(){return partPage[activePart];}
 function absStepFn(s){return PAGE_OFFSET[getPage()]+s;}
 function isPartAudible(i){const any=parts.some(p=>p.soloed);return any?parts[i].soloed:!parts[i].muted;}
 function toggleMute(i){if(parts[i].soloed)parts[i].soloed=false;parts[i].muted=!parts[i].muted;buildParts();buildSteps();setStatus('Part '+(i+1)+' '+(parts[i].muted?'MUTED':'unmuted'));}
-function toggleSolo(i){const was=parts[i].soloed;parts.forEach(p=>p.soloed=false);if(!was){parts[i].soloed=true;parts[i].muted=false;}buildParts();buildSteps();}
+function toggleSolo(i){parts[i].soloed=!parts[i].soloed;if(parts[i].soloed)parts[i].muted=false;buildParts();buildSteps();setStatus('Part '+(i+1)+' '+(parts[i].soloed?'SOLO':'unsoloed'));}
 function clearAllMutes(){const n=parts.filter(p=>p.muted).length;parts.forEach(p=>p.muted=false);buildParts();buildSteps();setStatus(n?('Unmuted all parts ('+n+')'):'No muted parts');}
 function clearAllSolos(){const n=parts.filter(p=>p.soloed).length;parts.forEach(p=>p.soloed=false);buildParts();buildSteps();setStatus(n?('Cleared all solos ('+n+')'):'No soloed parts');}
 
@@ -2894,7 +2825,7 @@ function attachDragHandlers(){
     const cell=document.getElementById('smd-dly-cell');
     const hint=document.getElementById('smd-dly-cell-hint');
     const labelEl=cell?cell.querySelector('.smd-cell-label'):null;
-    let sY=0,sV=0,drag=false;
+    let sY=0,sV=0;
     const PX_AMT=3, PX_TIME=12;
 
     function enterTimeMode(){
@@ -2926,38 +2857,26 @@ function attachDragHandlers(){
       }
     }
 
+    const _end=()=>{ cell.classList.remove('dragging'); leaveTimeMode(); };
     cell.addEventListener('mousedown',e=>{
       if(e.target.tagName==='INPUT') return;
-      drag=true; sY=e.clientY;
+      sY=e.clientY;
       sV=shiftHeld?parts[activePart].midiDlyTime:parts[activePart].midiDly;
       cell.classList.add('dragging');
       if(shiftHeld) enterTimeMode();
       e.preventDefault();
+      beginDrag(false,0,move,_end);
     });
-    document.addEventListener('mousemove',e=>{ if(drag) move(e.clientY); });
-    document.addEventListener('mouseup',()=>{
-      if(drag){ drag=false; cell.classList.remove('dragging'); leaveTimeMode(); }
-    });
-    let tid=null;
     cell.addEventListener('touchstart',e=>{
       if(e.target.tagName==='INPUT') return;
-      const t=e.changedTouches[0];tid=t.identifier;
-      drag=true; sY=t.clientY;
+      const t=e.changedTouches[0];
+      sY=t.clientY;
       sV=shiftHeld?parts[activePart].midiDlyTime:parts[activePart].midiDly;
       cell.classList.add('dragging');
       if(shiftHeld) enterTimeMode();
       e.preventDefault();
+      beginDrag(true,t.identifier,move,_end);
     },{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return;
-      e.preventDefault();
-      move(t.clientY);
-    },{passive:false});
-    document.addEventListener('touchend',e=>{
-      if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){ drag=false;tid=null; cell.classList.remove('dragging'); leaveTimeMode(); }
-    });
     // Scroll-wheel adjust — DLY amount, or Shift = DLY TIME (hidden param).
     cell._wheelAdjust=(dir,shift)=>{
       if(shift){
@@ -2979,7 +2898,7 @@ function attachDragHandlers(){
     const cell=document.getElementById('smd-fb-cell');
     const labelEl=cell?cell.querySelector('.smd-cell-label'):null;
     if(!cell) return;
-    let sY=0,sV=0,drag=false,tid=null;
+    let sY=0,sV=0;
     const PX_FB=3, PX_PITCH=10;
     function enterPitchMode(){
       if(labelEl) labelEl.textContent='PITCH FB';
@@ -3009,33 +2928,26 @@ function attachDragHandlers(){
         }
       }
     }
+    const _end=()=>{ cell.classList.remove('dragging'); leavePitchMode(); };
     cell.addEventListener('mousedown',e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
-      drag=true; sY=e.clientY;
+      sY=e.clientY;
       sV=shiftHeld?(parts[activePart].dlyPitch||0):parts[activePart].dlyFb;
       cell.classList.add('dragging');
       if(shiftHeld) enterPitchMode();
       e.preventDefault();
+      beginDrag(false,0,move,_end);
     });
-    document.addEventListener('mousemove',e=>{ if(drag) move(e.clientY); });
-    document.addEventListener('mouseup',()=>{ if(drag){ drag=false; cell.classList.remove('dragging'); leavePitchMode(); } });
     cell.addEventListener('touchstart',e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
-      const t=e.changedTouches[0];tid=t.identifier;
-      drag=true; sY=t.clientY;
+      const t=e.changedTouches[0];
+      sY=t.clientY;
       sV=shiftHeld?(parts[activePart].dlyPitch||0):parts[activePart].dlyFb;
       cell.classList.add('dragging');
       if(shiftHeld) enterPitchMode();
       e.preventDefault();
+      beginDrag(true,t.identifier,move,_end);
     },{passive:false});
-    document.addEventListener('touchmove',e=>{
-      if(!drag)return;
-      const t=Array.from(e.touches).find(x=>x.identifier===tid);
-      if(!t)return; e.preventDefault(); move(t.clientY);
-    },{passive:false});
-    document.addEventListener('touchend',e=>{
-      if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){ drag=false;tid=null; cell.classList.remove('dragging'); leavePitchMode(); }
-    });
     cell.addEventListener('dblclick',()=>{
       if(shiftHeld){ parts[activePart].dlyPitch=0; enterPitchMode(); }
       else { parts[activePart].dlyFb=0; updateFbDisplay(); }
@@ -3068,16 +2980,12 @@ function attachDragHandlers(){
     v=>v===0?'0':(v>0?'+':'')+v);
 }function attachGenericDrag(cellId,hintId,getV,setV,getMin,getMax,pxPerStep,isStart,doSnap,fmtHint){
   const cell=document.getElementById(cellId);const hint=document.getElementById(hintId);if(!cell)return;
-  let sY=0,sV=0,drag=false;
+  let sY=0,sV=0;
   function apply(raw){const p=parts[activePart];const isRange=(isStart===true||isStart===false)&&doSnap;if(!shiftHeld){if(isStart===true&&doSnap){const pts=snapPointsForStart(p.seqEnd);const s=pts.length?snapNearest(raw,pts):Math.max(1,Math.min(p.seqEnd-MIN_GAP,raw));return Math.max(1,Math.min(p.seqEnd,s));}if(isStart===false&&doSnap){const pts=snapPointsForEnd(p.seqStart);const s=pts.length?snapNearest(raw,pts):Math.max(p.seqStart+MIN_GAP,Math.min(64,raw));return Math.max(p.seqStart,Math.min(64,s));}}if(isStart===true&&isRange)return Math.max(1,Math.min(p.seqEnd,raw));if(isStart===false&&isRange)return Math.max(p.seqStart,Math.min(64,raw));return Math.max(getMin(),Math.min(getMax(),raw));}
   function move(cy){const nv=apply(sV+Math.round((sY-cy)/pxPerStep));if(nv!==getV()){setV(nv);const el=document.getElementById(cellId+'-val');if(el)el.textContent=CELL_DEFS.find(d=>d.id===cellId)?.fmtVal()??nv;if(hint)hint.textContent=fmtHint?fmtHint(nv):(doSnap?(!shiftHeld?'\u2302\uFE0E bar snap':'free'):'');}if(doSnap)cell.classList.toggle('snap-mode',!shiftHeld);}
-  cell.addEventListener('mousedown',e=>{if(e.target.tagName==='SELECT')return;drag=true;sY=e.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();});
-  document.addEventListener('mousemove',e=>{if(drag)move(e.clientY);});
-  document.addEventListener('mouseup',()=>{if(drag){drag=false;cell.classList.remove('dragging','snap-mode');if(hint)hint.textContent='';}});
-  let tid=null;
-  cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tid=t.identifier;drag=true;sY=t.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();},{passive:false});
-  document.addEventListener('touchmove',e=>{if(!drag)return;const t=Array.from(e.touches).find(x=>x.identifier===tid);if(!t)return;e.preventDefault();move(t.clientY);},{passive:false});
-  document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;cell.classList.remove('dragging','snap-mode');if(hint)hint.textContent='';}});
+  const _end=()=>{ cell.classList.remove('dragging','snap-mode'); if(hint)hint.textContent=''; };
+  cell.addEventListener('mousedown',e=>{if(e.target.tagName==='SELECT')return;sY=e.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();beginDrag(false,0,move,_end);});
+  cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=getV();cell.classList.add('dragging');if(doSnap){cell.classList.toggle('snap-mode',!shiftHeld);if(hint)hint.textContent=!shiftHeld?'\u2302\uFE0E bar snap':'free';}e.preventDefault();beginDrag(true,t.identifier,move,_end);},{passive:false});
   // Scroll-wheel adjust — invoked by the global delegated wheel listener.
   cell._wheelAdjust=(dir,shift)=>{
     const cur = getV();
@@ -3619,8 +3527,60 @@ function buildRangeBar(){
   }
 }
 
+// ── Mute + page-button: duplicate/expand pages (STEP mode) ──────────────
+// Holding Mute (shift) and clicking a page button copies the active part's
+// pages to build a longer loop, based on which pages already have notes:
+//   Page 2: copy page 1 → 2.
+//   Page 3: pages 1&2 filled → copy 1 → 3; page 2 empty → copy 1 → 2 and 3.
+//   Page 4: only page 1 → copy 1 → 2,3,4; pages 1&2 → copy 1→3 and 2→4;
+//           pages 1,2,3 → copy 2 → 4.
+// The play range (seqEnd) is extended to cover the copied pages so they sound.
+function applyMutePageCopy(target){
+  const p=parts[activePart];
+  const has=idx=>p.steps.slice(PAGE_OFFSET[idx],PAGE_OFFSET[idx]+16).some(Boolean);
+  const copyPage=(src,dst)=>{
+    if(src===dst) return;
+    const so=PAGE_OFFSET[src], dofs=PAGE_OFFSET[dst];
+    for(let k=0;k<16;k++){
+      p.steps[dofs+k]=p.steps[so+k];
+      p.stepParams[dofs+k]={...p.stepParams[so+k]};
+      if(p.stepSeen) p.stepSeen[dofs+k]=p.stepSeen[so+k];
+      if(p.skip) p.skip[dofs+k]=p.skip[so+k];
+    }
+  };
+  const h1=has(0),h2=has(1),h3=has(2);
+  let did=false, maxPage=0;
+  if(target===1){                       // ── Page 2 ──
+    copyPage(0,1); did=true; maxPage=1;
+  } else if(target===2){                // ── Page 3 ──
+    if(h1){
+      if(!h2){ copyPage(0,1); copyPage(0,2); }   // page 2 empty → fill 2 and 3 from 1
+      else   { copyPage(0,2); }                  // 1&2 present → copy 1 → 3
+      did=true; maxPage=2;
+    }
+  } else if(target===3){                // ── Page 4 ──
+    if(h1){
+      if(!h2){ copyPage(0,1); copyPage(0,2); copyPage(0,3); }  // only page 1 → fill 2,3,4
+      else if(!h3){ copyPage(0,2); copyPage(1,3); }            // 1&2 → 3=1, 4=2
+      else { copyPage(1,3); }                                  // 1,2,3 → 4=2
+      did=true; maxPage=3;
+    }
+  }
+  if(did){
+    p.seqEnd=Math.max(p.seqEnd, PAGE_OFFSET[maxPage]+16);
+    patternDirty=true;
+    partPage[activePart]=target;
+    buildSteps();buildRangeBar();buildParts();
+    if(typeof markSaveDirty==='function') markSaveDirty();
+    setStatus('Copied pages → page '+(target+1));
+  } else {
+    setStatus('Nothing on page 1 to copy');
+  }
+}
+
 function setPage(i){
   if(saveBrowsing){patternPage=i;buildSteps();buildRangeBar();return;}
+  if(shiftHeld && currentMode==='step'){ applyMutePageCopy(i); return; }
   if(currentMode==='key'){
     if(i===0||i===1){
       keyOctave=Math.max(0,Math.min(10,keyOctave+(i===0?-1:1)));
@@ -3650,7 +3610,7 @@ function buildSoundEditor(){
   DRUM_TYPES.forEach((t,i)=>{
     const btn=document.createElement('div');btn.className='se-type-btn'+(p.type===t?' active':'');
     btn.textContent=DRUM_NAMES[i];
-    btn.addEventListener('click',()=>{parts[activePart].type=t;buildSoundEditor();buildParts();buildSteps();});
+    btn.addEventListener('click',()=>{parts[activePart].type=t;buildSoundEditor();buildParts();buildSteps();if(currentMode==='ctrl')showCtrlPanel();});
     row.appendChild(btn);
   });
   // Sample loader row (only for sample type)
@@ -3670,10 +3630,29 @@ function buildSoundEditor(){
     });
   }
   document.getElementById('se-vol').value=p.vol;document.getElementById('se-vol-val').textContent=Math.round(p.vol*100)+'%';
+  const monoBtn=document.getElementById('se-mono');
+  if(monoBtn){
+    const isMono=(p.mono!==false);
+    monoBtn.textContent=isMono?'MONO':'POLY';
+    monoBtn.classList.toggle('active', isMono);
+    const md=document.getElementById('se-mono-desc');
+    if(md) md.textContent=isMono?'one voice at a time':'polyphonic';
+  }
   document.getElementById('se-tune').value=p.freq;document.getElementById('se-tune-val').textContent=Math.round(p.freq)+' Hz';
   document.getElementById('se-attack').value=p.attack||0;document.getElementById('se-attack-val').textContent=Math.round((p.attack||0)*1000)+' ms';
   document.getElementById('se-decay').value=p.decay;document.getElementById('se-decay-val').textContent=p.decay.toFixed(2)+'s';
   document.getElementById('se-tone').value=p.tone;document.getElementById('se-tone-val').textContent=Math.round(p.tone*100)+'%';
+  // CHRD synth: OSC1 follows the MIDI note (no Tune/Freq), Tone becomes the
+  // low-pass FILTER, and OSC2/OSC3 get semitone detune rows.
+  const isChrd=(p.type==='chrd');
+  const rowTune=document.getElementById('se-row-tune'); if(rowTune) rowTune.style.display=isChrd?'none':'flex';
+  const toneLbl=document.getElementById('se-tone-label'); if(toneLbl) toneLbl.textContent=isChrd?'Filter':'Tone';
+  const rowD2=document.getElementById('se-row-det2'); if(rowD2) rowD2.style.display=isChrd?'flex':'none';
+  const rowD3=document.getElementById('se-row-det3'); if(rowD3) rowD3.style.display=isChrd?'flex':'none';
+  const d2=document.getElementById('se-det2'), d3=document.getElementById('se-det3');
+  const fmtSemi=v=>{const s=Math.round(v); return (s>0?'+':'')+s;};
+  if(d2){ d2.value=p.detune2||0; const e=document.getElementById('se-det2-val'); if(e) e.textContent=fmtSemi(p.detune2||0); }
+  if(d3){ d3.value=p.detune3||0; const e=document.getElementById('se-det3-val'); if(e) e.textContent=fmtSemi(p.detune3||0); }
 }
 
 ['vol','tune','attack','decay','tone'].forEach(k=>{
@@ -3686,8 +3665,26 @@ function buildSoundEditor(){
     if(k==='tone'){p.tone=v;document.getElementById('se-tone-val').textContent=Math.round(v*100)+'%';}
   });
 });
+// CHRD OSC2/OSC3 semitone detune sliders
+[['det2','detune2'],['det3','detune3']].forEach(([id,field])=>{
+  const el=document.getElementById('se-'+id);
+  if(el) el.addEventListener('input',e=>{
+    const v=Math.round(parseFloat(e.target.value));
+    parts[activePart][field]=v;
+    const o=document.getElementById('se-'+id+'-val'); if(o) o.textContent=(v>0?'+':'')+v;
+  });
+});
 
 document.getElementById('se-header').addEventListener('click',()=>{seOpen=!seOpen;document.getElementById('se-body').classList.toggle('open',seOpen);buildSoundEditor();if(typeof applyScale==='function')applyScale();});
+
+// Voice MONO/POLY toggle (per part). Default MONO. Toggling to MONO does not
+// retroactively cut any voice already sounding — it applies from the next note.
+document.getElementById('se-mono')?.addEventListener('click',()=>{
+  const p=parts[activePart];
+  p.mono = (p.mono===false); // poly→mono, mono/undefined→poly
+  buildSoundEditor();
+  setStatus('Part '+(activePart+1)+' voice: '+(p.mono!==false?'MONO':'POLY'));
+});
 
 // ── Master FX (distortion + EQ) UI wiring ─────────────────────────
 function refreshMasterFXUI(){
@@ -3872,6 +3869,9 @@ function getMasterGain(){
 // raw master gain, so EVERY synth type (kick/snare/hihat/clap/tom/rim/
 // fm/sample) is panned uniformly with no per-case edits.
 const _partPanners=Array(8).fill(null);
+// MONO voice tracking: the most recent scheduled voice per channel, so a new
+// note on a MONO part can fade out the previous one right as it begins.
+const _monoVoice=Array(8).fill(null);
 function getPartOut(ch){
   const mg=getMasterGain();
   if(ch==null||ch<0||ch>7) return mg;           // unknown channel → straight to master
@@ -4092,6 +4092,22 @@ window.SoundEngine={
     }else{
       out.gain.setValueAtTime(1,when);
     }
+    // ── MONO voice mode ───────────────────────────────────────────────
+    // If this part is monophonic, fade the previous voice's output to silence
+    // exactly as this one starts, so only one voice ever sounds at a time.
+    if(p.mono!==false && ch>=0 && ch<8){
+      const prev=_monoVoice[ch];
+      if(prev && prev.out && prev.end>when){
+        const pg=prev.out.gain;
+        const fadeStart=Math.max(prev.when||0, when-0.006); // ~6ms click-free fade
+        try{
+          if(pg.cancelAndHoldAtTime) pg.cancelAndHoldAtTime(fadeStart);
+          else { pg.cancelScheduledValues(fadeStart); pg.setValueAtTime(pg.value, fadeStart); }
+          pg.linearRampToValueAtTime(0.0001, when);
+        }catch(e){}
+      }
+      _monoVoice[ch]={out, when, end:when+decay+0.1};
+    }
   // One shared envelope node for voices that want it
     const gain=ctx.createGain();gain.connect(out);gain.gain.setValueAtTime(vol,when);
     const noiseBuf=(sec)=>{const len=Math.max(1,Math.floor(ctx.sampleRate*sec));const b=ctx.createBuffer(1,len,ctx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;return b;};
@@ -4237,6 +4253,28 @@ window.SoundEngine={
       carrier.connect(gain);
       carrier.start(when);modulator.start(when);
       carrier.stop(when+decay+0.05);modulator.stop(when+decay+0.05);
+      break;}
+    case 'chrd':{
+      // CHRD — 3-oscillator monophonic square-wave synth. OSC1 is hardwired to
+      // the played MIDI note; OSC2/OSC3 are detuned by ±semitones (detune2/3).
+      // All three sum through one shared low-pass filter whose cutoff is the
+      // FILTER (tone) control. Attack/decay use the standard voice envelope.
+      const det2=Math.round(p.detune2||0), det3=Math.round(p.detune3||0);
+      const f1=midiToHz(note), f2=midiToHz(note+det2), f3=midiToHz(note+det3);
+      const tt=Math.max(0,Math.min(1,p.tone));
+      const lp=ctx.createBiquadFilter(); lp.type='lowpass';
+      lp.frequency.setValueAtTime(80*Math.pow(12000/80, tt), when); // log 80Hz→12kHz
+      lp.Q.setValueAtTime(1.0, when);
+      const mix=ctx.createGain(); mix.gain.setValueAtTime(0.34, when); // sum 3 squares without clipping
+      [f1,f2,f3].forEach(f=>{
+        const o=ctx.createOscillator(); o.type='square';
+        o.frequency.setValueAtTime(Math.max(8,f), when);
+        o.connect(lp); o.start(when); o.stop(when+decay+0.05);
+      });
+      lp.connect(mix); mix.connect(gain);
+      // Amplitude envelope (attack is applied by `out`; here we do the decay).
+      gain.gain.setValueAtTime(vol, when);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol*0.02), when+decay);
       break;}
     case 'sample':{
       // Sample playback: velocity-sensitive, repitched by MIDI note
@@ -4447,6 +4485,8 @@ function resetSoundEngineDefaults(){
     const d=DEFAULTS[i]||{};
     parts[i].type=d.type; parts[i].vol=d.vol; parts[i].freq=d.freq;
     parts[i].attack=d.attack||0; parts[i].decay=d.decay; parts[i].tone=d.tone;
+    parts[i].mono=true;
+    parts[i].detune2=d.detune2||0; parts[i].detune3=d.detune3||0;
     parts[i].pan=0; parts[i].revSend=0; parts[i].dlySend=0;
     // Push 0 onto any live nodes WITHOUT forcing the audio context to exist.
     if(_partPanners[i]&&_partPanners[i].pan){ try{ _partPanners[i].pan.value=0; }catch(e){} }
@@ -4592,8 +4632,11 @@ function toggleStep(abs){
 
   if(parts[activePart].steps[abs]){
     const ap=activePart;
-    if(!parts[ap].stepSeen||!parts[ap].stepSeen[abs]){
-      // First time this step is placed: seed it with the part's step defaults.
+    // Holding Select (triggerHeld) forces the step to the part's step defaults,
+    // overriding any remembered params from a previous placement. Otherwise a
+    // never-before-placed step is seeded with the defaults, and a previously
+    // placed-then-removed step keeps everything it had.
+    if(triggerHeld || !parts[ap].stepSeen || !parts[ap].stepSeen[abs]){
       if(!parts[ap].stepSeen) parts[ap].stepSeen=Array(64).fill(false);
       parts[ap].stepParams[abs]=newStepParams(ap);
       parts[ap].stepSeen[abs]=true;
@@ -5566,13 +5609,11 @@ function showRandomParams(){
     const repaint=()=>{ const el=document.getElementById('rnd-cell-'+idx+'-val'); if(el){ el.textContent=def.fmt(def.get()); } };
     const adjust=d=>{ const nv=Math.max(def.min,Math.min(def.max,def.get()+d)); if(nv!==def.get()){ def.set(nv); repaint(); } };
     // Vertical drag to adjust
-    let drag=false,sY=0,sV=0,tid=null;
-    cell.addEventListener('mousedown',e=>{ paramDragActive=true; drag=true; sY=e.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); });
-    document.addEventListener('mousemove',e=>{ if(!drag)return; const nv=Math.max(def.min,Math.min(def.max,sV+Math.round((sY-e.clientY)/8))); if(nv!==def.get()){ def.set(nv); repaint(); } });
-    document.addEventListener('mouseup',()=>{ if(drag){ drag=false; cell.classList.remove('dragging'); } });
-    cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; tid=t.identifier; drag=true; sY=t.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); },{passive:false});
-    cell.addEventListener('touchmove',e=>{ if(!drag)return; const t=Array.from(e.touches).find(x=>x.identifier===tid); if(!t)return; const nv=Math.max(def.min,Math.min(def.max,sV+Math.round((sY-t.clientY)/8))); if(nv!==def.get()){ def.set(nv); repaint(); } e.preventDefault(); },{passive:false});
-    cell.addEventListener('touchend',e=>{ if(Array.from(e.changedTouches).some(x=>x.identifier===tid)){ drag=false; cell.classList.remove('dragging'); } });
+    let sY=0,sV=0;
+    const _mv=cy=>{ const nv=Math.max(def.min,Math.min(def.max,sV+Math.round((sY-cy)/8))); if(nv!==def.get()){ def.set(nv); repaint(); } };
+    const _end=()=>{ cell.classList.remove('dragging'); };
+    cell.addEventListener('mousedown',e=>{ paramDragActive=true; sY=e.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); beginDrag(false,0,_mv,_end); });
+    cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; sY=t.clientY; sV=def.get(); cell.classList.add('dragging'); e.preventDefault(); e.stopPropagation(); beginDrag(true,t.identifier,_mv,_end); },{passive:false});
     cell._wheelAdjust=(d)=>adjust(d);
     grid.appendChild(cell);
   });
@@ -5842,7 +5883,7 @@ function serializeAll(){
     // ── GLOBAL per-part sound config (type + synth params). Stored once at the
     //    project level, NOT per pattern — the chosen sounds are shared across
     //    all patterns/banks. ──
-    partSounds:parts.map(p=>({type:p.type,vol:p.vol,freq:p.freq,attack:p.attack,decay:p.decay,tone:p.tone})),
+    partSounds:parts.map(p=>({type:p.type,vol:p.vol,freq:p.freq,attack:p.attack,decay:p.decay,tone:p.tone,mono:p.mono,detune2:p.detune2||0,detune3:p.detune3||0})),
     // ── settings page values ──
     settingsVals:{...settingsVals},
     // ── per-part page selection ──
@@ -5913,7 +5954,7 @@ function deserializeAll(data){
     // GLOBAL sounds: apply first so they become the live (preserved) sound config
     // before patterns/liveParts are restored (restoreParts keeps these intact).
     if(Array.isArray(data.partSounds)){
-      data.partSounds.forEach((s,i)=>{ if(s&&parts[i]){ parts[i].type=s.type??parts[i].type; parts[i].vol=s.vol??parts[i].vol; parts[i].freq=s.freq??parts[i].freq; parts[i].attack=s.attack??parts[i].attack??0; parts[i].decay=s.decay??parts[i].decay; parts[i].tone=s.tone??parts[i].tone; } });
+      data.partSounds.forEach((s,i)=>{ if(s&&parts[i]){ parts[i].type=s.type??parts[i].type; parts[i].vol=s.vol??parts[i].vol; parts[i].freq=s.freq??parts[i].freq; parts[i].attack=s.attack??parts[i].attack??0; parts[i].decay=s.decay??parts[i].decay; parts[i].tone=s.tone??parts[i].tone; parts[i].mono=(s.mono!==undefined?s.mono:true); parts[i].detune2=s.detune2||0; parts[i].detune3=s.detune3||0; } });
     } else if(Array.isArray(data.liveParts)){
       // Backward-compat: older projects stored the sound inside liveParts.
       data.liveParts.forEach((s,i)=>{ if(s&&parts[i]){ if(s.type!==undefined)parts[i].type=s.type; if(s.vol!==undefined)parts[i].vol=s.vol; if(s.freq!==undefined)parts[i].freq=s.freq; if(s.attack!==undefined)parts[i].attack=s.attack; if(s.decay!==undefined)parts[i].decay=s.decay; if(s.tone!==undefined)parts[i].tone=s.tone; } });
