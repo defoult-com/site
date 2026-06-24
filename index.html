@@ -3522,7 +3522,20 @@ function buildRangeBar(){
     const div=document.createElement('div');div.className=cls;
     div.innerHTML=`<span>${RANGE_LABELS[i]}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
     div.dataset.pressable='1';
-    div.addEventListener('click',()=>setPage(i));
+    // On touch, a second simultaneous finger (while Solo/Mute is held with the
+    // first) often fires NO synthesized click on iOS, so the modifier+page
+    // combos (Solo+Page1 = undo/redo, Mute+page = page copy) would be lost.
+    // Handle those directly on touchstart and suppress the ghost click.
+    let _comboTs=0;
+    div.addEventListener('touchstart',e=>{
+      if((ctrlHeld && i===0) || (shiftHeld && currentMode==='step')){
+        e.preventDefault();
+        _comboTs=Date.now();
+        setPage(i);
+        pressOn(div); setTimeout(()=>pressOff(div),120);
+      }
+    },{passive:false});
+    div.addEventListener('click',()=>{ if(Date.now()-_comboTs<600) return; setPage(i); });
     bar.appendChild(div);
   }
 }
@@ -3580,6 +3593,7 @@ function applyMutePageCopy(target){
 
 function setPage(i){
   if(saveBrowsing){patternPage=i;buildSteps();buildRangeBar();return;}
+  if(ctrlHeld && i===0){ undoRedoToggle(); return; } // Solo + Page 1 = undo / redo
   if(shiftHeld && currentMode==='step'){ applyMutePageCopy(i); return; }
   if(currentMode==='key'){
     if(i===0||i===1){
@@ -6021,7 +6035,41 @@ async function idbDel(key){
   try{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).delete(key); }catch(e){}
 }
 
-function markSaveDirty(){ _saveDirty=true; }
+function markSaveDirty(){ _saveDirty=true; noteUndoEdit(); }
+
+// ── Single-level undo / redo (Solo + Page 1) ───────────────────────────
+// Keeps the current settled state and the one before it. Solo+Page1 toggles:
+// first press undoes (restores the previous settle), next press redoes, and so
+// on — a single level. Snapshots are whole-state via serializeAll, captured
+// ~500ms after edits stop so each burst of edits is one undo step.
+var _undoPrev=null, _undoCur=null, _undoRedo=null, _undoIsUndone=false, _undoApplying=false, _undoTimer=null;
+function _undoStr(){ try{ return JSON.stringify(serializeAll()); }catch(e){ return null; } }
+function noteUndoEdit(){
+  if(_undoApplying||!_restoreDone) return;
+  _undoIsUndone=false; _undoRedo=null;          // a fresh edit branches away from redo
+  clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(function cap(){
+    if(paramDragActive){ _undoTimer=setTimeout(cap,300); return; } // don't serialize mid-gesture
+    const snap=_undoStr();
+    if(snap==null||snap===_undoCur) return;
+    _undoPrev=_undoCur; _undoCur=snap;          // previous settle becomes the undo target
+  },500);
+}
+function undoRedoToggle(){
+  clearTimeout(_undoTimer);
+  if(_undoIsUndone){                              // REDO
+    if(_undoRedo==null){ setStatus('Nothing to redo'); return; }
+    _undoApplying=true; try{ deserializeAll(JSON.parse(_undoRedo)); }catch(e){} _undoApplying=false;
+    _undoIsUndone=false; setStatus('Redo'); return;
+  }
+  const live=_undoStr();                          // UNDO
+  if(live!==_undoCur){ _undoPrev=_undoCur; _undoCur=live; } // fold in any unsettled edits
+  const target=_undoPrev;
+  if(target==null||target===live){ setStatus('Nothing to undo'); return; }
+  _undoRedo=live;
+  _undoApplying=true; try{ deserializeAll(JSON.parse(target)); }catch(e){} _undoApplying=false;
+  _undoIsUndone=true; setStatus('Undo');
+}
 function persistNow(){    // write full state to the store(s)
   if(!_restoreDone) return;   // never overwrite the saved data before restore finishes
   try{
@@ -6525,6 +6573,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   }catch(e){}
   _restoreDone=true;   // now safe to let autosave write
   _saveDirty=false;    // don't immediately re-persist the just-restored state
+  _undoCur=_undoStr(); // baseline for undo (the restored/default starting state)
   refreshAutoSaveBtn();
   // Verify storage actually persists. Some setups (opening the file directly via
   // file://, or private/incognito mode) block IndexedDB *and* localStorage, in
