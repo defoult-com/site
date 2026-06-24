@@ -414,17 +414,26 @@
         <div class="se-row" id="se-row-det2" style="display:none;"><div class="se-label">Tune 2</div><input type="range" class="se-slider" id="se-det2" min="-24" max="24" step="1" value="0"><div class="se-val" id="se-det2-val">0</div></div>
         <div class="se-row" id="se-row-det3" style="display:none;"><div class="se-label">Tune 3</div><input type="range" class="se-slider" id="se-det3" min="-24" max="24" step="1" value="0"><div class="se-val" id="se-det3-val">0</div></div>
         <!-- ── Master distortion + EQ (applies to ALL internal sounds) ── -->
+        <!-- Distortion and EQ are independent stages. The EQ button cycles
+             OFF → PRE → POST (its position relative to the distortion). Both
+             default OFF, so the chain stays transparent until used. -->
         <div style="border-top:1px solid var(--seq-border);margin:6px 0 2px;"></div>
         <div class="se-row">
-          <div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">MASTER FX</div>
+          <div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">DISTORTION</div>
           <div class="se-type-btn" id="se-fx-onoff" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">OFF</div>
-          <div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Distortion + EQ</div>
+          <div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">drive + character</div>
         </div>
-        <div id="se-fx-controls" style="display:none;flex-direction:column;gap:5px;">
+        <div id="se-fx-dist-controls" style="display:none;flex-direction:column;gap:5px;">
           <div class="se-row"><div class="se-label">Volume</div><input type="range" class="se-slider" id="se-fx-volume" min="0" max="2" step="0.01" value="1"><div class="se-val" id="se-fx-volume-val">100%</div></div>
           <div class="se-row"><div class="se-label">Gain</div><input type="range" class="se-slider" id="se-fx-gain" min="1" max="50" step="0.1" value="1"><div class="se-val" id="se-fx-gain-val">1.0×</div></div>
           <div class="se-row"><div class="se-label">Character</div><input type="range" class="se-slider" id="se-fx-character" min="0" max="1" step="0.01" value="0.5"><div class="se-val" id="se-fx-character-val">50%</div></div>
-          <div class="se-row"><div class="se-label">EQ Pos</div><div class="se-type-btn" id="se-fx-eqpos" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">PRE</div><div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">EQ before / after drive</div></div>
+        </div>
+        <div class="se-row" style="margin-top:2px;">
+          <div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">EQ</div>
+          <div class="se-type-btn" id="se-fx-eqpos" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">OFF</div>
+          <div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">3-band — off / pre / post drive</div>
+        </div>
+        <div id="se-fx-eq-controls" style="display:none;flex-direction:column;gap:5px;">
           <div class="se-row"><div class="se-label">EQ High</div><input type="range" class="se-slider" id="se-fx-high" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-high-val">0 dB</div></div>
           <div class="se-row"><div class="se-label">EQ Mid</div><input type="range" class="se-slider" id="se-fx-mid" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-mid-val">0 dB</div></div>
           <div class="se-row"><div class="se-label">EQ Low</div><input type="range" class="se-slider" id="se-fx-low" min="-18" max="18" step="0.5" value="0"><div class="se-val" id="se-fx-low-val">0 dB</div></div>
@@ -1436,8 +1445,27 @@ function setupDisplayWheel(){
   },{passive:false});
 }
 
+// Normalize the SMD "display" grid back to its default CSS layout (the 4×2
+// cell grid, aspect-ratio 4/2). A few special pages — MIDI IN/OUT in Settings
+// and the big TEMPO readout — switch the grid to a flex layout using inline
+// styles. If those inline styles aren't cleared when another mode rebuilds the
+// grid, the display panel ends up a different size/position than in every other
+// mode, which also shifts the status bar beneath it. Every builder that uses
+// the normal cell grid calls this FIRST, so all modes render the display at one
+// consistent size/placement (desktop and mobile alike).
+function resetSmdGridStyle(){
+  const g=document.getElementById('smd-grid');
+  if(!g) return g;
+  // Clear every property any special page may have set inline; '' restores the
+  // value from the stylesheet (including the responsive portrait rules).
+  ['display','flexDirection','flexWrap','alignItems','justifyContent',
+   'gap','width','height','minHeight','boxSizing','aspectRatio']
+    .forEach(prop=>{ g.style[prop]=''; });
+  return g;
+}
+
 function buildSmdGrid(){
-  const grid=document.getElementById('smd-grid');grid.innerHTML='';
+  const grid=resetSmdGridStyle();grid.innerHTML='';
   CELL_DEFS.forEach((def,idx)=>{
     const cell=document.createElement('div');
     cell.id=def.id;
@@ -1842,7 +1870,7 @@ const STEP_PARAM_DEFS=[
 
 function showStepParams(abs){
   if(currentMode==='ctrl'){ showCtrlPanel(); return; } // CTRL p-lock editing
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const sp=parts[activePart].stepParams[abs];
   const lbl=document.getElementById('smd-mode-label');
@@ -1937,7 +1965,7 @@ let partHoldTimer=null; // delayed timer that opens the part-defaults popup on a
 let partHoldOpened=false; // true once the hold popup has opened for this touch
 let partTouchStart=null;  // {x,y} start point, to distinguish tap vs scroll
 function showPartDefaults(pi){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const sp=partStepDefaults[pi];
   const lbl=document.getElementById('smd-mode-label');
@@ -2003,7 +2031,7 @@ function updatePartDefGrey(sp){
 }
 
 function showVelMixer(){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
   if(lbl) lbl.textContent='VELOCITY MIXER';
@@ -2095,7 +2123,7 @@ function sendCtrlCC(idx){
 }
 function showCtrlPanel(){
   if(isDrumMachine()){ showSoundCtrlPanel(); return; }
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
   const lockAbs=(heldStepAbs!==-1)?heldStepAbs:-1; // editing a step's locks?
@@ -2270,7 +2298,7 @@ function reloadSoundCtrlPart(pi){
 // DRUM MACHINE variant of the CTRL panel — mirrors showCtrlPanel but edits the
 // selected part's sound parameters (with the same lock + record behaviour).
 function showSoundCtrlPanel(){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   syncSoundLiveFromParts(activePart);   // reflect any Sound-editor edits
   const lbl=document.getElementById('smd-mode-label');
@@ -2323,7 +2351,7 @@ function showSoundCtrlPanel(){
 
 // While N is held: show a big BPM readout filling the whole display section.
 function showTempoDisplay(){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   if(!grid) return;
   grid.style.display='flex';
   grid.style.flexDirection='column';
@@ -2344,10 +2372,9 @@ function updateTempoBig(){
 }
 
 function restoreSequencerDisplay(){
-  // Clear any inline layout the MIDI-IN settings page applied to the grid,
-  // so other panels render at normal cell size.
-  const sg=document.getElementById('smd-grid');
-  if(sg){ sg.style.display=''; sg.style.flexDirection=''; sg.style.gap=''; sg.style.width=''; sg.style.boxSizing=''; sg.style.alignItems=''; sg.style.justifyContent=''; }
+  // Clear any inline layout a special page (MIDI IN/OUT, TEMPO) applied to the
+  // grid, so the panel that follows renders at the normal, consistent size.
+  resetSmdGridStyle();
   if(currentMode==='set'){ showSettingsPanel(); return; }
   if(currentMode==='ctrl'){ showCtrlPanel(); return; }
   if(currentMode==='key'){ showKeyPanel(); return; }
@@ -2363,15 +2390,19 @@ function settingsKey(idx){ return activePart+':'+settingsPage+':'+idx; }
 function getSettingVal(idx){ const k=settingsKey(idx); return (k in settingsVals)?settingsVals[k]:64; }
 function setSettingVal(idx,v){ settingsVals[settingsKey(idx)]=v; }
 function showSettingsPanel(){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
-  // Keep the display panel the SAME height on the column-layout pages (MIDI
-  // IN/OUT) as on the normal 8-cell pages: the normal grid uses aspect-ratio
-  // 4/2 (height = width/2), so we apply that as a min-height here too. Without
-  // this the MIDI pages collapse to ~2 short rows and the display looks smaller.
-  const matchGridHeight=()=>{ const w=grid.clientWidth||grid.offsetWidth; if(w) grid.style.minHeight=Math.round(w/2)+'px'; };
-  grid.style.minHeight='';  // cleared by default; column-mode pages re-apply it
+  // The MIDI IN/OUT pages use a column (flex) layout instead of the 4×2 cell
+  // grid. To keep the display panel exactly the same size as every other mode
+  // (and so the status bar below it never moves), give that column the same
+  // aspect ratio the normal grid has — height = width/2 — via CSS rather than
+  // measuring pixel widths (which can read 0 before layout settles, and breaks
+  // on mobile). This is applied per-page below.
+  const matchGridHeight=()=>{
+    grid.style.aspectRatio='2 / 1';        // same shape as the 4×2 grid (4/2)
+    grid.style.justifyContent='center';    // centre the two rows in that space
+  };
 
   // ── Page 1: MIDI IN (device + channel) ──
   // Global view (no part selected) edits the global midiInputPort/midiInChannel.
@@ -2583,7 +2614,7 @@ function showSettingsPanel(){
 
 // KEY mode display: box 1 controls the virtual keyboard velocity; rest empty.
 function showKeyPanel(){
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
   if(lbl) lbl.textContent='KEYBOARD — PART '+(activePart+1);
@@ -3688,12 +3719,17 @@ document.getElementById('se-mono')?.addEventListener('click',()=>{
 
 // ── Master FX (distortion + EQ) UI wiring ─────────────────────────
 function refreshMasterFXUI(){
-  const on=masterFX.enabled;
+  const dist=masterFX.distEnabled;
+  const eqMode=masterFX.eqMode||'off';
+  const eqOn=(eqMode!=='off');
+  // Distortion on/off button + its controls
   const btn=document.getElementById('se-fx-onoff');
-  if(btn){ btn.textContent=on?'ON':'OFF'; btn.style.color=on?'var(--seq-yellow)':'var(--seq-text-dim)'; btn.style.borderColor=on?'var(--seq-yellow)':''; }
-  const ctr=document.getElementById('se-fx-controls'); if(ctr) ctr.style.display=on?'flex':'none';
+  if(btn){ btn.textContent=dist?'ON':'OFF'; btn.style.color=dist?'var(--seq-yellow)':'var(--seq-text-dim)'; btn.style.borderColor=dist?'var(--seq-yellow)':''; }
+  const dctr=document.getElementById('se-fx-dist-controls'); if(dctr) dctr.style.display=dist?'flex':'none';
+  // EQ OFF/PRE/POST button + its controls
   const eqp=document.getElementById('se-fx-eqpos');
-  if(eqp){ eqp.textContent=masterFX.eqPost?'POST':'PRE'; eqp.style.color='var(--seq-yellow)'; }
+  if(eqp){ eqp.textContent=eqMode.toUpperCase(); eqp.style.color=eqOn?'var(--seq-yellow)':'var(--seq-text-dim)'; eqp.style.borderColor=eqOn?'var(--seq-yellow)':''; }
+  const ectr=document.getElementById('se-fx-eq-controls'); if(ectr) ectr.style.display=eqOn?'flex':'none';
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val;};
   set('se-fx-volume',masterFX.volume); set('se-fx-gain',masterFX.gain); set('se-fx-character',masterFX.character);
   set('se-fx-high',masterFX.high); set('se-fx-mid',masterFX.mid); set('se-fx-low',masterFX.low);
@@ -3706,16 +3742,17 @@ function refreshMasterFXUI(){
   txt('se-fx-low-val',(masterFX.low>0?'+':'')+masterFX.low+' dB');
 }
 document.getElementById('se-fx-onoff').addEventListener('click',()=>{
-  masterFX.enabled=!masterFX.enabled;
+  masterFX.distEnabled=!masterFX.distEnabled;
   buildMasterFX(); applyMasterFX(); refreshMasterFXUI();
   if(typeof markSaveDirty==='function') markSaveDirty();
-  setStatus('Master FX '+(masterFX.enabled?'ON':'OFF'));
+  setStatus('Distortion '+(masterFX.distEnabled?'ON':'OFF'));
 });
 document.getElementById('se-fx-eqpos').addEventListener('click',()=>{
-  masterFX.eqPost=!masterFX.eqPost;
+  const order=['off','pre','post'];
+  masterFX.eqMode=order[(order.indexOf(masterFX.eqMode||'off')+1)%order.length];
   buildMasterFX(); rewireMasterFX(); applyMasterFX(); refreshMasterFXUI();
   if(typeof markSaveDirty==='function') markSaveDirty();
-  setStatus('Master EQ '+(masterFX.eqPost?'post-drive':'pre-drive'));
+  setStatus('EQ '+(masterFX.eqMode==='off'?'off':(masterFX.eqMode==='post'?'post-drive':'pre-drive')));
 });
 [['se-fx-volume','volume',v=>Math.round(v*100)+'%'],
  ['se-fx-gain','gain',v=>v.toFixed(1)+'×'],
@@ -3755,22 +3792,39 @@ let allMuted=false;
 let masterGain=null;
 
 // ── Master FX: distortion + 3-band EQ (post-mix, pre-destination) ─────
-// Signal flow when built:
+// Distortion and EQ are INDEPENDENT stages — the EQ can be used with the
+// distortion off, and vice-versa. The EQ has three states: OFF / PRE / POST,
+// where PRE places it before the distortion and POST after it. Both stages
+// default to off.
+// Signal flow when built (EQ shown PRE here):
 //   voices → masterGain → eqLow → eqMid → eqHigh → driveGain → shaper
-//          → toneComp → fxVolume → destination
+//          → fxVolume → destination
 // The metronome bypasses this chain (connects straight to destination) so
-// clicks stay clean. When fxEnabled is false, the shaper uses a linear curve
-// and driveGain/eqs are flat, so the chain is sonically transparent.
+// clicks stay clean. When a stage is off its nodes are held flat (shaper uses
+// a null/linear curve, driveGain = 1, EQ gains = 0), so the chain is sonically
+// transparent — turning a stage off changes nothing else.
 const masterFX={
-  enabled:false,
-  volume:1.0,    // output level (makeup)        0..2
-  gain:1.0,      // pre-distortion drive          1..50
-  character:0.5, // clip shape morph              0..1 (soft→hard/foldback)
-  low:0,         // low shelf gain   dB           -18..+18
-  mid:0,         // mid peak  gain   dB           -18..+18
-  high:0,        // high shelf gain  dB           -18..+18
-  eqPost:false,  // false = EQ pre-drive (into the distortion), true = post-drive
+  distEnabled:false, // distortion stage (drive + waveshaper) on/off
+  eqMode:'off',      // 'off' | 'pre' | 'post'  — 3-band EQ position vs. distortion
+  volume:1.0,    // output level / distortion makeup   0..2
+  gain:1.0,      // pre-distortion drive               1..50
+  character:0.5, // clip shape morph                   0..1 (soft→hard/foldback)
+  low:0,         // low shelf gain   dB                -18..+18
+  mid:0,         // mid peak  gain   dB                -18..+18
+  high:0,        // high shelf gain  dB                -18..+18
 };
+// Back-compat: older projects stored a single `enabled` flag (distortion + EQ
+// together) plus a boolean `eqPost`. Map those onto the new independent
+// controls so restored sessions sound identical, then drop the legacy keys.
+function migrateMasterFX(){
+  if(masterFX.enabled!==undefined || masterFX.eqPost!==undefined){
+    const en=!!masterFX.enabled;
+    masterFX.distEnabled = en;
+    masterFX.eqMode = en ? (masterFX.eqPost ? 'post' : 'pre') : 'off';
+    delete masterFX.enabled;
+    delete masterFX.eqPost;
+  }
+}
 let _fxNodes=null; // {eqLow,eqMid,eqHigh,drive,shaper,vol}
 
 // Build the waveshaper transfer curve. `character` morphs the clipping style:
@@ -3811,9 +3865,10 @@ function buildMasterFX(){
 }
 
 // (Re)connect the FX graph so the EQ block sits PRE or POST the distortion.
-//   pre  : masterGain → eqLow→eqMid→eqHigh → drive → shaper → vol → dest
-//   post : masterGain → drive → shaper → eqLow→eqMid→eqHigh → vol → dest
-// Called whenever masterFX.eqPost changes (and on build).
+//   pre/off : masterGain → eqLow→eqMid→eqHigh → drive → shaper → vol → dest
+//   post    : masterGain → drive → shaper → eqLow→eqMid→eqHigh → vol → dest
+// (EQ 'off' uses the pre ordering; its gains are flat so position is moot.)
+// Called whenever masterFX.eqMode changes (and on build).
 function rewireMasterFX(){
   if(!_fxNodes||!masterGain) return;
   const {eqLow,eqMid,eqHigh,drive,shaper,vol}=_fxNodes;
@@ -3824,30 +3879,33 @@ function rewireMasterFX(){
   try{ drive.disconnect(); }catch(e){}
   try{ shaper.disconnect(); }catch(e){}
   // Re-wire vol→destination (disconnect() above doesn't touch it, but be safe)
-  if(masterFX.eqPost){
+  if(masterFX.eqMode==='post'){
     masterGain.connect(drive);
     drive.connect(shaper);
     shaper.connect(eqLow);   // EQ after distortion
     eqHigh.connect(vol);
   }else{
-    masterGain.connect(eqLow); // EQ before distortion
+    masterGain.connect(eqLow); // EQ before distortion (or flat when off)
     eqHigh.connect(drive);
     drive.connect(shaper);
     shaper.connect(vol);
   }
 }
 
-// Push the masterFX parameters onto the live audio nodes.
+// Push the masterFX parameters onto the live audio nodes. Distortion and EQ
+// are toggled independently; an off stage is held perfectly flat so it makes
+// no difference to the sound.
 function applyMasterFX(){
   if(!_fxNodes) return;
   const t=getCtx().currentTime;
-  const on=masterFX.enabled;
-  _fxNodes.eqLow.gain.setValueAtTime(on?masterFX.low:0, t);
-  _fxNodes.eqMid.gain.setValueAtTime(on?masterFX.mid:0, t);
-  _fxNodes.eqHigh.gain.setValueAtTime(on?masterFX.high:0, t);
-  _fxNodes.drive.gain.setValueAtTime(on?masterFX.gain:1, t);
-  _fxNodes.shaper.curve = on ? makeDistCurve(masterFX.character) : null;
-  _fxNodes.vol.gain.setValueAtTime(on?masterFX.volume:1, t);
+  const dist=masterFX.distEnabled;
+  const eqOn=(masterFX.eqMode!=='off');
+  _fxNodes.eqLow.gain.setValueAtTime(eqOn?masterFX.low:0, t);
+  _fxNodes.eqMid.gain.setValueAtTime(eqOn?masterFX.mid:0, t);
+  _fxNodes.eqHigh.gain.setValueAtTime(eqOn?masterFX.high:0, t);
+  _fxNodes.drive.gain.setValueAtTime(dist?masterFX.gain:1, t);
+  _fxNodes.shaper.curve = dist ? makeDistCurve(masterFX.character) : null;
+  _fxNodes.vol.gain.setValueAtTime(dist?masterFX.volume:1, t); // makeup only with distortion
 }
 
 function getMasterGain(){
@@ -4514,7 +4572,8 @@ function resetSoundEngineDefaults(){
     partSamples[i]=null; partSampleNames[i]=null;
   }
   // Master FX → defaults
-  Object.assign(masterFX,{enabled:false,volume:1.0,gain:1.0,character:0.5,low:0,mid:0,high:0,eqPost:false});
+  for(const k of ['enabled','eqPost']) delete masterFX[k]; // clear any legacy keys
+  Object.assign(masterFX,{distEnabled:false,eqMode:'off',volume:1.0,gain:1.0,character:0.5,low:0,mid:0,high:0});
   // Send FX → defaults
   Object.assign(sendFX,{revDecay:2.0,revDamp:50,revReturn:1.0,dlyTime:300,dlyFb:0.35,dlyReturn:1.0});
   // Only touch live audio nodes if the context already exists (don't spin one up).
@@ -5605,9 +5664,8 @@ const RANDOM_PARAM_DEFS=[
 let randomPanelActive=false;
 function showRandomParams(){
   randomPanelActive=true;
-  const grid=document.getElementById('smd-grid');
+  const grid=resetSmdGridStyle();
   grid.innerHTML='';
-  grid.style.display=''; grid.style.flexDirection=''; grid.style.minHeight='';
   const lbl=document.getElementById('smd-mode-label');
   if(lbl) lbl.textContent='RANDOM RANGE — PART '+(activePart+1);
   RANDOM_PARAM_DEFS.forEach((def,idx)=>{
@@ -5951,7 +6009,7 @@ function deserializeAll(data){
       if(data.ctrl.sndLocks){ for(let i=0;i<8;i++){ for(const key in soundCtrlLocks[i]) delete soundCtrlLocks[i][key]; if(data.ctrl.sndLocks[i]) Object.assign(soundCtrlLocks[i], JSON.parse(JSON.stringify(data.ctrl.sndLocks[i]))); } }
     }
     // master FX
-    if(data.masterFX){ Object.assign(masterFX, data.masterFX); try{ if(typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
+    if(data.masterFX){ Object.assign(masterFX, data.masterFX); if(typeof migrateMasterFX==='function') migrateMasterFX(); try{ if(typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
     // settings page values
     if(data.settingsVals){ for(const key in settingsVals) delete settingsVals[key]; Object.assign(settingsVals, data.settingsVals); }
     // per-part page selection
