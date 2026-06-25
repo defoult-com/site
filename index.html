@@ -1611,6 +1611,33 @@ function onMidiMessage(e, srcDeviceId){
   cellCCs.forEach((assignedCC,idx)=>{
     if(assignedCC!==cc)return;
 
+    // ── Master / Send FX hold panels (DRUM MACHINE, CTRL + Mute/Solo held) ──
+    // Incoming CC drives the on-screen FX cell at this position, exactly like
+    // the other display modes.
+    if(_holdPanel==='mfx'||_holdPanel==='sfx'){
+      const grid=document.getElementById('smd-grid');
+      const cell=grid&&grid.children[idx];
+      if(cell&&typeof cell._applyFromCC==='function'){
+        cell._applyFromCC(value);
+        const lblEl=cell.querySelector('.smd-cell-label');
+        setStatus('CC'+cc+' = '+value+' \u2192 '+(_holdPanel==='mfx'?'Master FX':'Send FX')+(lblEl?' '+lblEl.textContent:''));
+      }
+      return;
+    }
+
+    // ── SOUND CTRL panel (DRUM MACHINE, CTRL mode) ──
+    // Incoming CC drives the on-screen sound-parameter cell at this position
+    // (live, or as a sound p-lock when a step is held), like every other mode.
+    if(currentMode==='ctrl' && isDrumMachine()){
+      const grid=document.getElementById('smd-grid');
+      const cell=grid&&grid.children[idx];
+      if(cell&&typeof cell._applyFromCC==='function'){
+        cell._applyFromCC(value);
+        setStatus('CC'+cc+' = '+value+' \u2192 SOUND '+(idx+1)+(heldStepAbs>=0?(' lock (Step '+(heldStepAbs+1)+')'):''));
+      }
+      return;
+    }
+
     if(heldStepAbs!==-1){
       if(currentMode==='ctrl'){
         // ── CTRL parameter lock (hold a step + move a CC) ──────────
@@ -2275,6 +2302,35 @@ function getSoundLock(part,abs,idx){ const s=soundCtrlLocks[part][abs]; return (
 function setSoundLock(part,abs,idx,val){ if(!soundCtrlLocks[part][abs]) soundCtrlLocks[part][abs]={}; soundCtrlLocks[part][abs][idx]=val; }
 function soundStepHasLocks(part,abs){ const s=soundCtrlLocks[part][abs]; return !!s && Object.keys(s).length>0; }
 function syncSoundLiveFromParts(pi){ const p=parts[pi]; sndDefs(pi).forEach((d,idx)=>{ soundLive[pi][idx]=sndToKnob(d,d.get(p)); }); }
+// ── Two-way sync between the Sound-editor sliders and the SOUND CTRL display ──
+// Both read/write the same parts[] fields, so they share a single source of
+// truth; these helpers just keep the two on-screen representations visually in
+// step when one side moves (from a drag, the wheel, or an incoming CC). Setting
+// a slider's .value / a cell's text programmatically does not fire events, so
+// there is no feedback loop.
+function syncSoundEditorControls(){
+  const p=parts[activePart]; if(!p) return;
+  const setv=(id,val,txt)=>{const el=document.getElementById(id); if(el){ el.value=val; const t=document.getElementById(id+'-val'); if(t&&txt!=null) t.textContent=txt; }};
+  setv('se-vol',p.vol,Math.round(p.vol*100)+'%');
+  setv('se-tune',p.freq,Math.round(p.freq)+' Hz');
+  setv('se-attack',p.attack||0,Math.round((p.attack||0)*1000)+' ms');
+  setv('se-decay',p.decay,p.decay.toFixed(2)+'s');
+  setv('se-tone',p.tone,Math.round(p.tone*100)+'%');
+  const semi=v=>{const s=Math.round(v);return (s>0?'+':'')+s;};
+  setv('se-det2',p.detune2||0,semi(p.detune2||0));
+  setv('se-det3',p.detune3||0,semi(p.detune3||0));
+  const pan=(typeof p.pan==='number'?p.pan:0);
+  setv('se-pan',pan,(Math.abs(pan)<0.005?'C':(pan<0?'L':'R')+Math.round(Math.abs(pan)*100)));
+  setv('se-rev-send',(p.revSend||0),Math.round((p.revSend||0)*100)+'%');
+  setv('se-dly-send',(p.dlySend||0),Math.round((p.dlySend||0)*100)+'%');
+}
+function syncSoundDisplayCells(){
+  // Only when the live SOUND CTRL panel is the thing on screen.
+  if(currentMode!=='ctrl'||!isDrumMachine()||_holdPanel!=null||heldStepAbs!==-1) return;
+  const p=parts[activePart];
+  syncSoundLiveFromParts(activePart);
+  sndDefs(activePart).forEach((def,idx)=>{ const el=document.getElementById('sndctrl-'+idx+'-val'); if(el) el.textContent=def.fmt(def.get(p)); });
+}
 // Live automation: write a sound lock onto the currently-playing step.
 function recordSoundLock(idx,knob){
   const p=parts[activePart];
@@ -2352,6 +2408,7 @@ function showSoundCtrlPanel(){
         soundLive[activePart][idx]=nk;
         def.set(activePart, sndFromKnob(def,nk));
         if(recording&&playing) recordSoundLock(idx,nk);
+        if(typeof syncSoundEditorControls==='function') syncSoundEditorControls(); // editor sliders follow
       }
       paint();
     };
@@ -2365,9 +2422,199 @@ function showSoundCtrlPanel(){
     cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=shownKnob();paramDragActive=true;cell.classList.add('dragging');e.preventDefault();beginDrag(false,0,_mv,_end);});
     cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=shownKnob();cell.classList.add('dragging');e.preventDefault();beginDrag(true,t.identifier,_mv,_end);},{passive:false});
     cell._wheelAdjust=(dir)=>{ const nv=Math.max(0,Math.min(127,shownKnob()+dir)); if(nv!==shownKnob()) applyVal(nv); };
+    // Incoming CC (0-127) drives this sound parameter (live, or as a sound
+    // p-lock when a step is held) — same as moving the cell by hand.
+    cell._applyFromCC=(value)=>{ applyVal(Math.max(0,Math.min(127,value))); flashCellEl(cell); };
     grid.appendChild(cell);
     paint();
   });
+}
+
+// While Mute (Shift) is held in DRUM MACHINE + CTRL mode, the display shows the
+// master DISTORTION + EQ controls instead of the per-sound CTRL values.
+//   Row 1: DIST (tap OFF/ON) · VOL · GAIN · CHAR
+//   Row 2: EQ  (tap OFF/PRE/POST) · LO · MID · HI
+// Value cells drag up/down (and respond to the wheel); DIST and EQ cells tap to
+// cycle. Edits go straight to the shared masterFX state and the live FX nodes.
+const MASTER_FX_DEFS=[
+  {kind:'dist'},
+  {key:'volume',    label:'VOL',  min:0,   max:2,  step:0.01, dflt:1.0, fmt:v=>Math.round(v*100)+'%'},
+  {key:'gain',      label:'GAIN', min:1,   max:50, step:0.1,  dflt:1.0, fmt:v=>v.toFixed(1)+'\u00d7'},
+  {key:'character', label:'CHAR', min:0,   max:1,  step:0.01, dflt:0.5, fmt:v=>Math.round(v*100)+'%'},
+  {kind:'eq'},
+  {key:'low',  label:'LO',  min:-18, max:18, step:0.5, dflt:0, fmt:v=>(v>0?'+':'')+v+'dB'},
+  {key:'mid',  label:'MID', min:-18, max:18, step:0.5, dflt:0, fmt:v=>(v>0?'+':'')+v+'dB'},
+  {key:'high', label:'HI',  min:-18, max:18, step:0.5, dflt:0, fmt:v=>(v>0?'+':'')+v+'dB'},
+];
+// Brief highlight when a cell is moved by an incoming CC (matches other modes).
+function flashCellEl(cell){ if(!cell)return; cell.classList.add('cc-active'); clearTimeout(cell._ft); cell._ft=setTimeout(()=>cell.classList.remove('cc-active'),150); }
+
+// A display cell whose value is one of a fixed list of options (e.g. DIST OFF/ON,
+// EQ OFF/PRE/POST, reverb/delay algorithm). Like the numeric cells it is scrubbed
+// by dragging up/down (and the mouse wheel) — NOT by clicking — so it behaves the
+// same as every other parameter on the display.
+//   cfg: {label, options[], get(), display(v), apply(v), color?(v), status?(v)}
+function buildScrubEnumCell(grid,cfg){
+  const cell=document.createElement('div');
+  cell.className='smd-cell draggable';
+  cell.title='Drag up/down \u2014 '+cfg.label;
+  const render=()=>{ const v=cfg.get(); cell.innerHTML=
+    `<div class="smd-cell-label">${cfg.label}</div>`+
+    `<div class="smd-cell-val" style="font-size:18px;color:${cfg.color?cfg.color(v):'var(--seq-yellow)'}">${cfg.display(v)}</div>`+
+    `<div class="snap-hint"></div>`; };
+  render();
+  const idxOf=()=>Math.max(0,cfg.options.indexOf(cfg.get()));
+  const setIdx=(ni)=>{ ni=Math.max(0,Math.min(cfg.options.length-1,ni)); if(ni===idxOf())return; cfg.apply(cfg.options[ni]); render(); if(cfg.status) setStatus(cfg.status(cfg.get())); if(typeof markSaveDirty==='function') markSaveDirty(); };
+  let sY=0,sIdx=0; const PX=20; // pixels of drag per step
+  const _mv=cy=>{ setIdx(sIdx+Math.round((sY-cy)/PX)); };
+  const _end=()=>cell.classList.remove('dragging');
+  cell.addEventListener('mousedown',e=>{ sY=e.clientY; sIdx=idxOf(); paramDragActive=true; cell.classList.add('dragging'); e.preventDefault(); beginDrag(false,0,_mv,_end); });
+  cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; sY=t.clientY; sIdx=idxOf(); cell.classList.add('dragging'); e.preventDefault(); beginDrag(true,t.identifier,_mv,_end); },{passive:false});
+  cell._wheelAdjust=(dir)=>setIdx(idxOf()+dir);
+  // Incoming CC (0-127) → option index, like the other display cells.
+  cell._applyFromCC=(value)=>{ setIdx(Math.round((Math.max(0,Math.min(127,value))/127)*(cfg.options.length-1))); flashCellEl(cell); };
+  grid.appendChild(cell);
+}
+
+function showMasterFXPanel(){
+  const grid=resetSmdGridStyle();
+  grid.innerHTML='';
+  const lbl=document.getElementById('smd-mode-label');
+  if(lbl) lbl.textContent='MASTER FX \u2014 DIST + EQ';
+  const refreshAudio=(rewire)=>{ if(audioCtx){ buildMasterFX(); if(rewire) rewireMasterFX(); applyMasterFX(); } if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); };
+  MASTER_FX_DEFS.forEach(def=>{
+    if(def.kind==='dist'){
+      buildScrubEnumCell(grid,{
+        label:'DIST', options:[false,true], get:()=>!!masterFX.distEnabled,
+        display:v=>v?'ON':'OFF', color:v=>v?'var(--seq-yellow)':'var(--seq-text-dim)',
+        apply:v=>{ masterFX.distEnabled=v; refreshAudio(false); },
+        status:v=>'Distortion '+(v?'ON':'OFF'),
+      });
+      return;
+    }
+    if(def.kind==='eq'){
+      buildScrubEnumCell(grid,{
+        label:'EQ', options:['off','pre','post'], get:()=>masterFX.eqMode||'off',
+        display:v=>v.toUpperCase(), color:v=>v!=='off'?'var(--seq-yellow)':'var(--seq-text-dim)',
+        apply:v=>{ masterFX.eqMode=v; refreshAudio(true); },
+        status:v=>'EQ '+(v==='off'?'off':v),
+      });
+      return;
+    }
+    const cell=document.createElement('div');
+    // Draggable value cell
+    cell.className='smd-cell draggable';
+    cell.title='Drag up/down \u2014 '+def.label;
+    cell.innerHTML=
+      `<div class="smd-cell-label">${def.label}</div>`+
+      `<div class="smd-cell-val" id="mfx-${def.key}-val" style="font-size:18px">${def.fmt(masterFX[def.key])}</div>`+
+      `<div class="snap-hint"></div>`;
+    const valEl=()=>document.getElementById('mfx-'+def.key+'-val');
+    const paint=()=>{ const el=valEl(); if(el) el.textContent=def.fmt(masterFX[def.key]); };
+    const quant=(v)=>{ const n=Math.round(v/def.step)*def.step; return Math.max(def.min,Math.min(def.max,parseFloat(n.toFixed(4)))); };
+    const applyVal=(v)=>{ masterFX[def.key]=quant(v); if(audioCtx){ buildMasterFX(); applyMasterFX(); } if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); paint(); if(typeof markSaveDirty==='function') markSaveDirty(); };
+    cell.addEventListener('dblclick',()=>applyVal(def.dflt));
+    let sY=0,sNorm=0;
+    const norm=()=> (masterFX[def.key]-def.min)/(def.max-def.min);
+    const _mv=cy=>{ const nn=Math.max(0,Math.min(1,sNorm+(sY-cy)/160)); applyVal(def.min+nn*(def.max-def.min)); };
+    const _end=()=>{ cell.classList.remove('dragging'); };
+    cell.addEventListener('mousedown',e=>{ if(e.target.tagName==='INPUT')return; sY=e.clientY; sNorm=norm(); paramDragActive=true; cell.classList.add('dragging'); e.preventDefault(); beginDrag(false,0,_mv,_end); });
+    cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; sY=t.clientY; sNorm=norm(); cell.classList.add('dragging'); e.preventDefault(); beginDrag(true,t.identifier,_mv,_end); },{passive:false});
+    cell._wheelAdjust=(dir)=>applyVal(masterFX[def.key]+dir*def.step);
+    cell._applyFromCC=(value)=>{ applyVal(def.min+(Math.max(0,Math.min(127,value))/127)*(def.max-def.min)); flashCellEl(cell); };
+    grid.appendChild(cell);
+    paint();
+  });
+}
+// ── Send FX hold panel (Reverb + Delay) ──
+// While Solo (Ctrl) is held in DRUM MACHINE + CTRL mode, the display shows the
+// global REVERB + DELAY send controls.
+//   Row 1: RVRB (tap to cycle algorithm) · DECAY · DAMP · RTRN
+//   Row 2: DLY  (tap to cycle algorithm) · TIME  · FDBK · RTRN
+const REV_ALGO_ABBR={HALL:'HALL',ROOM:'ROOM',PLATE:'PLATE',SPRING:'SPRG'};
+const DLY_ALGO_ABBR={ANALOG:'ANLG',DIGITAL:'DIGI',TAPE:'TAPE',PINGPONG:'PONG'};
+const SEND_FX_DEFS=[
+  {kind:'revalgo'},
+  {key:'revDecay',  label:'DECAY', min:0.2, max:8,    step:0.1,  dflt:2.0,  fmt:v=>v.toFixed(1)+'s',         rebuildIR:true},
+  {key:'revDamp',   label:'DAMP',  min:0,   max:100,  step:1,    dflt:50,   fmt:v=>Math.round(v)+'%'},
+  {key:'revReturn', label:'RTRN',  min:0,   max:1.5,  step:0.01, dflt:1.0,  fmt:v=>Math.round(v*100)+'%'},
+  {kind:'dlyalgo'},
+  {key:'dlyTime',   label:'TIME',  min:10,  max:1000, step:1,    dflt:300,  fmt:v=>Math.round(v)+'ms'},
+  {key:'dlyFb',     label:'FDBK',  min:0,   max:0.95, step:0.01, dflt:0.35, fmt:v=>Math.round(v*100)+'%'},
+  {key:'dlyReturn', label:'RTRN',  min:0,   max:1.5,  step:0.01, dflt:1.0,  fmt:v=>Math.round(v*100)+'%'},
+];
+// Keep the Sound-engine reverb/delay sliders + algo buttons in sync with sendFX.
+function refreshSendFXSliders(){
+  const setS=(id,val,txt)=>{const el=document.getElementById(id);if(el)el.value=val;const t=document.getElementById(id+'-val');if(t)t.textContent=txt;};
+  setS('se-rev-decay',sendFX.revDecay,sendFX.revDecay.toFixed(1)+'s');
+  setS('se-rev-damp',sendFX.revDamp,Math.round(sendFX.revDamp)+'%');
+  setS('se-rev-return',sendFX.revReturn,Math.round(sendFX.revReturn*100)+'%');
+  setS('se-dly-time',sendFX.dlyTime,Math.round(sendFX.dlyTime)+' ms');
+  setS('se-dly-fb',sendFX.dlyFb,Math.round(sendFX.dlyFb*100)+'%');
+  setS('se-dly-return',sendFX.dlyReturn,Math.round(sendFX.dlyReturn*100)+'%');
+  if(typeof updateSendAlgoButtons==='function') updateSendAlgoButtons();
+}
+function showSendFXPanel(){
+  const grid=resetSmdGridStyle();
+  grid.innerHTML='';
+  const lbl=document.getElementById('smd-mode-label');
+  if(lbl) lbl.textContent='SEND FX \u2014 RVRB + DLY';
+  SEND_FX_DEFS.forEach(def=>{
+    if(def.kind==='revalgo'){
+      buildScrubEnumCell(grid,{
+        label:'RVRB', options:REVERB_ALGOS, get:()=>sendFX.revAlgo,
+        display:v=>REV_ALGO_ABBR[v]||v,
+        apply:v=>{ sendFX.revAlgo=v; if(audioCtx){ buildSendFX(); rebuildReverbIR(); applySendFX(); } if(typeof updateSendAlgoButtons==='function') updateSendAlgoButtons(); },
+        status:v=>'Reverb: '+v,
+      });
+      return;
+    }
+    if(def.kind==='dlyalgo'){
+      buildScrubEnumCell(grid,{
+        label:'DLY', options:DELAY_ALGOS, get:()=>sendFX.dlyAlgo,
+        display:v=>DLY_ALGO_ABBR[v]||v,
+        apply:v=>{ sendFX.dlyAlgo=v; if(audioCtx){ buildSendFX(); rebuildDelayGraph(); } if(typeof updateSendAlgoButtons==='function') updateSendAlgoButtons(); },
+        status:v=>'Delay: '+v,
+      });
+      return;
+    }
+    const cell=document.createElement('div');
+    cell.className='smd-cell draggable';
+    cell.title='Drag up/down \u2014 '+def.label;
+    cell.innerHTML=
+      `<div class="smd-cell-label">${def.label}</div>`+
+      `<div class="smd-cell-val" id="sfx-${def.key}-val" style="font-size:18px">${def.fmt(sendFX[def.key])}</div>`+
+      `<div class="snap-hint"></div>`;
+    const valEl=()=>document.getElementById('sfx-'+def.key+'-val');
+    const paint=()=>{ const el=valEl(); if(el) el.textContent=def.fmt(sendFX[def.key]); };
+    const quant=(v)=>{ const n=Math.round(v/def.step)*def.step; return Math.max(def.min,Math.min(def.max,parseFloat(n.toFixed(4)))); };
+    const applyVal=(v)=>{ sendFX[def.key]=quant(v); if(audioCtx){ buildSendFX(); if(def.rebuildIR) rebuildReverbIR(); applySendFX(); } refreshSendFXSliders(); paint(); if(typeof markSaveDirty==='function') markSaveDirty(); };
+    cell.addEventListener('dblclick',()=>applyVal(def.dflt));
+    let sY=0,sNorm=0;
+    const norm=()=> (sendFX[def.key]-def.min)/(def.max-def.min);
+    const _mv=cy=>{ const nn=Math.max(0,Math.min(1,sNorm+(sY-cy)/160)); applyVal(def.min+nn*(def.max-def.min)); };
+    const _end=()=>{ cell.classList.remove('dragging'); };
+    cell.addEventListener('mousedown',e=>{ if(e.target.tagName==='INPUT')return; sY=e.clientY; sNorm=norm(); paramDragActive=true; cell.classList.add('dragging'); e.preventDefault(); beginDrag(false,0,_mv,_end); });
+    cell.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; sY=t.clientY; sNorm=norm(); cell.classList.add('dragging'); e.preventDefault(); beginDrag(true,t.identifier,_mv,_end); },{passive:false});
+    cell._wheelAdjust=(dir)=>applyVal(sendFX[def.key]+dir*def.step);
+    cell._applyFromCC=(value)=>{ applyVal(def.min+(Math.max(0,Math.min(127,value))/127)*(def.max-def.min)); flashCellEl(cell); };
+    grid.appendChild(cell);
+    paint();
+  });
+}
+
+// Show/hide a CTRL-mode hold panel based on the current modifier state.
+//   Mute (Shift) → master DIST + EQ        Solo (Ctrl) → send REVERB + DELAY
+// Called whenever the Mute/Solo modifier engages or releases.
+let _holdPanel=null; // 'mfx' | 'sfx' | null
+function syncCtrlHoldDisplay(){
+  const base = currentMode==='ctrl' && isDrumMachine() && heldStepAbs===-1;
+  const want = base ? (shiftHeld?'mfx':(ctrlHeld?'sfx':null)) : null;
+  if(want===_holdPanel) return;
+  _holdPanel=want;
+  if(want==='mfx') showMasterFXPanel();
+  else if(want==='sfx') showSendFXPanel();
+  else restoreSequencerDisplay();
 }
 
 // While N is held: show a big BPM readout filling the whole display section.
@@ -3723,6 +3970,7 @@ function buildSoundEditor(){
     if(k==='attack'){p.attack=v;document.getElementById('se-attack-val').textContent=Math.round(v*1000)+' ms';}
     if(k==='decay'){p.decay=v;document.getElementById('se-decay-val').textContent=v.toFixed(2)+'s';}
     if(k==='tone'){p.tone=v;document.getElementById('se-tone-val').textContent=Math.round(v*100)+'%';}
+    if(typeof syncSoundDisplayCells==='function') syncSoundDisplayCells(); // SOUND CTRL display follows
   });
 });
 // CHRD OSC2/OSC3 semitone detune sliders
@@ -3732,6 +3980,7 @@ function buildSoundEditor(){
     const v=Math.round(parseFloat(e.target.value));
     parts[activePart][field]=v;
     const o=document.getElementById('se-'+id+'-val'); if(o) o.textContent=(v>0?'+':'')+v;
+    if(typeof syncSoundDisplayCells==='function') syncSoundDisplayCells();
   });
 });
 
@@ -4557,6 +4806,7 @@ document.getElementById('mute-all-btn').addEventListener('click',e=>{
     const v=parseFloat(e.target.value);
     setPartPan(activePart,v);
     valEl.textContent=fmtPan(v);
+    if(typeof syncSoundDisplayCells==='function') syncSoundDisplayCells();
     if(typeof markSaveDirty==='function') markSaveDirty();
   });
   // Double-click / double-tap the slider to snap back to centre.
@@ -4617,6 +4867,7 @@ document.getElementById('mute-all-btn').addEventListener('click',e=>{
       const val=parseFloat(e.target.value);
       setPartSend(activePart,which,val);
       v.textContent=pct(val);
+      if(typeof syncSoundDisplayCells==='function') syncSoundDisplayCells();
       if(typeof markSaveDirty==='function') markSaveDirty();
     });
   };
@@ -5427,8 +5678,8 @@ document.addEventListener('keydown',e=>{
   // Shift+` clears all muted parts; Ctrl+` clears all soloed parts.
   if(e.code==='Backquote'&&(shiftHeld||e.shiftKey)){e.preventDefault();clearAllMutes();return;}
   if(e.code==='Backquote'&&(ctrlHeld||e.ctrlKey||e.metaKey)){e.preventDefault();clearAllSolos();return;}
-  if(e.code==='ShiftLeft'||e.code==='ShiftRight'){if(!shiftHeld){shiftHeld=true;buildParts();refreshShiftLabels();setStatus('Shift — press 1–8 to mute/unmute');}pressOn(document.getElementById('shift-btn'));return;}
-  if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){if(!ctrlHeld){ctrlHeld=true;buildParts();setStatus('Ctrl — press 1–8 to solo/unsolo');}pressOn(document.getElementById('ctrl-btn'));return;}
+  if(e.code==='ShiftLeft'||e.code==='ShiftRight'){if(!shiftHeld){shiftHeld=true;buildParts();refreshShiftLabels();setStatus('Shift — press 1–8 to mute/unmute');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();}pressOn(document.getElementById('shift-btn'));return;}
+  if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){if(!ctrlHeld){ctrlHeld=true;buildParts();setStatus('Ctrl — press 1–8 to solo/unsolo');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();}pressOn(document.getElementById('ctrl-btn'));return;}
   if(e.code==='Backquote'){e.preventDefault();if(!altHeld){altHeld=true;buildParts();setStatus('` held — press 1–8 to align part on next bar');}pressOn(document.getElementById('btn-resync'));return;}
   if(e.code in CODE_TO_PART){
     e.preventDefault();
@@ -5600,8 +5851,8 @@ document.addEventListener('keydown',e=>{
   if(e.code==='BracketRight'&&ctrlHeld){e.preventDefault();if(!e.repeat){if(!isPatLike())document.getElementById('ctrl-none').click();pressOn(document.getElementById('ctrl-none'));}return;}
 });
 document.addEventListener('keyup',e=>{
-  if(e.code==='ShiftLeft'||e.code==='ShiftRight'){shiftHeld=false;buildParts();refreshShiftLabels();setStatus('Ready');pressOff(document.getElementById('shift-btn'));}
-  if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){ctrlHeld=false;buildParts();setStatus('Ready');pressOff(document.getElementById('ctrl-btn'));}
+  if(e.code==='ShiftLeft'||e.code==='ShiftRight'){shiftHeld=false;buildParts();refreshShiftLabels();setStatus('Ready');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();pressOff(document.getElementById('shift-btn'));}
+  if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){ctrlHeld=false;buildParts();setStatus('Ready');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();pressOff(document.getElementById('ctrl-btn'));}
   if(e.code==='Backquote'){altHeld=false;buildParts();setStatus('Ready');pressOff(document.getElementById('btn-resync'));}
   if(e.code==='Digit9'){ pressOff(document.getElementById('tab-pat')); if(tempModeOrigin!==null) exitTempMode(); }
   if(e.code==='Digit0'){ pressOff(document.getElementById('tab-step')); if(tempModeOrigin!==null) exitTempMode(); }
@@ -5674,6 +5925,7 @@ function _setModifier(which, on){
                trigger:'Select held — tap a part to select'}[which];
     setStatus(msg);
   }else if(!shiftHeld&&!ctrlHeld&&!altHeld&&!triggerHeld){ setStatus('Ready'); }
+  syncCtrlHoldDisplay();
 }
 let _modPointerHeld=null;
 [['shift-btn','shift'],['ctrl-btn','ctrl'],['btn-resync','alt'],['btn-trigger','trigger']].forEach(([id,which])=>{
