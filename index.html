@@ -4011,27 +4011,60 @@ function setPartPan(ch,v){
 // effect is shaped by the sendFX params below. Returns sum into masterGain so
 // ALL MUTE and master volume affect the wet signal too.
 const sendFX={
+  revAlgo:'HALL', // reverb algorithm: HALL (default) | ROOM | PLATE | SPRING
   revDecay:2.0,   // s   reverb tail length     0.2 .. 8
   revDamp:50,     // %   high-freq damping      0 .. 100
   revReturn:1.0,  // ×   reverb wet return      0 .. 1.5
+  dlyAlgo:'ANALOG', // delay algorithm: ANALOG (default) | DIGITAL | TAPE | PINGPONG
   dlyTime:300,    // ms  delay time             10 .. 1000
   dlyFb:0.35,     // ×   delay feedback         0 .. 0.95
   dlyReturn:1.0,  // ×   delay wet return       0 .. 1.5
 };
+const REVERB_ALGOS=['HALL','ROOM','PLATE','SPRING'];
+const DELAY_ALGOS=['ANALOG','DIGITAL','TAPE','PINGPONG'];
 let _sendFXNodes=null;                // {revIn,conv,revLP,revRet,dlyIn,delay,dlyLP,fb,dlyRet}
 const _revSendGain=Array(8).fill(null);
 const _dlySendGain=Array(8).fill(null);
 
-// Reverb impulse response: stereo exponentially-decaying noise of `seconds`.
-function makeReverbIR(ctx,seconds){
+// Reverb impulse response synthesis. The `algo` shapes the character; HALL is
+// the original sound (smooth exponential noise tail) so existing projects are
+// unchanged. ROOM = short + early reflections, PLATE = dense & bright,
+// SPRING = dispersive metallic "boing".
+function makeReverbIR(ctx,seconds,algo){
+  algo=algo||'HALL';
   seconds=Math.max(0.1,Math.min(10,seconds));
-  const rate=ctx.sampleRate, len=Math.max(1,Math.floor(rate*seconds));
+  // ROOM reads as a smaller space → shorter effective tail.
+  let secs=(algo==='ROOM')?Math.max(0.2,seconds*0.5):seconds;
+  const rate=ctx.sampleRate, len=Math.max(1,Math.floor(rate*secs));
   const ir=ctx.createBuffer(2,len,rate);
   for(let c=0;c<2;c++){
     const d=ir.getChannelData(c);
     for(let i=0;i<len;i++){
-      const env=Math.pow(1-i/len,2.5);          // smooth exponential-ish tail
+      const t=i/len;
+      let env;
+      if(algo==='ROOM')       env=Math.pow(1-t,4.0);   // fast decay
+      else if(algo==='PLATE') env=Math.pow(1-t,2.0);   // long dense
+      else if(algo==='SPRING')env=Math.pow(1-t,3.0);
+      else                    env=Math.pow(1-t,2.5);   // HALL (original)
       d[i]=(Math.random()*2-1)*env;
+    }
+    if(algo==='ROOM'){
+      // sparse early reflections in the first ~45 ms
+      [0.007,0.013,0.021,0.032,0.045].forEach((tt,k)=>{
+        const idx=Math.floor(tt*rate); if(idx<len) d[idx]+=(k%2?-1:1)*0.6*Math.pow(0.72,k);
+      });
+    } else if(algo==='PLATE'){
+      // high-frequency emphasis (one-pole differencing) → brighter, glassy
+      let prev=0;
+      for(let i=0;i<len;i++){ const x=d[i]; d[i]=x-0.6*prev; prev=x; }
+    } else if(algo==='SPRING'){
+      // dispersive upward chirp + a couple of spring "bounces"
+      const dur=Math.min(len,Math.floor(0.25*rate));
+      for(let i=0;i<dur;i++){
+        const tt=i/rate, f=1200+4000*(i/dur), e=Math.pow(1-i/dur,2);
+        d[i]+=0.5*e*Math.sin(2*Math.PI*f*tt);
+      }
+      [0.04,0.085].forEach((tt,k)=>{ const idx=Math.floor(tt*rate); if(idx<len) d[idx]+=(k%2?-1:1)*0.5; });
     }
   }
   return ir;
@@ -4039,39 +4072,113 @@ function makeReverbIR(ctx,seconds){
 // Damping % → lowpass cutoff (0% = bright/open, 100% = dark/closed).
 function dampToFreq(pct){ return 18000*Math.pow(0.04,Math.max(0,Math.min(100,pct))/100); }
 
+// Gentle tape-style saturation curve for the TAPE delay feedback path.
+function makeTapeCurve(){
+  const n=1024, c=new Float32Array(n), k=1.8;
+  for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i]=Math.tanh(x*k)/Math.tanh(k); }
+  return c;
+}
+
+let _dlyGraph=null; // algorithm-specific delay subgraph (rebuilt on algo change)
+
+// Build the delay subgraph for `algo`, fed from the persistent `dlyIn` and
+// summing into `mg`. Returns a uniform interface so applySendFX stays simple.
+//   ANALOG  : mono, lowpass (~6 kHz) in the feedback → warm, darkening repeats (original)
+//   DIGITAL : mono, clean/bright repeats
+//   TAPE    : mono, darker + wow/flutter (delay-time LFO) + soft saturation
+//   PINGPONG: stereo, repeats bounce left↔right via cross-feedback
+function buildDelayGraph(ctx,mg,dlyIn,algo){
+  algo=algo||'ANALOG';
+  const time=sendFX.dlyTime/1000, fbv=Math.max(0,Math.min(0.95,sendFX.dlyFb)), ret=sendFX.dlyReturn;
+  if(algo==='PINGPONG'){
+    const dL=ctx.createDelay(2.0), dR=ctx.createDelay(2.0);
+    dL.delayTime.value=time; dR.delayTime.value=time;
+    const lpL=ctx.createBiquadFilter(); lpL.type='lowpass'; lpL.frequency.value=7000;
+    const lpR=ctx.createBiquadFilter(); lpR.type='lowpass'; lpR.frequency.value=7000;
+    const fbL=ctx.createGain(); fbL.gain.value=fbv;
+    const fbR=ctx.createGain(); fbR.gain.value=fbv;
+    const panL=ctx.createStereoPanner(); panL.pan.value=-0.85;
+    const panR=ctx.createStereoPanner(); panR.pan.value=0.85;
+    const ret_=ctx.createGain(); ret_.gain.value=ret;
+    dlyIn.connect(dL);
+    dL.connect(lpL); lpL.connect(fbL); fbL.connect(dR);   // cross-feedback L→R
+    dR.connect(lpR); lpR.connect(fbR); fbR.connect(dL);   // cross-feedback R→L
+    dL.connect(panL); dR.connect(panR);
+    panL.connect(ret_); panR.connect(ret_); ret_.connect(mg);
+    const all=[dL,dR,lpL,lpR,fbL,fbR,panL,panR,ret_];
+    return {
+      setTime:s=>{const t=ctx.currentTime; dL.delayTime.setValueAtTime(s,t); dR.delayTime.setValueAtTime(s,t);},
+      setFb:g=>{const t=ctx.currentTime; fbL.gain.setValueAtTime(g,t); fbR.gain.setValueAtTime(g,t);},
+      setReturn:g=>ret_.gain.setValueAtTime(g,ctx.currentTime),
+      dispose:()=>all.forEach(n=>{try{n.disconnect();}catch(e){}}),
+    };
+  }
+  // Mono algorithms
+  const delay=ctx.createDelay(2.0); delay.delayTime.value=time;
+  const lp=ctx.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.value = algo==='DIGITAL'?16000 : algo==='TAPE'?3200 : 6000;
+  const fb=ctx.createGain(); fb.gain.value=fbv;
+  const ret_=ctx.createGain(); ret_.gain.value=ret;
+  dlyIn.connect(delay);
+  let sat=null, lfo=null, lfoGain=null;
+  if(algo==='TAPE'){
+    sat=ctx.createWaveShaper(); sat.curve=makeTapeCurve();
+    delay.connect(lp); lp.connect(sat); sat.connect(fb); fb.connect(delay);   // saturating feedback
+    lfo=ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value=0.6;     // wow/flutter
+    lfoGain=ctx.createGain(); lfoGain.gain.value=0.0018;                       // ±1.8 ms
+    lfo.connect(lfoGain); lfoGain.connect(delay.delayTime); try{lfo.start();}catch(e){}
+  } else {
+    delay.connect(lp); lp.connect(fb); fb.connect(delay);
+  }
+  delay.connect(ret_); ret_.connect(mg);
+  const all=[delay,lp,fb,ret_]; if(sat)all.push(sat); if(lfo){all.push(lfo,lfoGain);}
+  return {
+    setTime:s=>delay.delayTime.setValueAtTime(s,ctx.currentTime),
+    setFb:g=>fb.gain.setValueAtTime(g,ctx.currentTime),
+    setReturn:g=>ret_.gain.setValueAtTime(g,ctx.currentTime),
+    dispose:()=>{ if(lfo){try{lfo.stop();}catch(e){}} all.forEach(n=>{try{n.disconnect();}catch(e){}}); },
+  };
+}
+
 function buildSendFX(){
   if(_sendFXNodes) return _sendFXNodes;
   const ctx=getCtx();
   const mg=getMasterGain();
   // Reverb chain
   const revIn=ctx.createGain();
-  const conv=ctx.createConvolver(); conv.buffer=makeReverbIR(ctx,sendFX.revDecay);
+  const conv=ctx.createConvolver(); conv.buffer=makeReverbIR(ctx,sendFX.revDecay,sendFX.revAlgo);
   const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=dampToFreq(sendFX.revDamp);
   const revRet=ctx.createGain(); revRet.gain.value=sendFX.revReturn;
   revIn.connect(conv); conv.connect(revLP); revLP.connect(revRet); revRet.connect(mg);
-  // Delay chain (feedback loop softened by a fixed lowpass for analog-ish repeats)
+  // Delay chain — a persistent input gain (per-part sends connect here) feeds an
+  // algorithm-specific subgraph that can be swapped without touching the sends.
   const dlyIn=ctx.createGain();
-  const delay=ctx.createDelay(2.0); delay.delayTime.value=sendFX.dlyTime/1000;
-  const dlyLP=ctx.createBiquadFilter(); dlyLP.type='lowpass'; dlyLP.frequency.value=6000;
-  const fb=ctx.createGain(); fb.gain.value=sendFX.dlyFb;
-  const dlyRet=ctx.createGain(); dlyRet.gain.value=sendFX.dlyReturn;
-  dlyIn.connect(delay);
-  delay.connect(dlyLP); dlyLP.connect(fb); fb.connect(delay);   // feedback
-  delay.connect(dlyRet); dlyRet.connect(mg);                    // wet out
-  _sendFXNodes={revIn,conv,revLP,revRet,dlyIn,delay,dlyLP,fb,dlyRet};
+  _dlyGraph=buildDelayGraph(ctx,mg,dlyIn,sendFX.dlyAlgo);
+  _sendFXNodes={revIn,conv,revLP,revRet,dlyIn};
   return _sendFXNodes;
 }
-// Rebuild the reverb impulse (only needed when decay length changes).
-function rebuildReverbIR(){ if(_sendFXNodes) _sendFXNodes.conv.buffer=makeReverbIR(getCtx(),sendFX.revDecay); }
+// Rebuild the reverb impulse (needed when decay length OR algorithm changes).
+function rebuildReverbIR(){ if(_sendFXNodes) _sendFXNodes.conv.buffer=makeReverbIR(getCtx(),sendFX.revDecay,sendFX.revAlgo); }
+// Swap the delay subgraph for the current sendFX.dlyAlgo (keeps the sends wired).
+function rebuildDelayGraph(){
+  if(!_sendFXNodes) return;
+  const ctx=getCtx(), mg=getMasterGain(), dlyIn=_sendFXNodes.dlyIn;
+  try{ dlyIn.disconnect(); }catch(e){}       // drop old subgraph input edge
+  if(_dlyGraph) _dlyGraph.dispose();
+  _dlyGraph=buildDelayGraph(ctx,mg,dlyIn,sendFX.dlyAlgo);
+  applySendFX();
+}
 // Push sendFX params (other than IR length) onto the live nodes.
 function applySendFX(){
   if(!_sendFXNodes) return;
   const t=getCtx().currentTime, n=_sendFXNodes;
   n.revLP.frequency.setValueAtTime(dampToFreq(sendFX.revDamp),t);
   n.revRet.gain.setValueAtTime(sendFX.revReturn,t);
-  n.delay.delayTime.setValueAtTime(sendFX.dlyTime/1000,t);
-  n.fb.gain.setValueAtTime(Math.max(0,Math.min(0.95,sendFX.dlyFb)),t);
-  n.dlyRet.gain.setValueAtTime(sendFX.dlyReturn,t);
+  if(_dlyGraph){
+    _dlyGraph.setTime(sendFX.dlyTime/1000);
+    _dlyGraph.setFb(Math.max(0,Math.min(0.95,sendFX.dlyFb)));
+    _dlyGraph.setReturn(sendFX.dlyReturn);
+  }
 }
 // Live per-part send update (which: 'rev' | 'dly').
 function setPartSend(ch,which,v){
@@ -4522,12 +4629,14 @@ document.getElementById('mute-all-btn').addEventListener('click',e=>{
   grp.innerHTML=
      '<div style="border-top:1px solid var(--seq-border);margin:6px 0 2px;"></div>'
     +'<div class="se-row"><div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">REVERB</div>'
-      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Global send reverb</div></div>'
+      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Algorithm</div>'
+      +'<div class="se-type-btn" id="se-rev-algo" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">HALL</div></div>'
     +'<div class="se-row"><div class="se-label">Decay</div><input type="range" class="se-slider" id="se-rev-decay" min="0.2" max="8" step="0.1" value="2"><div class="se-val" id="se-rev-decay-val">2.0s</div></div>'
     +'<div class="se-row"><div class="se-label">Damp</div><input type="range" class="se-slider" id="se-rev-damp" min="0" max="100" step="1" value="50"><div class="se-val" id="se-rev-damp-val">50%</div></div>'
     +'<div class="se-row"><div class="se-label">Return</div><input type="range" class="se-slider" id="se-rev-return" min="0" max="1.5" step="0.01" value="1"><div class="se-val" id="se-rev-return-val">100%</div></div>'
     +'<div class="se-row"><div class="se-label" style="color:var(--seq-yellow);letter-spacing:.06em;">DELAY</div>'
-      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Global send delay</div></div>'
+      +'<div class="se-val" style="flex:1;text-align:left;color:var(--seq-text-dim);">Algorithm</div>'
+      +'<div class="se-type-btn" id="se-dly-algo" style="cursor:pointer;flex:0 0 auto;padding:2px 10px;">ANALOG</div></div>'
     +'<div class="se-row"><div class="se-label">Time</div><input type="range" class="se-slider" id="se-dly-time" min="10" max="1000" step="1" value="300"><div class="se-val" id="se-dly-time-val">300 ms</div></div>'
     +'<div class="se-row"><div class="se-label">Feedback</div><input type="range" class="se-slider" id="se-dly-fb" min="0" max="0.95" step="0.01" value="0.35"><div class="se-val" id="se-dly-fb-val">35%</div></div>'
     +'<div class="se-row"><div class="se-label">Return</div><input type="range" class="se-slider" id="se-dly-return" min="0" max="1.5" step="0.01" value="1"><div class="se-val" id="se-dly-return-val">100%</div></div>';
@@ -4556,6 +4665,33 @@ document.getElementById('mute-all-btn').addEventListener('click',e=>{
       if(typeof markSaveDirty==='function') markSaveDirty();
     });
   });
+
+  // ── Algorithm cycle buttons (REVERB / DELAY) ──
+  // Each tap advances to the next algorithm; the current one is the default so
+  // the out-of-the-box sound is unchanged. Exposed globally so load/reset can
+  // refresh the labels too.
+  window.updateSendAlgoButtons=function(){
+    const rb=document.getElementById('se-rev-algo');
+    if(rb){ rb.textContent=sendFX.revAlgo; rb.classList.toggle('active',sendFX.revAlgo!=='HALL'); }
+    const db=document.getElementById('se-dly-algo');
+    if(db){ db.textContent=sendFX.dlyAlgo; db.classList.toggle('active',sendFX.dlyAlgo!=='ANALOG'); }
+  };
+  const cycle=(list,cur)=>list[(Math.max(0,list.indexOf(cur))+1)%list.length];
+  const rAlgoBtn=document.getElementById('se-rev-algo');
+  if(rAlgoBtn) rAlgoBtn.addEventListener('click',()=>{
+    sendFX.revAlgo=cycle(REVERB_ALGOS,sendFX.revAlgo);
+    buildSendFX(); rebuildReverbIR(); applySendFX();
+    window.updateSendAlgoButtons();
+    if(typeof markSaveDirty==='function') markSaveDirty();
+  });
+  const dAlgoBtn=document.getElementById('se-dly-algo');
+  if(dAlgoBtn) dAlgoBtn.addEventListener('click',()=>{
+    sendFX.dlyAlgo=cycle(DELAY_ALGOS,sendFX.dlyAlgo);
+    buildSendFX(); rebuildDelayGraph();
+    window.updateSendAlgoButtons();
+    if(typeof markSaveDirty==='function') markSaveDirty();
+  });
+  window.updateSendAlgoButtons();
 
   // Refresh the per-part send sliders whenever the editor rebuilds (part switch).
   if(typeof buildSoundEditor==='function'){
@@ -4604,11 +4740,11 @@ function resetSoundEngineDefaults(){
   for(const k of ['enabled','eqPost']) delete masterFX[k]; // clear any legacy keys
   Object.assign(masterFX,{distEnabled:false,eqMode:'off',volume:1.0,gain:1.0,character:0.5,low:0,mid:0,high:0});
   // Send FX → defaults
-  Object.assign(sendFX,{revDecay:2.0,revDamp:50,revReturn:1.0,dlyTime:300,dlyFb:0.35,dlyReturn:1.0});
+  Object.assign(sendFX,{revAlgo:'HALL',revDecay:2.0,revDamp:50,revReturn:1.0,dlyAlgo:'ANALOG',dlyTime:300,dlyFb:0.35,dlyReturn:1.0});
   // Only touch live audio nodes if the context already exists (don't spin one up).
   if(audioCtx){
     buildMasterFX(); rewireMasterFX(); applyMasterFX();
-    buildSendFX(); rebuildReverbIR(); applySendFX();
+    buildSendFX(); rebuildReverbIR(); rebuildDelayGraph(); applySendFX();
   }
   // UI refresh (always safe)
   if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
@@ -4619,6 +4755,7 @@ function resetSoundEngineDefaults(){
   setS('se-dly-time',sendFX.dlyTime,Math.round(sendFX.dlyTime)+' ms');
   setS('se-dly-fb',sendFX.dlyFb,Math.round(sendFX.dlyFb*100)+'%');
   setS('se-dly-return',sendFX.dlyReturn,Math.round(sendFX.dlyReturn*100)+'%');
+  if(typeof updateSendAlgoButtons==='function') updateSendAlgoButtons();
   if(typeof buildSoundEditor==='function') buildSoundEditor();
 }
 // ╔════════════════════════════════════════════════════════════════╗
@@ -5986,6 +6123,8 @@ function serializeAll(){
            sndLocks:JSON.parse(JSON.stringify(soundCtrlLocks)) },
     // ── master FX (distortion + EQ) ──
     masterFX:{...masterFX},
+    // ── global send FX (reverb + delay, incl. algorithms) ──
+    sendFX:{...sendFX},
     // ── GLOBAL per-part sound config (type + synth params). Stored once at the
     //    project level, NOT per pattern — the chosen sounds are shared across
     //    all patterns/banks. ──
@@ -6039,6 +6178,20 @@ function deserializeAll(data){
     }
     // master FX
     if(data.masterFX){ Object.assign(masterFX, data.masterFX); if(typeof migrateMasterFX==='function') migrateMasterFX(); try{ if(typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
+    if(data.sendFX){
+      Object.assign(sendFX, data.sendFX);
+      if(REVERB_ALGOS.indexOf(sendFX.revAlgo)<0) sendFX.revAlgo='HALL';
+      if(DELAY_ALGOS.indexOf(sendFX.dlyAlgo)<0) sendFX.dlyAlgo='ANALOG';
+      try{ if(audioCtx){ buildSendFX(); rebuildReverbIR(); rebuildDelayGraph(); applySendFX(); } }catch(e){}
+      const setS=(id,val,txt)=>{const el=document.getElementById(id);if(el)el.value=val;const t=document.getElementById(id+'-val');if(t)t.textContent=txt;};
+      setS('se-rev-decay',sendFX.revDecay,sendFX.revDecay.toFixed(1)+'s');
+      setS('se-rev-damp',sendFX.revDamp,Math.round(sendFX.revDamp)+'%');
+      setS('se-rev-return',sendFX.revReturn,Math.round(sendFX.revReturn*100)+'%');
+      setS('se-dly-time',sendFX.dlyTime,Math.round(sendFX.dlyTime)+' ms');
+      setS('se-dly-fb',sendFX.dlyFb,Math.round(sendFX.dlyFb*100)+'%');
+      setS('se-dly-return',sendFX.dlyReturn,Math.round(sendFX.dlyReturn*100)+'%');
+      if(typeof updateSendAlgoButtons==='function') updateSendAlgoButtons();
+    }
     // settings page values
     if(data.settingsVals){ for(const key in settingsVals) delete settingsVals[key]; Object.assign(settingsVals, data.settingsVals); }
     // per-part page selection
