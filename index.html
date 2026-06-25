@@ -171,9 +171,9 @@
   .smd-cell.cc-active .cc-num-input{border-color:#60d0d0;}
   .smd-cell.cc-active{border-color:#60d0d0 !important;background:#001a1a !important;}
   .smd-cell-label{font-size:9px;color:var(--seq-yellow-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
-  .smd-cell-val{font-size:22px;font-weight:bold;color:var(--seq-yellow);line-height:1;}
+  .smd-cell-val{font-size:18px;font-weight:bold;color:var(--seq-yellow);line-height:1;}
   .smd-cell.draggable .smd-cell-val{color:#fff;}
-  .dir-val,.spd-val,.swg-val{font-size:22px;font-weight:bold;color:#fff;line-height:1;}
+  .dir-val,.spd-val,.swg-val{font-size:18px;font-weight:bold;color:#fff;line-height:1;}
   .snap-hint{font-size:7px;color:var(--seq-yellow-dark);text-align:center;margin-top:2px;letter-spacing:.04em;min-height:9px;}
   /* DRUM MACHINE sound-CTRL cells reuse the exact canonical cell metrics
      (label + 22px value + snap-hint spacer); nowrap keeps spaced values
@@ -243,7 +243,7 @@
   body.portrait .seq-left > .panel:nth-child(2){order:3;}  /* Step sequencer */
   body.portrait .seq-right > .panel:nth-child(2){order:4;} /* status bar last */
   body.portrait .smd-grid{aspect-ratio:auto;}               /* let the display grow naturally full-width */
-  body.portrait .smd-cell-val{font-size:20px;}
+  body.portrait .smd-cell-val{font-size:18px;}
   body.portrait .parts-grid{gap:4px;}
   body.portrait .step-grid{gap:4px;}
   body.portrait .step-pad{font-size:13px;min-height:0;aspect-ratio:1;}      /* fit width: square via aspect-ratio, no fixed min that forces overflow */
@@ -1453,14 +1453,35 @@ function setupDisplayWheel(){
 // mode, which also shifts the status bar beneath it. Every builder that uses
 // the normal cell grid calls this FIRST, so all modes render the display at one
 // consistent size/placement (desktop and mobile alike).
+// Decide and apply the SMD display grid's aspect ratio for the current mode and
+// orientation. Centralised so the per-mode builders AND the resize/rotation
+// handler use the same rule, which keeps the display the exact same size in
+// every mode and prevents a stale value lingering after the device rotates.
+//   • Desktop 2-column layout → 2:1 (height = width/2), same as the STEP view.
+//   • Portrait/mobile stack    → natural height (auto), so it reflows.
+//   • MIDI IN/OUT settings page → always 2:1 (its 2-row form would otherwise
+//     collapse in portrait).
+function renormalizeSmdAspect(){
+  const g=document.getElementById('smd-grid');
+  if(!g) return;
+  const portrait=document.body.classList.contains('portrait');
+  const midiPage=(typeof currentMode!=='undefined' && currentMode==='set' &&
+                  (settingsPage===0||settingsPage===8));
+  g.style.aspectRatio=(portrait && !midiPage) ? 'auto' : '2 / 1';
+}
+
 function resetSmdGridStyle(){
   const g=document.getElementById('smd-grid');
   if(!g) return g;
   // Clear every property any special page may have set inline; '' restores the
   // value from the stylesheet (including the responsive portrait rules).
   ['display','flexDirection','flexWrap','alignItems','justifyContent',
-   'gap','width','height','minHeight','boxSizing','aspectRatio']
+   'gap','width','height','minHeight','boxSizing']
     .forEach(prop=>{ g.style[prop]=''; });
+  // Pin the aspect ratio explicitly so the display panel is the EXACT same size
+  // in every mode (STEP, SETTINGS, KEY, CTRL …) — this is what makes the
+  // Settings displays match the STEP view instead of rendering a touch shorter.
+  renormalizeSmdAspect();
   return g;
 }
 
@@ -1892,7 +1913,7 @@ function showStepParams(abs){
 
     cell.innerHTML=`
       <div class="smd-cell-label">${def.label}</div>
-      <div class="smd-cell-val" id="sp-cell-${idx}-val" style="color:#fff;font-size:${def.isToggle?'16':'22'}px">${def.fmt(sp[def.key])}</div>
+      <div class="smd-cell-val" id="sp-cell-${idx}-val" style="color:#fff;font-size:${def.isToggle?'14':'18'}px">${def.fmt(sp[def.key])}</div>
       <div class="snap-hint" id="sp-cell-${idx}-hint"></div>`;
     cell.prepend(ccWrap);
 
@@ -1983,7 +2004,7 @@ function showPartDefaults(pi){
     cell.title='Drag up/down';
     cell.innerHTML=`
       <div class="smd-cell-label">${def.label}</div>
-      <div class="smd-cell-val" id="pd-cell-${idx}-val" style="color:#fff;font-size:22px">${def.fmt(sp[def.key])}</div>
+      <div class="smd-cell-val" id="pd-cell-${idx}-val" style="color:#fff;font-size:18px">${def.fmt(sp[def.key])}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[idx]}" title="MIDI input CC number for this parameter"></div>`;
     const pdCC=cell.querySelector('.cc-num-input');
@@ -2041,7 +2062,7 @@ function showVelMixer(){
     cell.title='Drag up/down — part '+(pi+1)+' velocity scale';
     cell.innerHTML=`
       <div class="smd-cell-label">VEL ${pi+1}</div>
-      <div class="smd-cell-val" id="vmix-${pi}-val" style="font-size:22px">${midiVel[pi]}</div>
+      <div class="smd-cell-val" id="vmix-${pi}-val" style="font-size:18px">${midiVel[pi]}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[pi]}" title="MIDI CC number for this fader"></div>`;
     const ccInput=cell.querySelector('.cc-num-input');
@@ -2136,7 +2157,7 @@ function showCtrlPanel(){
     cell.title='Drag up/down \u2014 CTRL '+(idx+1)+' (CC'+ctrlCCNums[activePart][idx]+')';
     cell.innerHTML=`
       <div class="smd-cell-label">CTRL ${idx+1}</div>
-      <div class="smd-cell-val" id="cctrl-${idx}-val" style="font-size:22px">${shownVal()}</div>
+      <div class="smd-cell-val" id="cctrl-${idx}-val" style="font-size:18px">${shownVal()}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[idx]}"></div>`;
     const ccInput=cell.querySelector('.cc-num-input');
@@ -2318,7 +2339,7 @@ function showSoundCtrlPanel(){
     cell.title='Drag up/down \u2014 '+def.label;
     cell.innerHTML=`
       <div class="smd-cell-label snd-lbl">${def.label}</div>
-      <div class="smd-cell-val snd-val" id="sndctrl-${idx}-val" style="font-size:22px">${dispStr()}</div>
+      <div class="smd-cell-val snd-val" id="sndctrl-${idx}-val" style="font-size:18px">${dispStr()}</div>
       <div class="snap-hint"></div>`;
     const valEl=()=>document.getElementById('sndctrl-'+idx+'-val');
     const paint=()=>{const el=valEl();if(el){el.textContent=dispStr(); const c=el.closest('.smd-cell'); if(c){ if(isLocked()) c.classList.add('cc-locked'); else c.classList.remove('cc-locked'); }}};
@@ -2537,7 +2558,7 @@ function showSettingsPanel(){
       cell.title='Drag up/down — CC IN '+(idx+1)+' (MIDI CC number)';
       cell.innerHTML=`
         <div class="smd-cell-label">CC IN ${idx+1}</div>
-        <div class="smd-cell-val" id="ccin-${idx}-val" style="font-size:22px">${cellCCs[idx]}</div>
+        <div class="smd-cell-val" id="ccin-${idx}-val" style="font-size:18px">${cellCCs[idx]}</div>
         <div class="snap-hint"></div>`;
       const paint=()=>{const el=document.getElementById('ccin-'+idx+'-val');if(el)el.textContent=cellCCs[idx];};
       cell.addEventListener('dblclick',()=>{ const defs=[73,72,74,71,5,84,93,10]; cellCCs[idx]=defs[idx]; paint(); });
@@ -2568,7 +2589,7 @@ function showSettingsPanel(){
       cell.title='Drag up/down — CTRL CC '+(idx+1)+' output CC number (Part '+(part+1)+')';
       cell.innerHTML=`
         <div class="smd-cell-label">CTRL CC ${idx+1}</div>
-        <div class="smd-cell-val" id="ctrlnum-${idx}-val" style="font-size:22px">${ctrlCCNums[part][idx]}</div>
+        <div class="smd-cell-val" id="ctrlnum-${idx}-val" style="font-size:18px">${ctrlCCNums[part][idx]}</div>
         <div class="snap-hint"></div>`;
       const paint=()=>{const el=document.getElementById('ctrlnum-'+idx+'-val');if(el)el.textContent=ctrlCCNums[part][idx];};
       cell.addEventListener('dblclick',()=>{ ctrlCCNums[part][idx]=CTRL_CC_DEFAULTS[idx]; paint(); });
@@ -2594,7 +2615,7 @@ function showSettingsPanel(){
     cell.title='Drag up/down — NONE (no output)';
     cell.innerHTML=`
       <div class="smd-cell-label">NONE</div>
-      <div class="smd-cell-val" id="sset-${idx}-val" style="font-size:22px">${getSettingVal(idx)}</div>
+      <div class="smd-cell-val" id="sset-${idx}-val" style="font-size:18px">${getSettingVal(idx)}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[idx]}" title="MIDI input CC number for this cell"></div>`;
     const ccInput=cell.querySelector('.cc-num-input');
@@ -2627,7 +2648,7 @@ function showKeyPanel(){
     const initVal=spec.fmt(spec.get());
     cell.innerHTML=`
       <div class="smd-cell-label">${spec.label}</div>
-      <div class="smd-cell-val" id="${spec.id}" style="font-size:20px;white-space:nowrap;line-height:1.1${spec.dim?';opacity:0.35':''}">${initVal}</div>
+      <div class="smd-cell-val" id="${spec.id}" style="font-size:18px;white-space:nowrap;line-height:1${spec.dim?';opacity:0.35':''}">${initVal}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[spec.ccIdx]}" title="MIDI input CC number"></div>`;
     const ccInput=cell.querySelector('.cc-num-input');
@@ -3067,7 +3088,15 @@ function isOutOfSync(i){
 function updatePatDisp(){
   const el=document.getElementById('pat-disp');
   if(!el) return;
-  if(currentMode==='set'){ el.innerHTML=''; return; }
+  if(currentMode==='set'){
+    // SETTINGS has no SAVED/UNSAVED badge, but the badge (a bordered pill) makes
+    // the header ~7px taller in every other mode. Reserve that exact height with
+    // an invisible placeholder mirroring the pill's box, so the display grid and
+    // the status bar below it sit at the SAME position/size as in STEP etc.
+    el.innerHTML='<span style="display:inline-block;padding:1px 6px;border:1px solid transparent;border-radius:3px;letter-spacing:.08em;visibility:hidden;">SAVED</span>';
+    el.style.color='';
+    return;
+  }
   const patNum=(activePattern!==null?activePattern:0)+1;
   const saved=!patternDirty;
   const statusColor=saved?'var(--seq-yellow)':'var(--seq-red)';
@@ -6397,7 +6426,7 @@ function applyAppScale(){
   _scaling=false;
 }
 
-function refreshLayout(){ applyMobileMode(); applyPortrait(); applyAppScale(); if(typeof syncModeTabWidths==='function') requestAnimationFrame(syncModeTabWidths); }
+function refreshLayout(){ applyMobileMode(); applyPortrait(); renormalizeSmdAspect(); applyAppScale(); if(typeof syncModeTabWidths==='function') requestAnimationFrame(syncModeTabWidths); }
 window.addEventListener('resize', refreshLayout);
 window.addEventListener('orientationchange', ()=>setTimeout(refreshLayout,100));
 // Most reliable rotation signal: the orientation media query itself. resize and
