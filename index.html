@@ -1628,7 +1628,7 @@ function onMidiMessage(e, srcDeviceId){
     // ── SOUND CTRL panel (DRUM MACHINE, CTRL mode) ──
     // Incoming CC drives the on-screen sound-parameter cell at this position
     // (live, or as a sound p-lock when a step is held), like every other mode.
-    if(currentMode==='ctrl' && isDrumMachine()){
+    if(currentMode==='ctrl' && isDrumMachine() && heldPartPi===-1){
       const grid=document.getElementById('smd-grid');
       const cell=grid&&grid.children[idx];
       if(cell&&typeof cell._applyFromCC==='function'){
@@ -1637,6 +1637,9 @@ function onMidiMessage(e, srcDeviceId){
       }
       return;
     }
+    // A part is held in CTRL mode (PART SETUP on screen) — don't let incoming CC
+    // change its type/voice; those are deliberate edits only.
+    if(currentMode==='ctrl' && isDrumMachine()){ return; }
 
     if(heldStepAbs!==-1){
       if(currentMode==='ctrl'){
@@ -2076,6 +2079,80 @@ function updatePartDefGrey(sp){
   const manual=!!sp.velManual;
   if(velEl) velEl.style.opacity=manual?1:0.35;
   if(accEl) accEl.style.opacity=manual?0.35:1;
+}
+
+// ── PART SETUP (DRUM MACHINE, CTRL tab, hold a part button) ──────────────
+// Holding a part in CTRL mode shows a quick setup for THAT part on the display:
+//   box0  TYPE  — scrub through sound types (short names, as on the part boxes)
+//   box1  VOICE — scrub MONO / POLY
+//   box2  SAMPLE (only when TYPE = sample) — tap to load a file; shows the loaded
+//         file name, ellipsised in a smaller font so the cell keeps its shape.
+// The remaining boxes are intentionally blank (same look as the part-defaults
+// panel). The per-part step DEFAULTS popup (STEP mode hold) is unchanged.
+let _partSetupFileInput=null;
+function showPartSetupPanel(pi){
+  const grid=resetSmdGridStyle();
+  grid.innerHTML='';
+  const lbl=document.getElementById('smd-mode-label');
+  if(lbl) lbl.textContent='PART '+(pi+1)+' \u2014 SETUP';
+
+  // box0 — TYPE (short-form names)
+  buildScrubEnumCell(grid,{
+    label:'TYPE', options:DRUM_TYPES, get:()=>parts[pi].type,
+    display:t=>DRUM_NAMES_SHORT[DRUM_TYPES.indexOf(t)]||t,
+    apply:t=>{ parts[pi].type=t; if(pi===activePart && typeof buildSoundEditor==='function') buildSoundEditor(); buildParts(); buildSteps(); renderSampleBox(); },
+    status:t=>'Part '+(pi+1)+' type: '+(DRUM_NAMES_SHORT[DRUM_TYPES.indexOf(t)]||t),
+  });
+
+  // box1 — VOICE (MONO / POLY).  p.mono !== false  ⇒ MONO (default).
+  buildScrubEnumCell(grid,{
+    label:'VOICE', options:['MONO','POLY'], get:()=>(parts[pi].mono!==false?'MONO':'POLY'),
+    display:v=>v,
+    apply:v=>{ parts[pi].mono=(v==='MONO'); if(pi===activePart && typeof buildSoundEditor==='function') buildSoundEditor(); },
+    status:v=>'Part '+(pi+1)+' voice: '+v,
+  });
+
+  // box2 — SAMPLE loader (sample type only); blank otherwise.
+  grid.appendChild(document.createElement('div'));
+  function renderSampleBox(){
+    const cell=grid.children[2];
+    if(!cell) return;
+    if(parts[pi].type!=='sample'){ cell.className='smd-cell'; cell.innerHTML=''; cell.onclick=null; cell.onmousedown=null; cell.ontouchend=null; cell.style.cursor=''; cell.title=''; return; }
+    const nm=(partSampleNames[pi]||'').replace(/\.[^.]+$/,'').trim(); // drop extension
+    cell.className='smd-cell';
+    cell.style.cursor='pointer';
+    cell.title='Tap to load a sample';
+    cell.innerHTML=
+      `<div class="smd-cell-label">SAMPLE</div>`+
+      `<div class="smd-cell-val" style="${nm?'font-size:11px;color:#fff':'font-size:18px;color:var(--seq-yellow)'};display:block;width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;box-sizing:border-box">${nm||'LOAD\u2026'}</div>`+
+      `<div class="snap-hint"></div>`;
+    const openSampleLoader=()=>{
+      if(!_partSetupFileInput){
+        _partSetupFileInput=document.createElement('input');
+        _partSetupFileInput.type='file';
+        _partSetupFileInput.accept='.wav,.mp3,.m4a,.aac,.aif,.aiff,.ogg,.oga,.flac,.caf,.opus,audio/*';
+        _partSetupFileInput.style.display='none';
+        document.body.appendChild(_partSetupFileInput);
+      }
+      _partSetupFileInput.value='';
+      _partSetupFileInput.onchange=async e=>{
+        const f=e.target.files&&e.target.files[0];
+        if(f&&typeof loadSampleForPart==='function'){ await loadSampleForPart(pi,f); buildParts(); if(heldPartPi===pi) renderSampleBox(); }
+      };
+      _partSetupFileInput.click();
+    };
+    // Keep the PART SETUP panel open through the global mouseup (which otherwise
+    // releases the held part and rebuilds the display before the click lands).
+    cell.onmousedown=e=>{ e.stopPropagation(); paramDragActive=true; };
+    cell.onclick=e=>{ e.stopPropagation(); openSampleLoader(); };
+    // Touch: open directly on touchend and suppress the synthesized click so it
+    // fires exactly once (and works on iOS, which needs a real gesture).
+    cell.ontouchend=e=>{ e.preventDefault(); e.stopPropagation(); openSampleLoader(); };
+  }
+  renderSampleBox();
+
+  // boxes 3-7 — blank (matches the part-defaults panel's empty-cell style).
+  while(grid.children.length<8){ const c=document.createElement('div'); c.className='smd-cell'; grid.appendChild(c); }
 }
 
 function showVelMixer(){
@@ -3453,7 +3530,10 @@ function buildParts(){
       div.dataset.pressable='1';
       div.addEventListener('mousedown',e=>{
         if(shiftHeld||ctrlHeld||altHeld||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey) return;
-        if(heldStepAbs===-1 && currentMode==='step'){ heldPartPi=i; showPartDefaults(i); }
+        if(heldStepAbs===-1){
+          if(currentMode==='step'){ heldPartPi=i; showPartDefaults(i); }
+          else if(currentMode==='ctrl' && isDrumMachine()){ heldPartPi=i; showPartSetupPanel(i); }
+        }
       });
       // ── Touch: a quick TAP selects the part; a HOLD opens part-defaults.
       // We select on touchend (not the synthesized click, which iOS drops when
@@ -3467,8 +3547,12 @@ function buildParts(){
         // Only arm the hold-to-open-defaults timer when NO modifier is held.
         // With a modifier (Mute/Solo/Align held), a tap should act on the part
         // immediately on touchend, not open the part-defaults popup.
-        if(!shiftHeld&&!ctrlHeld&&!altHeld&&!triggerHeld&&heldStepAbs===-1 && currentMode==='step'){
-          partHoldTimer=setTimeout(()=>{ heldPartPi=i; showPartDefaults(i); partHoldOpened=true; }, 400);
+        if(!shiftHeld&&!ctrlHeld&&!altHeld&&!triggerHeld&&heldStepAbs===-1){
+          if(currentMode==='step'){
+            partHoldTimer=setTimeout(()=>{ heldPartPi=i; showPartDefaults(i); partHoldOpened=true; }, 400);
+          } else if(currentMode==='ctrl' && isDrumMachine()){
+            partHoldTimer=setTimeout(()=>{ heldPartPi=i; showPartSetupPanel(i); partHoldOpened=true; }, 400);
+          }
         }
       },{passive:false});
       div.addEventListener('touchmove',e=>{
@@ -5709,6 +5793,8 @@ document.addEventListener('keydown',e=>{
         // no trigger, no MIDI, no internal sound.
         selectPart(i);
         pressOn(document.getElementById('pnum-'+i));
+        // Hold opens this part's SETUP (type / voice / sample) on the display.
+        if(heldStepAbs===-1 && isDrumMachine()){ heldPartPi=i; showPartSetupPanel(i); }
       } else {
       if(recording&&isStepLike()){ recordStep(i); }
       if(!triggerHeld){
@@ -5722,7 +5808,10 @@ document.addEventListener('keydown',e=>{
       // Add after selectPart since it rebuilds the DOM
       pressOn(document.getElementById('pnum-'+i));
       // Show this part's global step defaults in the display while held
-      if(heldStepAbs===-1 && currentMode==='step'){ heldPartPi=i; showPartDefaults(i); }
+      if(heldStepAbs===-1){
+        if(currentMode==='step'){ heldPartPi=i; showPartDefaults(i); }
+        else if(currentMode==='ctrl' && isDrumMachine()){ heldPartPi=i; showPartSetupPanel(i); }
+      }
       }
     }
     return;
