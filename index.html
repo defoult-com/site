@@ -1134,6 +1134,8 @@ function exitTempMode(){
 }
 
 function setMode(mode){
+  // Leaving the CTRL tab (or switching tabs at all) drops a latched PART SETUP.
+  if(_partSetupLatched){ _partSetupLatched=false; heldPartPi=-1; }
   if(currentMode==='key'&&mode!=='key'){ stopArp(); keyHeld.forEach(s=>{const m=keyHeldMidi.get(s);if(m)sendMidiNoteOff(m.ch,m.note);}); keyHeldMidi.clear(); keyHeld.clear(); }
   if(playhead>=0){
     const prev=document.getElementById('spad-'+playhead);
@@ -2031,6 +2033,9 @@ let stepTouchId=null;   // touch identifier of the finger holding a step pad
 let partTouchId=null;   // touch identifier of the finger holding a part button
 let partHoldTimer=null; // delayed timer that opens the part-defaults popup on a real hold
 let partHoldOpened=false; // true once the hold popup has opened for this touch
+// On touch, the CTRL-tab PART SETUP panel latches open after the hold so it can
+// be used one-handed (scrub TYPE/VOICE, tap SAMPLE) — a second tap closes it.
+let _partSetupLatched=false;
 let partTouchStart=null;  // {x,y} start point, to distinguish tap vs scroll
 function showPartDefaults(pi){
   const grid=resetSmdGridStyle();
@@ -2131,40 +2136,47 @@ function showPartSetupPanel(pi){
 
   // box2 — SAMPLE loader (sample type only); blank otherwise.
   grid.appendChild(document.createElement('div'));
+  function ensureSampleInput(){
+    if(!_partSetupFileInput){
+      _partSetupFileInput=document.createElement('input');
+      _partSetupFileInput.type='file';
+      _partSetupFileInput.id='ps-sample-fi';
+      _partSetupFileInput.accept='.wav,.mp3,.m4a,.aac,.aif,.aiff,.ogg,.oga,.flac,.caf,.opus,audio/*';
+      _partSetupFileInput.style.cssText='position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+      document.body.appendChild(_partSetupFileInput); // lives in <body> so it survives a panel rebuild while the picker is open
+    }
+    return _partSetupFileInput;
+  }
   function renderSampleBox(){
     const cell=grid.children[2];
     if(!cell) return;
-    if(parts[pi].type!=='sample'){ cell.className='smd-cell'; cell.innerHTML=''; cell.onclick=null; cell.onmousedown=null; cell.ontouchend=null; cell.style.cursor=''; cell.title=''; return; }
+    if(parts[pi].type!=='sample'){ cell.className='smd-cell'; cell.innerHTML=''; cell.onmousedown=null; cell.onclick=null; cell.ontouchend=null; cell.style.cursor=''; cell.style.position=''; cell.title=''; return; }
     const nm=(partSampleNames[pi]||'').replace(/\.[^.]+$/,'').trim(); // drop extension
     cell.className='smd-cell';
+    cell.style.position='relative';
     cell.style.cursor='pointer';
     cell.title='Tap to load a sample';
+    // A <label> tied to a persistent <input type=file> in <body>. Tapping the
+    // label opens the native file picker directly (works on iOS/Android, where a
+    // programmatic .click() is blocked). The input outliving the panel means the
+    // sample still loads even if releasing the part closes the panel mid-pick.
     cell.innerHTML=
       `<div class="smd-cell-label">SAMPLE</div>`+
       `<div class="smd-cell-val" style="${nm?'font-size:11px;color:#fff':'font-size:18px;color:var(--seq-yellow)'};display:block;width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;box-sizing:border-box">${nm||'LOAD\u2026'}</div>`+
-      `<div class="snap-hint"></div>`;
-    const openSampleLoader=()=>{
-      if(!_partSetupFileInput){
-        _partSetupFileInput=document.createElement('input');
-        _partSetupFileInput.type='file';
-        _partSetupFileInput.accept='.wav,.mp3,.m4a,.aac,.aif,.aiff,.ogg,.oga,.flac,.caf,.opus,audio/*';
-        _partSetupFileInput.style.display='none';
-        document.body.appendChild(_partSetupFileInput);
-      }
-      _partSetupFileInput.value='';
-      _partSetupFileInput.onchange=async e=>{
-        const f=e.target.files&&e.target.files[0];
-        if(f&&typeof loadSampleForPart==='function'){ await loadSampleForPart(pi,f); buildParts(); if(heldPartPi===pi) renderSampleBox(); }
-      };
-      _partSetupFileInput.click();
+      `<div class="snap-hint"></div>`+
+      `<label for="ps-sample-fi" style="position:absolute;inset:0;cursor:pointer;margin:0;"></label>`;
+    const fi=ensureSampleInput();
+    fi.value='';
+    fi.onchange=async e=>{
+      const f=e.target.files&&e.target.files[0];
+      if(f&&typeof loadSampleForPart==='function'){ await loadSampleForPart(pi,f); buildParts(); if(heldPartPi===pi) renderSampleBox(); }
+      e.target.value='';
     };
-    // Keep the PART SETUP panel open through the global mouseup (which otherwise
-    // releases the held part and rebuilds the display before the click lands).
-    cell.onmousedown=e=>{ e.stopPropagation(); paramDragActive=true; };
-    cell.onclick=e=>{ e.stopPropagation(); openSampleLoader(); };
-    // Touch: open directly on touchend and suppress the synthesized click so it
-    // fires exactly once (and works on iOS, which needs a real gesture).
-    cell.ontouchend=e=>{ e.preventDefault(); e.stopPropagation(); openSampleLoader(); };
+    // Keep the PART SETUP panel open through the desktop global mouseup so the
+    // label's click can reach the input.
+    const lab=cell.querySelector('label');
+    lab.addEventListener('mousedown',e=>{ e.stopPropagation(); paramDragActive=true; });
+    lab.addEventListener('touchstart',e=>{ e.stopPropagation(); },{passive:true});
   }
   renderSampleBox();
 
@@ -3587,10 +3599,24 @@ function buildParts(){
         clearTimeout(partHoldTimer);
         const wasHold=partHoldOpened;
         partTouchId=null; partTouchStart=null;
-        if(wasHold){ // hold opened defaults — close it, don't select
-          if(heldPartPi===i){ heldPartPi=-1; if(heldStepAbs===-1) restoreSequencerDisplay(); }
+        if(wasHold){ // hold opened a popup
           partHoldOpened=false;
+          // CTRL-tab PART SETUP latches open so it can be used one-handed on touch
+          // (releasing the finger no longer closes it). A later tap closes it.
+          if(currentMode==='ctrl' && isDrumMachine() && heldPartPi===i){
+            _partSetupLatched=true;
+            return;
+          }
+          if(heldPartPi===i){ heldPartPi=-1; if(heldStepAbs===-1) restoreSequencerDisplay(); }
           return;
+        }
+        // A tap while a PART SETUP panel is latched closes it (and doesn't also
+        // re-trigger the part). Tapping a different part then selects that one.
+        if(_partSetupLatched){
+          const wasPi=heldPartPi;
+          _partSetupLatched=false; heldPartPi=-1;
+          if(heldStepAbs===-1) restoreSequencerDisplay();
+          if(i===wasPi) return; // tapped the same part → just close
         }
         // Quick tap → select this part (honoring latched modifier buttons)
         if(altHeld){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return; }
