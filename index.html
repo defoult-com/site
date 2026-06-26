@@ -1878,6 +1878,23 @@ function endHold(){
   heldStepAbs=-1; heldStepWasOn=false; heldStepParamChanged=false; heldStepStartTime=0;
 }
 
+// CTRL tab: holding a step shows its automation (unchanged). A QUICK TAP instead
+// jumps to the STEP tab and toggles that step (add/remove), staying in STEP.
+// In CTRL mode the press leaves the step untouched (toggleStep is read-only
+// there), so we switch modes first and then toggle once from the held state.
+const STEP_QUICK_TAP_MS=300;
+function tryCtrlQuickTapToStep(){
+  if(currentMode!=='ctrl' || heldStepAbs<0) return false;
+  if(heldStepParamChanged) return false;
+  if((performance.now()-heldStepStartTime)>=STEP_QUICK_TAP_MS) return false;
+  const abs=heldStepAbs;
+  endHold();
+  setMode('step');     // switch first so toggleStep is no longer read-only…
+  toggleStep(abs);     // …then add (if it was off) or remove (if it was on)
+  buildSteps();        // reflect the change
+  return true;
+}
+
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 // Gate as note length relative to one step. 100% = exactly one step ("1").
 // Below one step shows a fraction (¼, ⅓, ½, ¾…); above shows multiples (2, 3, 4).
@@ -3768,6 +3785,7 @@ function buildSteps(){
       });
       div.addEventListener('mouseup',()=>{
         if(heldStepAbs===abs){
+          if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
           if(shouldToggleOffOnRelease(abs)) toggleStep(abs);
           endHold();
           restoreSequencerDisplay();
@@ -3819,6 +3837,7 @@ function buildSteps(){
       if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
       stepTouchId=null;
       if(heldStepAbs!==-1){
+        if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
         if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
         endHold();
         restoreSequencerDisplay();
@@ -5984,6 +6003,7 @@ document.addEventListener('keyup',e=>{
     } else {
       const abs=absStepFn(CODE_TO_SLOT[e.code]);
       if(heldStepAbs===abs){
+        if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
         if(shouldToggleOffOnRelease(abs)) toggleStep(abs);
         endHold();
         restoreSequencerDisplay();
@@ -6348,6 +6368,7 @@ document.addEventListener('mouseup',()=>{
   if(paramDragActive){paramDragActive=false;return;}
   if(heldPartPi!==-1){ heldPartPi=-1; if(heldStepAbs===-1) restoreSequencerDisplay(); }
   if(heldStepAbs!==-1){
+    if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
     if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
     endHold();
     restoreSequencerDisplay();
