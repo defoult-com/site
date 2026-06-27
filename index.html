@@ -292,6 +292,10 @@
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
     flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
   }
+  /* Portrait: put the Save/Reload/Clear/Random row on top and the
+     Mute/Solo/Align/Select row below (flipped vs. the desktop single row). */
+  body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{order:1;}
+  body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger{order:2;}
 </style>
 </head>
 <body>
@@ -3879,6 +3883,18 @@ function buildSteps(){
   updatePartIndicator();updateSmdDisplay();
 } // end buildSteps
 
+// Range/page buttons fire their action on a real touch tap as well as click.
+// On mobile a synthesized click is unreliable — especially as the SECOND finger
+// of a multi-touch gesture (e.g. hold Mute + tap a page button to copy pages) —
+// so we handle touchend directly and preventDefault to avoid a double fire.
+function wireRangeTap(div, fn){
+  let sx=0,sy=0,moved=false,active=false;
+  div.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; sx=t.clientX; sy=t.clientY; moved=false; active=true; },{passive:true});
+  div.addEventListener('touchmove',e=>{ if(!active)return; const t=e.changedTouches[0]; if(Math.abs(t.clientX-sx)>14||Math.abs(t.clientY-sy)>14) moved=true; },{passive:true});
+  div.addEventListener('touchend',e=>{ if(!active)return; active=false; if(moved)return; e.preventDefault(); fn(); },{passive:false});
+  div.addEventListener('touchcancel',()=>{ active=false; });
+}
+
 function buildRangeBar(){
   const bar=document.getElementById('step-range-bar');bar.innerHTML='';
   if(saveBrowsing){
@@ -3890,6 +3906,7 @@ function buildRangeBar(){
       div.innerHTML=`<span>${RANGE_LABELS[i]}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
       div.dataset.pressable='1';
       div.addEventListener('click',()=>{patternPage=i;buildSteps();buildRangeBar();});
+      wireRangeTap(div,()=>{patternPage=i;buildSteps();buildRangeBar();});
       bar.appendChild(div);
     }
     return;
@@ -3900,12 +3917,14 @@ function buildRangeBar(){
       const div=document.createElement('div');div.className='range-btn';
       div.innerHTML=`<span>${label}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
       div.dataset.pressable='1';
-      div.addEventListener('click',()=>{
+      const octHandler=()=>{
         keyOctave=Math.max(0,Math.min(10,keyOctave+delta));
         buildSteps();updatePartIndicator();
         {const el=document.getElementById('koct-val');if(el)el.textContent=keyOctave;}
         setStatus('Keyboard octave '+keyOctave);
-      });
+      };
+      div.addEventListener('click',octHandler);
+      wireRangeTap(div,octHandler);
       bar.appendChild(div);
     });
     // Backward / forward: offset the whole keyboard by a semitone
@@ -3914,11 +3933,13 @@ function buildRangeBar(){
       const div=document.createElement('div');div.className='range-btn';
       div.innerHTML=`<span>${label}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
       div.dataset.pressable='1';
-      div.addEventListener('click',()=>{
+      const shiftHandler=()=>{
         keyShift+=delta; normalizeKeyShift();
         buildSteps();updatePartIndicator();
         setStatus('Keyboard shift '+(keyShift>=0?'+':'')+keyShift+' · oct '+keyOctave);
-      });
+      };
+      div.addEventListener('click',shiftHandler);
+      wireRangeTap(div,shiftHandler);
       bar.appendChild(div);
     });
     return;
@@ -3944,6 +3965,7 @@ function buildRangeBar(){
       if(currentMode==='pat'||currentMode==='set'){
         div.dataset.pressable='1';
         div.addEventListener('click',()=>{patternPage=i;buildSteps();buildRangeBar();});
+        wireRangeTap(div,()=>{patternPage=i;buildSteps();buildRangeBar();});
       }
       bar.appendChild(div);
     }
@@ -3959,6 +3981,7 @@ function buildRangeBar(){
     div.innerHTML=`<span>${RANGE_LABELS[i]}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
     div.dataset.pressable='1';
     div.addEventListener('click',()=>setPage(i));
+    wireRangeTap(div,()=>setPage(i));
     bar.appendChild(div);
   }
 }
