@@ -324,9 +324,9 @@
     </div>
     <div class="top-bar-sep"></div>
     <div class="mode-tabs-group">
-    <div class="mode-tab" id="tab-pat" onclick="setMode('pat')"><span>PAT</span><span class="kbdkey">9</span></div>
+    <div class="mode-tab" id="tab-pat" onclick="setMode('pat')"><span>PTRN</span><span class="kbdkey">9</span></div>
     <div class="mode-tab active" id="tab-step" onclick="setMode('step')"><span>STEP</span><span class="kbdkey">0</span></div>
-    <div class="mode-tab" id="tab-key" onclick="setMode('key')"><span>KEY</span><span class="kbdkey">-</span></div>
+    <div class="mode-tab" id="tab-key" onclick="setMode('key')"><span>KEYB</span><span class="kbdkey">-</span></div>
     <div class="mode-tab" id="tab-ctrl" onclick="setMode('ctrl')"><span>CTRL</span><span class="kbdkey">=</span></div>
     </div>
   </div>
@@ -369,10 +369,10 @@
 
   <!-- Action buttons row: moved below the sequencer/status, above the sound engine. -->
   <div class="seq-top-bar" id="action-btn-row" style="margin-top:6px;margin-bottom:0;">
-    <div class="ctrl-btn" id="shift-btn" style="flex:1;"><div class="ctrl-val" id="shift-val">Mute</div><div class="ctrl-kbd">Shift</div></div>
-    <div class="ctrl-btn" id="ctrl-btn" style="flex:1;"><div class="ctrl-val" id="ctrl-val">Solo</div><div class="ctrl-kbd">Ctrl</div></div>
-    <div class="ctrl-btn" id="btn-resync" style="flex:1;"><div class="ctrl-val">Align</div><div class="ctrl-kbd">`</div></div>
-    <div class="ctrl-btn" id="btn-trigger" style="flex:1;"><div class="ctrl-val" id="btn-trigger-val">Select</div><div class="ctrl-kbd" id="btn-trigger-kbd">\</div><div class="set-toggle-track" id="btn-trigger-toggle" style="display:none;"><div class="set-toggle-seg on"></div><div class="set-toggle-seg"></div></div></div>
+    <div class="ctrl-btn" id="shift-btn" style="flex:1;"><div class="ctrl-val" id="shift-val">MUTE</div><div class="ctrl-kbd">Shift</div></div>
+    <div class="ctrl-btn" id="ctrl-btn" style="flex:1;"><div class="ctrl-val" id="ctrl-val">SOLO</div><div class="ctrl-kbd">Ctrl</div></div>
+    <div class="ctrl-btn" id="btn-resync" style="flex:1;"><div class="ctrl-val">ALIGN</div><div class="ctrl-kbd">`</div></div>
+    <div class="ctrl-btn" id="btn-trigger" style="flex:1;"><div class="ctrl-val" id="btn-trigger-val">SELECT</div><div class="ctrl-kbd" id="btn-trigger-kbd">\</div><div class="set-toggle-track" id="btn-trigger-toggle" style="display:none;"><div class="set-toggle-seg on"></div><div class="set-toggle-seg"></div></div></div>
     <div class="top-bar-sep"></div>
     <div class="ctrl-btn" id="ctrl-save" style="flex:1;"><div class="ctrl-val">Save</div><div class="ctrl-kbd">O</div></div>
     <div class="ctrl-btn" id="ctrl-reload" style="flex:1;"><div class="ctrl-val">Reload</div><div class="ctrl-kbd">P</div></div>
@@ -1137,6 +1137,21 @@ function exitTempMode(){
   // else: quick tap, no change → permanent switch, stay in the new mode
 }
 
+// Relabel the Save/Reload/Clear/None action buttons for a given mode.
+function refreshActionBtnLabels(mode){
+  mode=mode||currentMode;
+  const looperLabels=mode==='set'?['SAVE','LOAD','NEW','AUTO-SAVE']
+    :mode==='pat'?['LOOP 1/4','LOOP 1/8','LOOP 1/16','LOOP 1/32']
+    :mode==='key'?['ROLL 1/4','ROLL 1/8','ROLL 1/16','ROLL 1/32']
+    :mode==='step'?['PTRN SAVE','PTRN RELD','PTRN CLEAR','PTRN RAND']
+    :mode==='ctrl'?['SAVE','RELD','CLEAR','ALL']
+    :['Save','Reload','Clear','Random'];
+  ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
+    const v=document.getElementById(id)?.querySelector('.ctrl-val');
+    if(v) v.textContent=looperLabels[i];
+  });
+}
+
 function setMode(mode){
   // Leaving the CTRL tab (or switching tabs at all) drops a latched PART SETUP.
   if(_partSetupLatched){ _partSetupLatched=false; heldPartPi=-1; }
@@ -1161,14 +1176,8 @@ function setMode(mode){
   buildRangeBar();
   restoreSequencerDisplay();
   updatePartIndicator();
-  // Relabel Save/Reload/Clear/None as looper divisions in PAT mode
-  const looperLabels=mode==='set'?['SAVE','LOAD','NEW','AUTO-SAVE']
-    :(mode==='pat'||mode==='key')?['1/4','1/8','1/16','1/32']
-    :['Save','Reload','Clear',mode==='ctrl'?'All':'Random'];
-  ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
-    const v=document.getElementById(id)?.querySelector('.ctrl-val');
-    if(v) v.textContent=looperLabels[i];
-  });
+  // Relabel Save/Reload/Clear/None per mode (looper/roll/pattern/ctrl).
+  refreshActionBtnLabels(mode);
   if(typeof refreshAutoSaveBtn==='function') refreshAutoSaveBtn();
   // Deactivate Mute/Solo/Align in SETTINGS mode (like the page buttons).
   // Select (btn-trigger) is handled separately: in SETTINGS it becomes a
@@ -6339,11 +6348,18 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     if(currentMode==='key'){ releaseRoll(div); }
     else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=false; }
-    // STEP Save is latched (toggled on touchstart) — do nothing on release.
+    const isStepSaveHold=(currentMode==='step' && id==='ctrl-save');
+    if(isStepSaveHold){
+      // Desktop-style hold: if a destination was saved, or the button was held
+      // (not a quick tap), releasing finishes save-browse and returns to the
+      // step sequencer. A quick tap with nothing saved stays LATCHED so a
+      // single-finger user can tap Save, tap a slot, then tap Save again.
+      if(saveHeld && (saveClickCount>0 || !wasQuick)) endSaveHold();
+      return;
+    }
     // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
     // gesture — iOS blocks share sheets / file pickers triggered from a
     // synthesized click. So we call them directly here.
-    const isStepSaveHold=(currentMode==='step' && id==='ctrl-save');
     if(wasQuick && currentMode==='set'){
       if(id==='ctrl-save'){ downloadProject(); flashCtrlBtn('ctrl-save'); }
       else if(id==='ctrl-reload'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); }
@@ -6371,6 +6387,19 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     else if(currentMode==='ctrl' && id==='ctrl-none') ctrlAllHeld=false;
     else if(currentMode==='step' && id==='ctrl-none' && isRandomPanelOpen()){ closeRandomParams(); restoreSequencerDisplay(); }
   });
+});
+
+// ── Touch: hold a tab to TEMPORARILY switch to it (mirrors the desktop hold-a-
+// tab behavior). Hold the tab with one finger, make a change with another, then
+// release the tab to revert to the original tab. A quick tap with no change (or
+// a hold under 1s) switches permanently. preventDefault suppresses the
+// synthesized click so the inline onclick=setMode() doesn't double-switch.
+[['tab-pat','pat'],['tab-step','step'],['tab-key','key'],['tab-ctrl','ctrl']].forEach(([id,mode])=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('touchstart',e=>{ e.preventDefault(); enterTempMode(mode); pressOn(el); },{passive:false});
+  el.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(el); if(tempModeOrigin!==null) exitTempMode(); },{passive:false});
+  el.addEventListener('touchcancel',()=>{ pressOff(el); if(tempModeOrigin!==null) exitTempMode(); });
 });
 
 document.getElementById('ctrl-reload').addEventListener('click',()=>{
@@ -6496,6 +6525,7 @@ document.getElementById('btn-play').addEventListener('click',()=>{playing?stopPl
 
 for(let i=0;i<8;i++){resetPartPlayState(i);partInPhase[i]=true;}
 buildSmdGrid();buildParts();buildSteps();buildRangeBar();buildSoundEditor();
+refreshActionBtnLabels(); // STEP (default) labels on first load, before any setMode
 if(typeof setupDisplayWheel==='function') setupDisplayWheel();
 
 // ════════════════════════════════════════════════════════════════════
@@ -7097,7 +7127,7 @@ function renderTriggerButton(){
       tog.querySelectorAll('.set-toggle-seg').forEach((s,i)=>s.classList.toggle('on', i===settingsModeType));
     }
   } else {
-    if(val){ val.textContent='Select'; val.style.borderColor=''; val.style.color=''; }
+    if(val){ val.textContent='SELECT'; val.style.borderColor=''; val.style.color=''; }
     if(kbd) kbd.style.display='';
     if(tog) tog.style.display='none';
   }
