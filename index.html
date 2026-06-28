@@ -1882,14 +1882,32 @@ let heldStepParamChanged = false;
 let heldStepStartTime = 0;
 
 function holdExceeded(){ return (performance.now()-heldStepStartTime)>1000; }
-function startHold(abs,wasOn){
-  if(heldStepAbs>=0){const p=document.getElementById('spad-'+heldStepAbs);if(p)p.classList.remove('held');}
+// When a part has a non-zero OFFSET, the grid renders a rotated view: the pad at
+// screen position P shows the data step that will sound there. Editing must hit
+// the step shown under the finger, so we map pad index → data index (and back
+// for the held-pad highlight). Inactive (out-of-range) pads map to themselves.
+function offsetDataAbs(abs){
+  const p=parts[activePart]; if(!p) return abs;
+  const lo=p.seqStart-1, len=p.seqEnd-p.seqStart+1, stepNum=abs+1;
+  if(p.seqOffset===0 || stepNum<p.seqStart || stepNum>p.seqEnd) return abs;
+  const pos=abs-lo, shiftedPos=((pos-p.seqOffset)%len+len)%len;
+  return lo+shiftedPos;
+}
+function offsetPadAbs(dataAbs){
+  const p=parts[activePart]; if(!p) return dataAbs;
+  const lo=p.seqStart-1, len=p.seqEnd-p.seqStart+1, stepNum=dataAbs+1;
+  if(p.seqOffset===0 || stepNum<p.seqStart || stepNum>p.seqEnd) return dataAbs;
+  const dpos=dataAbs-lo, padPos=((dpos+p.seqOffset)%len+len)%len;
+  return lo+padPos;
+}
+function startHold(abs,wasOn){ // abs is the DATA step index
+  if(heldStepAbs>=0){const p=document.getElementById('spad-'+offsetPadAbs(heldStepAbs));if(p)p.classList.remove('held');}
   heldStepAbs=abs; heldStepWasOn=wasOn; heldStepParamChanged=false; heldStepStartTime=performance.now();
-  const pad=document.getElementById('spad-'+abs);if(pad)pad.classList.add('held');
+  const pad=document.getElementById('spad-'+offsetPadAbs(abs));if(pad)pad.classList.add('held');
 }
 function shouldToggleOffOnRelease(abs){ if(currentMode==='ctrl') return false; return heldStepWasOn && !heldStepParamChanged && !holdExceeded() && heldStepAbs===abs; }
 function endHold(){
-  if(heldStepAbs>=0){const pad=document.getElementById('spad-'+heldStepAbs);if(pad)pad.classList.remove('held');}
+  if(heldStepAbs>=0){const pad=document.getElementById('spad-'+offsetPadAbs(heldStepAbs));if(pad)pad.classList.remove('held');}
   heldStepAbs=-1; heldStepWasOn=false; heldStepParamChanged=false; heldStepStartTime=0;
 }
 
@@ -3632,7 +3650,7 @@ function buildParts(){
           if(i===wasPi) return; // tapped the same part → just close
         }
         // Quick tap → select this part (honoring latched modifier buttons)
-        if(altHeld){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return; }
+        if(altHeld){ _alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return; }
         if(shiftHeld){ toggleMute(i); return; }
         if(ctrlHeld){ toggleSolo(i); return; }
         triggerSelectPart(i);
@@ -3646,7 +3664,7 @@ function buildParts(){
         const doShift=shiftHeld||e.shiftKey;
         const doCtrl=ctrlHeld||e.ctrlKey||e.metaKey;
         const doAlt=altHeld||e.altKey;
-        if(doAlt){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
+        if(doAlt){ _alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
         if(doShift){toggleMute(i);return;}
         if(doCtrl){toggleSolo(i);return;}
         triggerSelectPart(i);
@@ -3784,9 +3802,13 @@ function buildSteps(){
     const isInactive=(stepNum<p.seqStart)||(stepNum>p.seqEnd);
     const isHead=playhead===abs;
 
-    // Visual: show what step will actually sound at this position (offset-shifted lookup)
+    // Visual: show what step will actually sound at this position (offset-shifted
+    // lookup). Steps outside the active range (below start / beyond end) never
+    // show as active, even if they still hold data — they're not in the loop.
     let isOn;
-    if(!isInactive && p.seqOffset!==0){
+    if(isInactive){
+      isOn=false;
+    } else if(p.seqOffset!==0){
       const pos=abs-lo;
       const shiftedPos=((pos-p.seqOffset)%len+len)%len;
       isOn=steps[lo+shiftedPos];
@@ -3795,8 +3817,9 @@ function buildSteps(){
     }
 
     const isBelowStart=(stepNum<p.seqStart);
-    const isSkipped=p.skip&&p.skip[abs]&&!isInactive;
-    const hasLock=currentMode==='ctrl'&&(isDrumMachine()?soundStepHasLocks(activePart,abs):stepHasLocks(activePart,abs));
+    const dAbs=offsetDataAbs(abs); // data step shown on this pad (offset-aware)
+    const isSkipped=p.skip&&p.skip[dAbs]&&!isInactive;
+    const hasLock=currentMode==='ctrl'&&(isDrumMachine()?soundStepHasLocks(activePart,dAbs):stepHasLocks(activePart,dAbs));
     let padCls='step-pad'+(isOn?' on':'')+(isHead?' playhead':'')+(isInactive?' inactive':'')+(isSkipped?' skipped':'')+(hasLock?' has-lock':'');
     const div=document.createElement('div');div.className='step-btn';div.dataset.pressable='1';
     div.innerHTML=`<div class="${padCls}" id="spad-${abs}">${stepNum}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
@@ -3804,40 +3827,44 @@ function buildSteps(){
     if(!isBelowStart){
       div.addEventListener('mousedown',e=>{
         e.preventDefault();
-        if(e.shiftKey||shiftHeld){ toggleSkip(abs); return; } // Shift = step-skip toggle
-        const wasOn=parts[activePart].steps[abs];
-        if(!wasOn) toggleStep(abs);
-        startHold(abs,wasOn);
-        showStepParams(abs);
+        const da=offsetDataAbs(abs);
+        if(e.shiftKey||shiftHeld){ toggleSkip(da); return; } // Shift = step-skip toggle
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       });
       div.addEventListener('mouseenter',e=>{
         if(e.buttons!==1) return;
         if(e.shiftKey||shiftHeld) return; // don't sweep-skip on shift-drag
-        if(heldStepAbs===abs) return;
+        const da=offsetDataAbs(abs);
+        if(heldStepAbs===da) return;
         if(heldStepAbs!==-1){
           if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
         }
-        const wasOn=parts[activePart].steps[abs];
-        if(!wasOn) toggleStep(abs);
-        startHold(abs,wasOn);
-        showStepParams(abs);
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       });
       div.addEventListener('mouseup',()=>{
-        if(heldStepAbs===abs){
+        const da=offsetDataAbs(abs);
+        if(heldStepAbs===da){
           if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
-          if(shouldToggleOffOnRelease(abs)) toggleStep(abs);
+          if(shouldToggleOffOnRelease(da)) toggleStep(da);
           endHold();
           restoreSequencerDisplay();
         }
       });
       div.addEventListener('touchstart',e=>{
         e.preventDefault();
-        if(shiftHeld){ toggleSkip(abs); return; }
+        const da=offsetDataAbs(abs);
+        if(shiftHeld){ toggleSkip(da); return; }
         stepTouchId=e.changedTouches[0].identifier;
-        const wasOn=parts[activePart].steps[abs];
-        if(!wasOn) toggleStep(abs);
-        startHold(abs,wasOn);
-        showStepParams(abs);
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       },{passive:false});
     }
     grid.appendChild(div); // always render the pad (below-start steps show grayed)
@@ -3858,18 +3885,20 @@ function buildSteps(){
       const pad=target.classList.contains('step-pad')?target:target.closest('.step-btn')?.querySelector('.step-pad');
       if(!pad) return;
       const newAbs=parseInt(pad.id.replace('spad-',''));
-      if(isNaN(newAbs)||newAbs===heldStepAbs) return;
+      if(isNaN(newAbs)) return;
       if(currentMode!=='step') return; // sweep only paints in STEP mode
       const np=parts[activePart];
       if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
+      const dataNew=offsetDataAbs(newAbs);
+      if(dataNew===heldStepAbs) return;
       if(heldStepAbs!==-1){
         if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
         endHold();
       }
-      const wasOn=parts[activePart].steps[newAbs];
-      if(!wasOn) toggleStep(newAbs);
-      startHold(newAbs,wasOn);
-      showStepParams(newAbs);
+      const wasOn=parts[activePart].steps[dataNew];
+      if(!wasOn) toggleStep(dataNew);
+      startHold(dataNew,wasOn);
+      showStepParams(dataNew);
     },{passive:false});
     grid.addEventListener('touchend',e=>{
       if(stepTouchId===null) return;
@@ -5243,18 +5272,18 @@ function setTempoVal(v){
 })();
 
 function handlePartClick(i){
-  if(altHeld){ if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
+  if(altHeld){ _alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
   if(shiftHeld){toggleMute(i);return;}
   if(ctrlHeld){toggleSolo(i);return;}
   selectPart(i);
 }
 function selectPart(i){activePart=i;buildParts();buildSteps();buildRangeBar();if(seOpen)buildSoundEditor();if(currentMode==='ctrl')showCtrlPanel();if(currentMode==='key')showKeyPanel();setStatus('Part '+(i+1)+(parts[i].muted?' [MUTED]':parts[i].soloed?' [SOLO]':''));}
 // Select a part AND trigger its sound — used by mouse click / touch tap so they
-// behave like the keyboard part keys. Triggering happens only in trigger-capable
-// modes (STEP/KEY), and is suppressed while Select (triggerHeld) is held, which
-// is the "select without sound" modifier. Mirrors the keydown handler.
+// behave like the keyboard part keys. Triggering happens in trigger-capable
+// modes (STEP/KEYB/CTRL), and is suppressed while Select (triggerHeld) is held,
+// which is the "select without sound" modifier. Mirrors the keydown handler.
 function triggerSelectPart(i){
-  const canTrigger = (currentMode!=='ctrl' && currentMode!=='pat' && currentMode!=='set');
+  const canTrigger = (currentMode!=='pat' && currentMode!=='set');
   if(currentMode!=='ctrl' && recording && isStepLike()){ recordStep(i); }
   if(canTrigger && !triggerHeld){
     getCtx();
@@ -5288,11 +5317,11 @@ function toggleStep(abs){
 
   if(parts[activePart].steps[abs]){
     const ap=activePart;
-    // Holding Select (triggerHeld) forces the step to the part's step defaults,
+    // Holding Align (altHeld) forces the step to the part's step defaults,
     // overriding any remembered params from a previous placement. Otherwise a
     // never-before-placed step is seeded with the defaults, and a previously
     // placed-then-removed step keeps everything it had.
-    if(triggerHeld || !parts[ap].stepSeen || !parts[ap].stepSeen[abs]){
+    if(altHeld || !parts[ap].stepSeen || !parts[ap].stepSeen[abs]){
       if(!parts[ap].stepSeen) parts[ap].stepSeen=Array(64).fill(false);
       parts[ap].stepParams[abs]=newStepParams(ap);
       parts[ap].stepSeen[abs]=true;
@@ -5841,7 +5870,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Backquote'&&(ctrlHeld||e.ctrlKey||e.metaKey)){e.preventDefault();clearAllSolos();return;}
   if(e.code==='ShiftLeft'||e.code==='ShiftRight'){if(!shiftHeld){shiftHeld=true;buildParts();refreshShiftLabels();setStatus('Shift — press 1–8 to mute/unmute');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();}pressOn(document.getElementById('shift-btn'));return;}
   if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){if(!ctrlHeld){ctrlHeld=true;buildParts();setStatus('Ctrl — press 1–8 to solo/unsolo');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();}pressOn(document.getElementById('ctrl-btn'));return;}
-  if(e.code==='Backquote'){e.preventDefault();if(!altHeld){altHeld=true;buildParts();setStatus('` held — press 1–8 to align part on next bar');}pressOn(document.getElementById('btn-resync'));return;}
+  if(e.code==='Backquote'){e.preventDefault();if(!altHeld){altHeld=true;_alignComboUsed=false;_alignPressT=performance.now();buildParts();setStatus('` held — press 1–8 to align part on next bar');}pressOn(document.getElementById('btn-resync'));return;}
   if(e.code in CODE_TO_PART){
     e.preventDefault();
     const i=CODE_TO_PART[e.code];
@@ -5855,13 +5884,13 @@ document.addEventListener('keydown',e=>{
       return;
     }
     if(currentMode==='pat'||currentMode==='set'){
-      if(altHeld){ if(!e.repeat){if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');}} return;}
+      if(altHeld){ if(!e.repeat){_alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');}} return;}
       if(shiftHeld){if(!e.repeat)toggleMute(i);return;}
       if(ctrlHeld){if(!e.repeat)toggleSolo(i);return;}
       if(!e.repeat){activeBank=i;patternPage=0;buildParts();buildSteps();buildRangeBar();updatePartIndicator();updateSmdDisplay();}
       return;
     }
-    if(altHeld){ if(!e.repeat){if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');}} return;}
+    if(altHeld){ if(!e.repeat){_alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');}} return;}
     if(shiftHeld){if(!e.repeat)toggleMute(i);return;}
     if(ctrlHeld){if(!e.repeat)toggleSolo(i);return;}
     if(!e.repeat){
@@ -5947,23 +5976,24 @@ document.addEventListener('keydown',e=>{
     }
     const abs=absStepFn(CODE_TO_SLOT[e.code]);
     const p=parts[activePart];
+    const da=offsetDataAbs(abs);
     if(shiftHeld && currentMode==='step'){ // Shift + step key = step-skip toggle
-      if(!e.repeat && abs+1>=p.seqStart && abs+1<=p.seqEnd) toggleSkip(abs);
+      if(!e.repeat && abs+1>=p.seqStart && abs+1<=p.seqEnd) toggleSkip(da);
       const grid=document.getElementById('step-grid');
       if(grid&&grid.children[CODE_TO_SLOT[e.code]]) pressOn(grid.children[CODE_TO_SLOT[e.code]]);
       return;
     }
     if(abs+1<p.seqStart) return;
     // Release previous held step cleanly if switching fast
-    if(heldStepAbs!==-1 && heldStepAbs!==abs){
+    if(heldStepAbs!==-1 && heldStepAbs!==da){
       if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
       endHold();
     }
-    if(heldStepAbs===abs) return;
-    const wasOn=p.steps[abs];
-    if(!wasOn) toggleStep(abs);
-    startHold(abs,wasOn);
-    showStepParams(abs);
+    if(heldStepAbs===da) return;
+    const wasOn=p.steps[da];
+    if(!wasOn) toggleStep(da);
+    startHold(da,wasOn);
+    showStepParams(da);
     return;
   }
   if(e.code in CODE_TO_PAGE){e.preventDefault();if(!e.repeat){const _pi=CODE_TO_PAGE[e.code];setPage(_pi);const _rbs=document.querySelectorAll('.range-btn');if(_rbs[_pi])pressOn(_rbs[_pi]);}return;}
@@ -6019,7 +6049,7 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('keyup',e=>{
   if(e.code==='ShiftLeft'||e.code==='ShiftRight'){shiftHeld=false;buildParts();refreshShiftLabels();setStatus('Ready');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();pressOff(document.getElementById('shift-btn'));}
   if(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='MetaLeft'||e.code==='MetaRight'){ctrlHeld=false;buildParts();setStatus('Ready');if(typeof syncCtrlHoldDisplay==='function')syncCtrlHoldDisplay();pressOff(document.getElementById('ctrl-btn'));}
-  if(e.code==='Backquote'){altHeld=false;buildParts();setStatus('Ready');pressOff(document.getElementById('btn-resync'));}
+  if(e.code==='Backquote'){const tap=_alignTapShouldFire('alt');altHeld=false;buildParts();setStatus('Ready');pressOff(document.getElementById('btn-resync'));if(tap) alignActivePart();}
   if(e.code==='Digit9'){ pressOff(document.getElementById('tab-pat')); if(tempModeOrigin!==null) exitTempMode(); }
   if(e.code==='Digit0'){ pressOff(document.getElementById('tab-step')); if(tempModeOrigin!==null) exitTempMode(); }
   if(e.code==='Minus'){ pressOff(document.getElementById('tab-key')); if(tempModeOrigin!==null) exitTempMode(); }
@@ -6060,9 +6090,10 @@ document.addEventListener('keyup',e=>{
       if(sg) Array.from(sg.children).forEach(el=>pressOff(el));
     } else {
       const abs=absStepFn(CODE_TO_SLOT[e.code]);
-      if(heldStepAbs===abs){
+      const da=offsetDataAbs(abs);
+      if(heldStepAbs===da){
         if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
-        if(shouldToggleOffOnRelease(abs)) toggleStep(abs);
+        if(shouldToggleOffOnRelease(da)) toggleStep(da);
         endHold();
         restoreSequencerDisplay();
       }
@@ -6074,6 +6105,7 @@ document.addEventListener('keyup',e=>{
 // disengage (not toggles). Works for both mouse and touch. While held, tap a
 // part (1–8) to mute/solo/align/select it.
 function _setModifier(which, on){
+  if(which==='alt'&&on){ _alignComboUsed=false; _alignPressT=performance.now(); } // fresh ALIGN hold
   if(which==='shift'){ shiftHeld=on; if(on){ctrlHeld=false;altHeld=false;triggerHeld=false;} }
   else if(which==='ctrl'){ ctrlHeld=on; if(on){shiftHeld=false;altHeld=false;triggerHeld=false;} }
   else if(which==='alt'){ altHeld=on; if(on){shiftHeld=false;ctrlHeld=false;triggerHeld=false;} }
@@ -6095,6 +6127,20 @@ function _setModifier(which, on){
   syncCtrlHoldDisplay();
 }
 let _modPointerHeld=null;
+// True if ALIGN was used as a combo (ALIGN + part) during the current hold, so a
+// plain ALIGN tap (no part) can instead align the currently selected part.
+let _alignComboUsed=false;
+let _alignPressT=0;
+// A quick ALIGN tap that didn't engage a part (or a clear-combo) aligns the
+// currently selected part. Hold-ALIGN + part is unchanged.
+function _alignTapShouldFire(which){
+  return which==='alt' && !_alignComboUsed && (performance.now()-_alignPressT)<500;
+}
+function alignActivePart(){
+  const i=activePart;
+  if(playing) queueResync(i);
+  else { resetPartPlayState(i); setStatus('Part '+(i+1)+' aligned'); }
+}
 [['shift-btn','shift'],['ctrl-btn','ctrl'],['btn-resync','alt'],['btn-trigger','trigger']].forEach(([id,which])=>{
   const el=document.getElementById(id);
   if(!el) return;
@@ -6117,10 +6163,10 @@ let _modPointerHeld=null;
     return false;
   };
   el.addEventListener('mousedown',e=>{ if(currentMode==='set')return; e.preventDefault(); if(alignClearCombo()){ pressOn(el); setTimeout(()=>pressOff(el),120); return; } _modPointerHeld=which; _setModifier(which,true); pressOn(el); });
-  el.addEventListener('mouseup',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
+  el.addEventListener('mouseup',e=>{ if(_modPointerHeld===which){ const tap=_alignTapShouldFire(which); _setModifier(which,false); _modPointerHeld=null; pressOff(el); if(tap) alignActivePart(); } });
   el.addEventListener('mouseleave',e=>{ if(_modPointerHeld===which){ _setModifier(which,false); _modPointerHeld=null; pressOff(el); } });
   el.addEventListener('touchstart',e=>{ if(currentMode==='set')return; e.preventDefault(); if(alignClearCombo()){ pressOn(el); setTimeout(()=>pressOff(el),120); return; } touchActive=true; _setModifier(which,true); pressOn(el); },{passive:false});
-  el.addEventListener('touchend',e=>{ if(!touchActive)return; e.preventDefault(); touchActive=false; _setModifier(which,false); pressOff(el); },{passive:false});
+  el.addEventListener('touchend',e=>{ if(!touchActive)return; e.preventDefault(); const tap=_alignTapShouldFire(which); touchActive=false; _setModifier(which,false); pressOff(el); if(tap) alignActivePart(); },{passive:false});
   el.addEventListener('touchcancel',()=>{ if(!touchActive)return; touchActive=false; _setModifier(which,false); pressOff(el); });
 });
 // Release the mouse-held modifier on mouseup anywhere (dragging off still releases).
