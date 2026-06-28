@@ -150,7 +150,7 @@
   .ctrl-val{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:10px;font-weight:bold;color:var(--seq-text);text-align:center;padding:5px 2px;letter-spacing:.04em;}
   .ctrl-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
   /* Settings-mode toggle (replaces the Select button while in SETTINGS) */
-  .ctrl-btn.set-toggle .ctrl-val{font-size:8.5px;line-height:1.05;padding:4px 2px;min-height:30px;display:flex;align-items:center;justify-content:center;white-space:normal;letter-spacing:.02em;}
+  .ctrl-btn.set-toggle .ctrl-val{font-size:8.5px;line-height:1.05;padding:4px 2px;flex:1;display:flex;align-items:center;justify-content:center;white-space:normal;letter-spacing:.02em;}
   .set-toggle-track{display:flex;width:100%;gap:2px;}
   .set-toggle-seg{flex:1;height:8px;border-radius:2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);transition:background .1s,border-color .1s;}
   .set-toggle-seg.on{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);}
@@ -296,12 +296,66 @@
      Mute/Solo/Align/Select row below (flipped vs. the desktop single row). */
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{order:1;}
   body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger{order:2;}
+
+  /* ── Audio recorder bar ──────────────────────────────────────────────
+     Top row that records the FULL sound-engine output (all parts, pan,
+     reverb/delay, master FX) WITHOUT the metronome click, and saves a WAV. */
+  .rec-bar{display:flex;align-items:stretch;gap:6px;margin-bottom:6px;width:100%;
+    background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:4px;padding:5px;flex-wrap:wrap;}
+  .rec-btn{display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:var(--seq-text);padding:6px 14px;transition:all .1s;white-space:nowrap;min-width:96px;}
+  .rec-btn:hover{border-color:var(--seq-yellow);}
+  .rec-btn:active{transform:translateY(1px);}
+  .rec-btn .rec-dot{width:11px;height:11px;border-radius:50%;background:var(--seq-red);flex-shrink:0;
+    box-shadow:0 0 0 1px #0004 inset;}
+  .rec-btn.armed{border-color:var(--seq-red);color:#fff;background:#2a1410;}
+  .rec-btn.armed .rec-dot{animation:recPulse 1s steps(1,end) infinite;}
+  @keyframes recPulse{0%{opacity:1;}50%{opacity:.12;}100%{opacity:1;}}
+  .rec-level{position:relative;width:6px;align-self:stretch;border-radius:2px;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);overflow:hidden;flex-shrink:0;}
+  .rec-level-fill{position:absolute;left:0;right:0;bottom:0;height:0%;
+    background:linear-gradient(to top,#40c040,#f0c030 72%,#e05040);transition:height .05s linear;}
+  .rec-meta{flex:1 1 120px;display:flex;flex-direction:column;justify-content:center;min-width:0;
+    padding:0 4px;line-height:1.25;}
+  .rec-time{font-size:16px;font-weight:bold;color:var(--seq-yellow);
+    font-variant-numeric:tabular-nums;letter-spacing:.02em;}
+  .rec-bar.armed .rec-time{color:var(--seq-red);}
+  .rec-status{font-size:10px;color:var(--seq-text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rec-save{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+    background:var(--seq-yellow);border:1px solid var(--seq-yellow-dark);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:#111;padding:6px 14px;transition:all .1s;white-space:nowrap;}
+  .rec-save:active{transform:translateY(1px);}
+  .rec-save.disabled{opacity:.4;pointer-events:none;background:var(--seq-btn-bg);
+    border-color:var(--seq-border);color:var(--seq-text-dim);}
+  @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;} }
 </style>
 </head>
 <body>
 <button id="view-toggle" title="Toggle portrait / wide layout">Portrait</button>
 <div id="scale-wrap">
 <div id="seq-root">
+  <!-- ── Audio recorder row (top of everything) ──────────────────────────
+       Records the full sound-engine output — all 8 parts, panning, the
+       reverb/delay sends and the master FX — but NOT the metronome click
+       (the click bypasses the master chain straight to the output). The take
+       is saved to disk as a 16-bit stereo WAV file. -->
+  <div class="rec-bar" id="rec-bar">
+    <div class="rec-btn" id="rec-toggle" title="Start / stop recording the sound-engine output (no metronome click)">
+      <span class="rec-dot"></span><span id="rec-toggle-label">REC</span>
+    </div>
+    <div class="rec-level"><div class="rec-level-fill" id="rec-level-fill"></div></div>
+    <div class="rec-meta">
+      <span class="rec-time" id="rec-time">00:00.0</span>
+      <span class="rec-status" id="rec-status">Ready — captures the output, click excluded</span>
+    </div>
+    <div class="rec-save disabled" id="rec-save" title="Save the last take as a WAV file">
+      <span style="font-size:14px;line-height:1;">&#x2913;</span><span>SAVE WAV</span>
+    </div>
+  </div>
+
   <div class="seq-top-bar">
     <div class="topbar-left-half" style="display:flex;align-items:stretch;gap:2px;flex:1;">
     <div style="display:flex;gap:2px;align-items:stretch;flex:1;">
@@ -1179,14 +1233,25 @@ function setMode(mode){
   // Relabel Save/Reload/Clear/None per mode (looper/roll/pattern/ctrl).
   refreshActionBtnLabels(mode);
   if(typeof refreshAutoSaveBtn==='function') refreshAutoSaveBtn();
-  // Deactivate Mute/Solo/Align in SETTINGS mode (like the page buttons).
-  // Select (btn-trigger) is handled separately: in SETTINGS it becomes a
-  // DRUM MACHINE / MIDI CONTROLLER toggle, so it stays interactive.
-  ['shift-btn','ctrl-btn','btn-resync'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.classList.toggle('ctrl-disabled', mode==='set');
-  });
+  // In SETTINGS, Mute/Solo/Align become ABOUT / DONATE / MANUAL link buttons,
+  // styled like the DRUM MACHINE / MIDI CONTROLLER button. Select (btn-trigger)
+  // is the mode toggle, handled in renderTriggerButton.
+  renderSettingsLinkButtons();
   if(typeof renderTriggerButton==='function') renderTriggerButton();
+}
+// ABOUT / DONATE / MANUAL placeholders (no action yet — for external links later).
+const SETTINGS_LINK_BTNS=[['shift-btn','ABOUT','MUTE'],['ctrl-btn','DONATE','SOLO'],['btn-resync','MANUAL','ALIGN']];
+function renderSettingsLinkButtons(){
+  const inSet=(currentMode==='set');
+  SETTINGS_LINK_BTNS.forEach(([id,setLabel,normLabel])=>{
+    const el=document.getElementById(id); if(!el) return;
+    const val=el.querySelector('.ctrl-val');
+    const kbd=el.querySelector('.ctrl-kbd');
+    el.classList.toggle('set-toggle', inSet);
+    el.classList.remove('ctrl-disabled'); // styled like the mode button, not greyed
+    if(val){ val.textContent=inSet?setLabel:normLabel; if(inSet){ val.style.borderColor=''; val.style.color=''; } }
+    if(kbd) kbd.style.display=inSet?'none':'';
+  });
 }
 let playInterval=null,tempo=120,audioCtx=null,seOpen=false;
 // ── Background-safe scheduler clock ───────────────────────────────
@@ -3675,16 +3740,19 @@ function buildParts(){
   document.getElementById('shift-btn').classList.toggle('held',shiftHeld);
   document.getElementById('ctrl-btn').classList.toggle('held',ctrlHeld);
 
-  // Indicate active states on Mute/Solo/Resync buttons
-  const anyMuted=parts.some(p=>p.muted);
-  const anySoloedBtn=parts.some(p=>p.soloed);
-  const anyUnsynced=parts.some((p,i)=>isOutOfSync(i));
-  const sv=document.getElementById('shift-val');
-  if(sv){ sv.style.borderColor=anyMuted?'var(--seq-red)':''; sv.style.color=anyMuted?'var(--seq-red)':''; }
-  const cv=document.getElementById('ctrl-val');
-  if(cv){ cv.style.borderColor=anySoloedBtn?'#60d0d0':''; cv.style.color=anySoloedBtn?'#60d0d0':''; }
-  const rv=document.getElementById('btn-resync')?.querySelector('.ctrl-val');
-  if(rv){ rv.style.borderColor=anyUnsynced?'#ff9900':''; rv.style.color=anyUnsynced?'#ff9900':''; }
+  // Indicate active states on Mute/Solo/Resync buttons (not in SETTINGS, where
+  // these buttons are repurposed as ABOUT / DONATE / MANUAL).
+  if(currentMode!=='set'){
+    const anyMuted=parts.some(p=>p.muted);
+    const anySoloedBtn=parts.some(p=>p.soloed);
+    const anyUnsynced=parts.some((p,i)=>isOutOfSync(i));
+    const sv=document.getElementById('shift-val');
+    if(sv){ sv.style.borderColor=anyMuted?'var(--seq-red)':''; sv.style.color=anyMuted?'var(--seq-red)':''; }
+    const cv=document.getElementById('ctrl-val');
+    if(cv){ cv.style.borderColor=anySoloedBtn?'#60d0d0':''; cv.style.color=anySoloedBtn?'#60d0d0':''; }
+    const rv=document.getElementById('btn-resync')?.querySelector('.ctrl-val');
+    if(rv){ rv.style.borderColor=anyUnsynced?'#ff9900':''; rv.style.color=anyUnsynced?'#ff9900':''; }
+  }
 }
 
 function buildSteps(){
@@ -6173,6 +6241,13 @@ function alignActivePart(){
 document.addEventListener('mouseup',()=>{
   if(_modPointerHeld){ _setModifier(_modPointerHeld,false); _modPointerHeld=null; }
 });
+// SETTINGS link buttons. In SETTINGS the modifier buttons are repurposed; their
+// press handlers bail out early in 'set' mode, so a normal tap/click reaches here.
+function _openExternal(url){ try{ window.open(url,'_blank','noopener,noreferrer'); }catch(_){ location.href=url; } }
+{
+  const donate=document.getElementById('ctrl-btn');
+  if(donate) donate.addEventListener('click',()=>{ if(currentMode==='set') _openExternal('https://buymeacoffee.com/defoult'); });
+}
 // Save: hold = browse in PAT mode, each pattern click saves snapshot there.
 // Quick tap (no clicks) = save to current pattern. Playback is never touched.
 let saveHeld=false;
@@ -7168,10 +7243,7 @@ function renderTriggerButton(){
   if(inSet){
     if(val){ val.textContent=SETTINGS_MODE_LABELS[settingsModeType]; val.style.borderColor=''; val.style.color=''; }
     if(kbd) kbd.style.display='none';
-    if(tog){
-      tog.style.display='flex';
-      tog.querySelectorAll('.set-toggle-seg').forEach((s,i)=>s.classList.toggle('on', i===settingsModeType));
-    }
+    if(tog) tog.style.display='none'; // bars removed — the label fills the button height
   } else {
     if(val){ val.textContent='SELECT'; val.style.borderColor=''; val.style.color=''; }
     if(kbd) kbd.style.display='';
@@ -7289,6 +7361,177 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
       }
     }catch(e){}
   }
+})();
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  AUDIO RECORDER                                                    ║
+// ║  Records the full sound-engine output and saves it as a WAV file.  ║
+// ║                                                                    ║
+// ║  Tap point: _fxNodes.vol — the LAST node of the master chain       ║
+// ║  (voices → panner → masterGain → EQ → drive → shaper → vol → dest).║
+// ║  Reverb/delay returns feed back into masterGain, so they're caught ║
+// ║  too. The ONE thing that bypasses this node is the metronome       ║
+// ║  click (it connects straight to ctx.destination), so the click is  ║
+// ║  excluded from the recording automatically.                        ║
+// ║                                                                    ║
+// ║  Capture uses a ScriptProcessorNode (deprecated but universally    ║
+// ║  supported and works on file:// pages, unlike AudioWorklet which   ║
+// ║  needs a separately fetched module). It grabs raw stereo Float32    ║
+// ║  PCM, which is encoded to a 16-bit WAV on stop.                     ║
+// ╚══════════════════════════════════════════════════════════════════╝
+(function(){
+  let recording=false;
+  let procNode=null, sinkGain=null, tapNode=null;
+  let recL=[], recR=[], recLen=0, recRate=44100;
+  let startedAt=0, rafId=0;
+  let lastBlob=null, lastName='';
+
+  const elBar    = document.getElementById('rec-bar');
+  const elToggle = document.getElementById('rec-toggle');
+  const elLabel  = document.getElementById('rec-toggle-label');
+  const elTime   = document.getElementById('rec-time');
+  const elStatus = document.getElementById('rec-status');
+  const elSave   = document.getElementById('rec-save');
+  const elLevel  = document.getElementById('rec-level-fill');
+  if(!elBar||!elToggle) return; // bar not present — nothing to wire
+
+  function fmtTime(sec){
+    sec=Math.max(0,sec);
+    const m=Math.floor(sec/60);
+    const s=Math.floor(sec%60);
+    const t=Math.floor((sec*10)%10);
+    return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+t;
+  }
+  function tick(){
+    if(!recording) return;
+    const ctx=(typeof audioCtx!=='undefined'&&audioCtx)?audioCtx:null;
+    elTime.textContent=fmtTime(ctx?(ctx.currentTime-startedAt):0);
+    rafId=requestAnimationFrame(tick);
+  }
+
+  function startRec(){
+    // Ensure the audio graph + master chain exist (they may not yet if no pad
+    // has been hit), then grab the master output node as the tap point.
+    let ctx=null, vol=null;
+    try{
+      ctx=getCtx();
+      getMasterGain();   // builds masterGain AND _fxNodes if needed
+      buildMasterFX();
+      vol=(typeof _fxNodes!=='undefined'&&_fxNodes)?_fxNodes.vol:null;
+    }catch(e){ vol=null; }
+    if(!ctx||!vol){
+      elStatus.textContent='Audio engine not ready — press play or tap a pad, then record';
+      return;
+    }
+    if(ctx.state==='suspended'){ try{ctx.resume();}catch(e){} }
+
+    recRate=ctx.sampleRate;
+    recL=[]; recR=[]; recLen=0;
+
+    procNode=ctx.createScriptProcessor(4096,2,2);
+    procNode.onaudioprocess=function(e){
+      if(!recording) return;
+      const ib=e.inputBuffer;
+      const l=ib.getChannelData(0);
+      const r=ib.numberOfChannels>1?ib.getChannelData(1):l;
+      // copy() — the buffer is reused by the engine each callback
+      recL.push(new Float32Array(l));
+      recR.push(new Float32Array(r));
+      recLen+=l.length;
+      // cheap peak meter
+      let peak=0;
+      for(let i=0;i<l.length;i+=64){ const a=l[i]<0?-l[i]:l[i]; if(a>peak)peak=a; }
+      if(elLevel) elLevel.style.height=Math.min(100,peak*140)+'%';
+    };
+    // A ScriptProcessor only runs while connected to the destination, so route
+    // its output through a silent gain node to avoid doubling the audible mix.
+    sinkGain=ctx.createGain(); sinkGain.gain.value=0;
+    tapNode=vol;
+    tapNode.connect(procNode);
+    procNode.connect(sinkGain);
+    sinkGain.connect(ctx.destination);
+
+    recording=true;
+    startedAt=ctx.currentTime;
+    elBar.classList.add('armed');
+    elToggle.classList.add('armed');
+    elLabel.textContent='STOP';
+    elStatus.textContent='Recording\u2026';
+    elTime.textContent='00:00.0';
+    tick();
+  }
+
+  function stopRec(){
+    if(!recording) return;
+    recording=false;
+    cancelAnimationFrame(rafId);
+    try{ tapNode && tapNode.disconnect(procNode); }catch(e){}
+    try{ procNode && procNode.disconnect(); }catch(e){}
+    try{ sinkGain && sinkGain.disconnect(); }catch(e){}
+    if(procNode) procNode.onaudioprocess=null;
+    procNode=null; sinkGain=null; tapNode=null;
+    if(elLevel) elLevel.style.height='0%';
+
+    elBar.classList.remove('armed');
+    elToggle.classList.remove('armed');
+    elLabel.textContent='REC';
+
+    if(recLen<1){
+      elStatus.textContent='Nothing recorded';
+      return;
+    }
+    const dur=recLen/recRate;
+    lastBlob=encodeWav(recL,recR,recLen,recRate);
+    lastName='stepseq-'+stamp()+'.wav';
+    recL=[]; recR=[]; // free the raw PCM chunks
+    elSave.classList.remove('disabled');
+    elTime.textContent=fmtTime(dur);
+    elStatus.textContent='Take ready \u2014 '+fmtTime(dur)+' \u00b7 '+(lastBlob.size/1048576).toFixed(2)+' MB \u00b7 press SAVE WAV';
+  }
+
+  function stamp(){
+    const d=new Date(), p=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());
+  }
+
+  // Interleave the stereo Float32 chunks and write a 16-bit PCM WAV blob.
+  function encodeWav(chunksL,chunksR,len,rate){
+    const numCh=2, bps=2;
+    const dataBytes=len*numCh*bps;
+    const buf=new ArrayBuffer(44+dataBytes);
+    const view=new DataView(buf);
+    const wstr=(off,s)=>{ for(let i=0;i<s.length;i++) view.setUint8(off+i,s.charCodeAt(i)); };
+    wstr(0,'RIFF');  view.setUint32(4,36+dataBytes,true);  wstr(8,'WAVE');
+    wstr(12,'fmt '); view.setUint32(16,16,true);           view.setUint16(20,1,true); // PCM
+    view.setUint16(22,numCh,true);   view.setUint32(24,rate,true);
+    view.setUint32(28,rate*numCh*bps,true);
+    view.setUint16(32,numCh*bps,true); view.setUint16(34,8*bps,true);
+    wstr(36,'data'); view.setUint32(40,dataBytes,true);
+    let off=44, ci=0, ii=0;
+    let cl=chunksL[0]||new Float32Array(0);
+    let cr=chunksR[0]||new Float32Array(0);
+    for(let n=0;n<len;n++){
+      while(ii>=cl.length && ci<chunksL.length-1){ ci++; ii=0; cl=chunksL[ci]||new Float32Array(0); cr=chunksR[ci]||new Float32Array(0); }
+      let sl=cl[ii]||0, sr=cr[ii]||0; ii++;
+      sl=sl<-1?-1:sl>1?1:sl; sr=sr<-1?-1:sr>1?1:sr;
+      view.setInt16(off, sl<0?sl*0x8000:sl*0x7FFF, true); off+=2;
+      view.setInt16(off, sr<0?sr*0x8000:sr*0x7FFF, true); off+=2;
+    }
+    return new Blob([view],{type:'audio/wav'});
+  }
+
+  function saveWav(){
+    if(!lastBlob) return;
+    const url=URL.createObjectURL(lastBlob);
+    const a=document.createElement('a');
+    a.href=url; a.download=lastName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    elStatus.textContent='Saved '+lastName;
+  }
+
+  elToggle.addEventListener('click',()=>{ recording?stopRec():startRec(); });
+  elSave.addEventListener('click',saveWav);
 })();
 
 initMIDI();
