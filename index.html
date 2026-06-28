@@ -378,7 +378,7 @@
     <div class="top-bar-sep"></div>
     <div style="flex:1;display:flex;align-items:stretch;gap:2px;">
       <div class="tport-top-btn" id="tempo-box" style="flex:1;cursor:ew-resize;" title="Drag left/right to set tempo (or hold N + drag)">
-        <div class="tport-top-pad" id="tempo-pad" style="flex-direction:column;gap:0;">
+        <div class="tport-top-pad" id="tempo-pad" style="flex-direction:row;gap:4px;align-items:baseline;justify-content:center;">
           <span class="tempo-top-val" id="tempo-display">120</span>
           <span class="tempo-top-unit">BPM</span>
         </div>
@@ -739,7 +739,7 @@ function buildKeyLayout(shiftSteps){
 }
 let curKeyLayout=buildKeyLayout(0);
 let lastKeySlot=8;   // most recently played keyboard key (default middle C)
-function fireKeyNote(slot,doRecord){
+function fireKeyNote(slot,doRecord,recExtra){
   const semi=curKeyLayout.semis[slot];
   if(semi===null||semi===undefined) return;
   getCtx();
@@ -747,7 +747,10 @@ function fireKeyNote(slot,doRecord){
   total=Math.max(0,Math.min(127,total));
   const note=total%12, oct=Math.floor(total/12);
   const sp={...newStepParams(activePart),note,oct,accent:1,velManual:true,vel:keyVelocity};
-  if(doRecord&&recording){ recordStep(activePart,{note:sp.note,oct:sp.oct,vel:sp.vel,velManual:true,accent:1}); }
+  // recExtra lets the caller stamp extra step params onto the recorded step —
+  // e.g. the 1/32 roll records the step with retrig:2 so a single grid slot
+  // plays twice and reproduces the 1/32 subdivision (see engageRoll).
+  if(doRecord&&recording){ recordStep(activePart,{note:sp.note,oct:sp.oct,vel:sp.vel,velManual:true,accent:1,...(recExtra||{})}); }
   playDrumAt(parts[activePart],sp,audioCtx.currentTime);
   const gMs=Math.max(10, baseSec()*(keyArpGate/100)*1000);
   sendMidiNote(activePart,sp,gMs);
@@ -938,7 +941,13 @@ function engageRoll(div){
   rollActive=true;
   const tick=()=>{
     if(!rollActive) return;
-    fireKeyNote(lastKeySlot,false);
+    // Record the roll into the step sequencer when armed. recordStep() only acts
+    // while recording AND playing, and snaps each hit to the nearest 1/16 grid
+    // slot. 1/4, 1/8 and 1/16 land on (or quantize to) distinct steps. 1/32 is
+    // finer than the 16-step grid — two hits per step — so instead of trying to
+    // place two steps in one slot, we record ONE step with retrig:2, which fires
+    // twice on playback and reproduces the 1/32 roll within the grid.
+    fireKeyNote(lastKeySlot, true, rollDiv<1?{retrig:2}:undefined);
     rollTimer=setTimeout(tick, rollIntervalSec(rollDiv)*1000);
   };
   tick(); // fire immediately, then repeat
@@ -2300,8 +2309,12 @@ function showVelMixer(){
     const cell=document.createElement('div');
     cell.className='smd-cell draggable';
     cell.title='Drag up/down — part '+(pi+1)+' velocity scale';
+    // In DRUM MACHINE mode, label each fader with that part's currently selected
+    // instrument (Kick/Snare/Tom/…); in MIDI CONTROLLER mode keep the generic
+    // VEL n. The .smd-cell-label is uppercased by CSS, matching the parts grid.
+    const velLabel=isDrumMachine()?(DRUM_NAMES_SHORT[DRUM_TYPES.indexOf(parts[pi].type)]||('VEL '+(pi+1))):('VEL '+(pi+1));
     cell.innerHTML=`
-      <div class="smd-cell-label">VEL ${pi+1}</div>
+      <div class="smd-cell-label">${velLabel}</div>
       <div class="smd-cell-val" id="vmix-${pi}-val" style="font-size:18px">${midiVel[pi]}</div>
       <div class="snap-hint"></div>
       <div class="cc-input-wrap"><span class="cc-label">CC</span><input class="cc-num-input" type="number" min="1" max="127" value="${cellCCs[pi]}" title="MIDI CC number for this fader"></div>`;
@@ -2342,6 +2355,19 @@ function saveCtrlPart(pi){
     nums:ctrlCCNums[pi].slice(),
     locks:JSON.parse(JSON.stringify(ctrlLocks[pi])),
   };
+}
+// CTRL "Save": save the per-part CTRL setup into its scratch store (so the CTRL
+// Reload/Clear buttons work), AND commit the current pattern so the parameter
+// locks (ctrlLocks in MIDI mode, soundCtrlLocks in DRUM MACHINE mode — both are
+// captured by snapshotParts) land in the active pattern slot immediately. This
+// means hitting Save in the CTRL tab persists the locks to the current pattern
+// directly, with no separate PTRN SAVE needed in the STEP tab.
+function doCtrlSave(){
+  ctrlTargetParts().forEach(saveCtrlPart);
+  savePattern(); // writes snapshotParts() into patternStore[activeBank][activePattern]
+  updatePartIndicator(); // refresh the SAVED/UNSAVED status pill (savePattern cleared patternDirty)
+  setStatus((ctrlAllHeld?'CTRL saved (all parts)':'CTRL saved')+' \u2192 Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
+  flashCtrlBtn('ctrl-save');
 }
 function reloadCtrlPart(pi){
   if(isDrumMachine()){ return reloadSoundCtrlPart(pi); }
@@ -4186,7 +4212,7 @@ function buildSoundEditor(){
   DRUM_TYPES.forEach((t,i)=>{
     const btn=document.createElement('div');btn.className='se-type-btn'+(p.type===t?' active':'');
     btn.textContent=DRUM_NAMES[i];
-    btn.addEventListener('click',()=>{parts[activePart].type=t;buildSoundEditor();buildParts();buildSteps();if(currentMode==='ctrl')showCtrlPanel();});
+    btn.addEventListener('click',()=>{parts[activePart].type=t;buildSoundEditor();buildParts();buildSteps();if(currentMode==='ctrl')showCtrlPanel();else if(currentMode==='pat')showVelMixer();});
     row.appendChild(btn);
   });
   // Sample loader row (only for sample type)
@@ -6110,7 +6136,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Digit0'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('step');pressOn(document.getElementById('tab-step'));}return;}
   if(e.code==='Minus'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('key');pressOn(document.getElementById('tab-key'));}return;}
   if(e.code==='Equal'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('ctrl');pressOn(document.getElementById('tab-ctrl'));}return;}
-  if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='pat'){engageLooper(4);}else if(currentMode==='ctrl'){ctrlTargetParts().forEach(saveCtrlPart);setStatus(ctrlAllHeld?'CTRL saved — All parts':'CTRL saved — Part '+(activePart+1));}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
+  if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='pat'){engageLooper(4);}else if(currentMode==='ctrl'){doCtrlSave();}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
   if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else{document.getElementById('ctrl-reload').click();}pressOn(document.getElementById('ctrl-reload'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){newProject();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
@@ -6295,9 +6321,12 @@ function endSaveHold(){
   saveHeld=false;
   const sv=document.getElementById('ctrl-save')?.querySelector('.ctrl-val');
   if(sv){sv.style.borderColor='';sv.style.color='';}
-  // Quick tap with no destination chosen: cancel, don't save
+  // Quick tap with no destination chosen: save the current pattern in place
+  // (the bank/pattern that was active when Save began).
   if(saveClickCount===0){
-    setStatus('Save cancelled — no destination chosen');
+    patternStore[saveOrigBank][saveOrigPattern]=saveSnapshot;
+    patternDirty=false;
+    setStatus('Saved \u2192 Bank '+(saveOrigBank+1)+' Pat '+(saveOrigPattern+1));
   }
   saveSnapshot=null;
   saveBrowsing=false;
@@ -6310,8 +6339,16 @@ document.getElementById('ctrl-save').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ downloadProject(); flashCtrlBtn('ctrl-save'); return; } // SAVE
   if(currentMode==='key') engageRoll(4);
   else if(currentMode==='pat') engageLooper(4);
-  else if(currentMode==='ctrl'){ const ps=ctrlTargetParts(); ps.forEach(saveCtrlPart); setStatus(ctrlAllHeld?'CTRL saved — All parts':'CTRL saved — Part '+(activePart+1)); flashCtrlBtn('ctrl-save'); }
+  else if(currentMode==='ctrl'){ doCtrlSave(); }
   else beginSaveHold();
+});
+// Touch taps in CTRL mode dispatch a synthetic click (detail 0) on this button
+// rather than a mousedown, so handle CTRL Save here too. The detail!==0 guard
+// ignores real desktop clicks — the mousedown handler above already saved on
+// those — so Save (and the pattern commit) never fires twice.
+document.getElementById('ctrl-save').addEventListener('click',e=>{
+  if(e.detail!==0) return;
+  if(currentMode==='ctrl') doCtrlSave();
 });
 document.getElementById('ctrl-reload').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); return; } // LOAD
@@ -6451,7 +6488,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
   const el=document.getElementById(id);
   if(!el) return;
   const div=_HOLD_BTN_DIV[id];
-  let touchStartT=0, touchActive=false;
+  let touchStartT=0, touchActive=false, holdTimer=null;
   el.addEventListener('touchstart',e=>{
     e.preventDefault();
     touchActive=true; touchStartT=performance.now(); _touchHoldCount++;
@@ -6460,10 +6497,13 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     if(currentMode==='key'){ engageRoll(div); }
     else if(currentMode==='pat'){ engageLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=true; setStatus('All: hold + Save/Reload/Clear for every part'); }
-    // STEP Save: on touch we LATCH browse mode (hold-and-tap-elsewhere is hard
-    // on a touchscreen). Tap Save → open save-browse; tap Save again → finish.
+    // STEP Save: match desktop. A quick TAP saves the current pattern; a
+    // LONG-PRESS opens save-browse so you can tap destination slots (then tap
+    // Save again to finish). Defer entering browse via a timer so a quick tap
+    // never flashes the browse view.
     else if(currentMode==='step' && id==='ctrl-save'){
-      if(saveHeld){ endSaveHold(); } else { beginSaveHold(); }
+      if(saveHeld){ endSaveHold(); }            // tap again while browsing → finish
+      else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!saveHeld) beginSaveHold(); },300); }
     }
     // STEP Random: show the random-range params while held; randomize on release.
     else if(currentMode==='step' && id==='ctrl-none'){
@@ -6482,11 +6522,19 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=false; }
     const isStepSaveHold=(currentMode==='step' && id==='ctrl-save');
     if(isStepSaveHold){
-      // Desktop-style hold: if a destination was saved, or the button was held
-      // (not a quick tap), releasing finishes save-browse and returns to the
-      // step sequencer. A quick tap with nothing saved stays LATCHED so a
-      // single-finger user can tap Save, tap a slot, then tap Save again.
-      if(saveHeld && (saveClickCount>0 || !wasQuick)) endSaveHold();
+      if(holdTimer){
+        // Released before the hold threshold → quick TAP. Save the current
+        // pattern directly, exactly like a desktop quick-click (begin+end with
+        // no destination chosen commits the active bank/pattern in place).
+        clearTimeout(holdTimer); holdTimer=null;
+        if(!saveHeld){ beginSaveHold(); endSaveHold(); }
+        return;
+      }
+      // Hold threshold passed → save-browse is open. If destination slots were
+      // chosen, finish now; otherwise stay LATCHED so the user can tap slots,
+      // then tap Save again to finish (which saves the current pattern if still
+      // no slot was picked).
+      if(saveHeld && saveClickCount>0) endSaveHold();
       return;
     }
     // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
@@ -6514,6 +6562,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
   },{passive:false});
   el.addEventListener('touchcancel',()=>{
     if(!touchActive) return; touchActive=false; _touchHoldCount=Math.max(0,_touchHoldCount-1); pressOff(el);
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
     if(currentMode==='key') releaseRoll(div);
     else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none') ctrlAllHeld=false;
