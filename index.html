@@ -19,6 +19,12 @@
   #seq-root,#seq-root *{font-stretch:condensed;}
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;margin:0;padding:8px;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;}
+  /* The page gutter lives on <body> only. With box-sizing:border-box, padding
+     on the root <html> element stacks ON TOP of body's min-height:100vh and
+     pushes the document ~16px past the viewport — a small phantom vertical
+     scrollbar on desktop. Zero it on <html> (also inside the mobile media
+     query below, hence !important). body keeps the 8px/4px gutter. */
+  html{padding:0!important;}
   body.portrait{align-items:flex-start;padding:4px;}
   @media (max-width:680px){ html,body{padding:4px;} }
   #scale-wrap{display:flex;justify-content:center;align-items:flex-start;}
