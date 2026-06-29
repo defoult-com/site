@@ -45,7 +45,6 @@
   .pat-num.pending{outline:2px solid #ff9900;outline-offset:-2px;}
   .pat-num.has-data::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
   .pat-num.active.has-data::after{background:#111a;}
-  .pat-num.dirty{border-color:var(--seq-red);}
   .pat-section-title{font-size:9px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:5px;}
   .pat-info{font-size:11px;color:var(--seq-yellow);font-weight:bold;}
   .pat-actions{display:flex;gap:4px;margin-top:4px;}
@@ -643,6 +642,9 @@ const parts=DEFAULTS.map(d=>({
   mono:true,
   // CHRD synth: OSC2/OSC3 detune in semitones (-24..+24). Ignored by other types.
   detune2:0, detune3:0,
+  // FM synth: MOD TYPE — modulator waveform (0=SINE default, 1=TRI, 2=SQR,
+  // 3=SAW, 4=S&H). 0 reproduces the original FM sound. Ignored by other types.
+  fmMod:0,
   seqStart:1,seqEnd:16,dirIndex:0,speedIndex:DEFAULT_SPEED_IDX,swing:0,seqOffset:0,midiDly:0,midiDlyTime:DEFAULT_DLY_TIME_IDX,dlyFb:0,dlyPitch:0,muted:false,soloed:false,...d
 }));
 // seqOffset shifts all active steps forward/backward within the loop, wrapping at boundaries
@@ -990,12 +992,40 @@ const partMidiIn=Array.from({length:8},()=>({deviceId:null,channel:-1}));
 let patternDirty=false;// true if current state differs from saved
 let pendingBank=null;  // queued pattern switch (fires on bar boundary)
 let pendingPattern=null;
+// AUTO-SAVE: the live `parts` array always belongs to one slot (the last one
+// loaded). We persist those live parts back into that slot so every edit — steps
+// OR knobs — is saved without pressing a button. Committing to the LOADED slot
+// (not the active/cued one) keeps the "select-without-loading" cue from
+// overwriting the wrong pattern.
+//   `_patChanged` flags that something was edited since the last commit. The
+// periodic tick only snapshots when this is set, so during pure playback (no
+// edits) it does NOTHING — important, because an unconditional deep-clone every
+// tick competes with the audio scheduler and causes cracks/glitches.
+let loadedBank=0, loadedPattern=0;
+let _patChanged=false;
+function markPatternChanged(){ _patChanged=true; }
+function commitLiveToSlot(){   // unconditional write of live parts → loaded slot
+  if(saveBrowsing||loadHeld||loadedPattern===null) return;
+  if(typeof paramDragActive!=='undefined'&&paramDragActive) return; // not mid-gesture
+  patternStore[loadedBank][loadedPattern]=snapshotParts();
+  patternDirty=false; _patChanged=false;
+}
+function autoSaveTick(){       // periodic: only works when something changed
+  if(!_patChanged && !patternDirty) return;
+  commitLiveToSlot();
+}
+// Back-compat name used at switch points: flush live edits before switching.
+function autoCommitPattern(){ commitLiveToSlot(); }
 
 function snapshotParts(){
   // Mute & solo are GLOBAL performance state — never stored in patterns.
   // The chosen SOUND for each part (type + synth params) is ALSO global: it is
   // the same across all patterns/banks, so it is excluded from the snapshot and
   // never overwritten on load. Only sequence/automation data lives in a pattern.
+  // `_cloneLocks` is a light two-level clone — far cheaper (and less GC) than
+  // JSON.parse(JSON.stringify(...)), which matters because this runs on the
+  // auto-save tick and any garbage here can disturb the audio scheduler.
+  const _cloneLocks=o=>{ const r={}; for(const k in o){ const inner=o[k], ri={}; for(const j in inner) ri[j]=inner[j]; r[k]=ri; } return r; };
   return parts.map((p,pi)=>{
     const {muted,soloed,type,vol,freq,attack,decay,tone,...rest}=p;
     return {
@@ -1009,8 +1039,8 @@ function snapshotParts(){
       ctrl:{
         vals:ctrlCCVals[pi].slice(),
         nums:ctrlCCNums[pi].slice(),
-        locks:JSON.parse(JSON.stringify(ctrlLocks[pi])),
-        sndLocks:JSON.parse(JSON.stringify(soundCtrlLocks[pi])),
+        locks:_cloneLocks(ctrlLocks[pi]),
+        sndLocks:_cloneLocks(soundCtrlLocks[pi]),
       },
     };
   });
@@ -1056,6 +1086,7 @@ function savePattern(){
 }
 
 function loadPattern(bank,pattern,immediate,downbeatTime){
+  autoCommitPattern();   // persist the outgoing pattern's live edits before switching
   looperActive=false;
   looperHeld=[];
   loopHistory.forEach(h=>h.length=0);
@@ -1075,6 +1106,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
     restoreParts(snap);
   }
   activeBank=bank; activePattern=pattern; patternDirty=false;
+  loadedBank=bank; loadedPattern=pattern; // `parts` now belongs to this slot
   pendingBank=null; pendingPattern=null;
   schedGeneration++;
   // Reset play states — partNextTime pushed past lookahead to avoid re-firing old notes
@@ -1117,6 +1149,7 @@ function reloadPatternLive(){
     restoreParts(snap);
   }
   patternDirty=false;
+  loadedBank=activeBank; loadedPattern=activePattern;
   // Clamp any live positions that now fall outside a changed seq range, but do
   // NOT reset them — keep the playhead where it is.
   for(let pi=0;pi<8;pi++){
@@ -1160,7 +1193,7 @@ function buildPatternGrids(){
     const isCurrent=activeBank===activeBank&&p===activePattern&&activeBank===activeBank;
     const isCurrentLoaded=(activeBank===activeBank && p===activePattern);
     const isPending=pendingBank===activeBank&&pendingPattern===p;
-    let cls='pat-num'+(isCurrentLoaded?' active':'')+(hasData?' has-data':'')+(isPending?' pending':'')+(isCurrentLoaded&&patternDirty?' dirty':'');
+    let cls='pat-num'+(isCurrentLoaded?' active':'')+(hasData?' has-data':'')+(isPending?' pending':'');
     const btn=document.createElement('div');btn.className=cls;
     btn.textContent=p+1;
     btn.addEventListener('click',()=>{
@@ -1180,7 +1213,7 @@ function buildPatternGrids(){
 
 function updatePatInfo(){
   const el=document.getElementById('pat-info');
-  if(el) el.textContent='Bank '+(activeBank+1)+' — Pattern '+(activePattern+1)+(patternDirty?' *':'');
+  if(el) el.textContent='Bank '+(activeBank+1)+' — Pattern '+(activePattern+1);
 }
 
 // ── Mode switching ────────────────────────────────────────────────
@@ -1217,7 +1250,7 @@ function refreshActionBtnLabels(mode){
   const looperLabels=mode==='set'?['SAVE','LOAD','NEW','AUTO-SAVE']
     :mode==='pat'?['LOOP 1/4','LOOP 1/8','LOOP 1/16','LOOP 1/32']
     :mode==='key'?['ROLL 1/4','ROLL 1/8','ROLL 1/16','ROLL 1/32']
-    :mode==='step'?['PTRN SAVE','PTRN RELD','PTRN CLEAR','PTRN RAND']
+    :mode==='step'?['PTRN COPY','PTRN LOAD','PTRN CLEAR','PTRN RAND']
     :mode==='ctrl'?['SAVE','RELD','CLEAR','ALL']
     :['Save','Reload','Clear','Random'];
   ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
@@ -2365,7 +2398,7 @@ function saveCtrlPart(pi){
 function doCtrlSave(){
   ctrlTargetParts().forEach(saveCtrlPart);
   savePattern(); // writes snapshotParts() into patternStore[activeBank][activePattern]
-  updatePartIndicator(); // refresh the SAVED/UNSAVED status pill (savePattern cleared patternDirty)
+  updatePartIndicator(); // refresh the pattern/part display after the CTRL save
   setStatus((ctrlAllHeld?'CTRL saved (all parts)':'CTRL saved')+' \u2192 Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
   flashCtrlBtn('ctrl-save');
 }
@@ -2518,8 +2551,17 @@ const _SND_ATTACK={label:'ATTACK', min:0,   max:0.2, get:p=>(p.attack||0), set:(
 const _SND_DECAY ={label:'DECAY',  min:0.02,max:2,   get:p=>p.decay,        set:(pi,v)=>{parts[pi].decay=v;},  def:p=>typeDefaults(p.type).decay,    fmt:v=>v.toFixed(2)+'s'};
 const _SND_TUNE  ={label:'TUNE',   min:20,  max:800, get:p=>p.freq,         set:(pi,v)=>{parts[pi].freq=v;},   def:p=>typeDefaults(p.type).freq,     fmt:v=>Math.round(v)+' Hz'};
 const _SND_TONE  ={label:'TONE',   min:0,   max:1,   get:p=>p.tone,         set:(pi,v)=>{parts[pi].tone=v;},   def:p=>typeDefaults(p.type).tone,     fmt:_sndPct};
+// FM MOD TYPE (ER-1 style): discrete modulator-waveform selector. 0=SINE is the
+// original FM sound; the rest change the modulator character only.
+const FM_MOD_NAMES=['SINE','TRI','SQR','SAW','S&H'];
+const _clampMod=v=>Math.max(0,Math.min(FM_MOD_NAMES.length-1,Math.round(v)));
+const _SND_MODTYPE={label:'MOD TYPE', min:0, max:FM_MOD_NAMES.length-1,
+  get:p=>(p.fmMod||0), set:(pi,v)=>{parts[pi].fmMod=_clampMod(v);},
+  def:_=>0, fmt:v=>FM_MOD_NAMES[_clampMod(v)]};
 // Standard row-2: ATTACK DECAY TUNE TONE.
 const SOUND_CTRL_DEFS=[..._SND_ROW1, _SND_ATTACK, _SND_DECAY, _SND_TUNE, _SND_TONE];
+// FM row-2: ATTACK DECAY MOD TYPE TONE (FM tracks the played note, so no TUNE).
+const SOUND_CTRL_DEFS_FM=[..._SND_ROW1, _SND_ATTACK, _SND_DECAY, _SND_MODTYPE, _SND_TONE];
 // CHRD row-2: FILTER (low-pass = tone), DECAY, TUNE 2 (osc2 detune), TUNE 3 (osc3 detune).
 const SOUND_CTRL_DEFS_CHRD=[..._SND_ROW1,
   {label:'FILTER', min:0,   max:1,   get:p=>p.tone,            set:(pi,v)=>{parts[pi].tone=v;},                  def:p=>typeDefaults(p.type).tone, fmt:_sndPct},
@@ -2528,7 +2570,7 @@ const SOUND_CTRL_DEFS_CHRD=[..._SND_ROW1,
   {label:'TUNE 3', min:-24, max:24,  get:p=>(p.detune3||0),    set:(pi,v)=>{parts[pi].detune3=Math.round(v);},   def:_=>0,                         fmt:_sndSemi},
 ];
 // Pick the right CTRL defs for a part based on its sound type.
-function sndDefs(pi){ return (parts[pi]&&parts[pi].type==='chrd')?SOUND_CTRL_DEFS_CHRD:SOUND_CTRL_DEFS; }
+function sndDefs(pi){ const t=parts[pi]&&parts[pi].type; return t==='chrd'?SOUND_CTRL_DEFS_CHRD:(t==='fm'?SOUND_CTRL_DEFS_FM:SOUND_CTRL_DEFS); }
 function sndToKnob(def,v){ return Math.max(0,Math.min(127, Math.round((v-def.min)/(def.max-def.min)*127))); }
 function sndFromKnob(def,k){ return def.min + (k/127)*(def.max-def.min); }
 // Live knob mirror (0-127) per part — always re-derived from the part fields
@@ -2649,11 +2691,13 @@ function showSoundCtrlPanel(){
         if(recording&&playing) recordSoundLock(idx,nk);
         if(typeof syncSoundEditorControls==='function') syncSoundEditorControls(); // editor sliders follow
       }
+      markPatternChanged();
       paint();
     };
     cell.addEventListener('dblclick',()=>{
       if(lockAbs>=0){ const s=soundCtrlLocks[activePart][lockAbs]; if(s){delete s[idx];} markStepLockDot(activePart,lockAbs); paint(); }
       else { const dv=def.def(parts[activePart]); def.set(activePart,dv); soundLive[activePart][idx]=sndToKnob(def,dv); paint(); }
+      markPatternChanged();
     });
     let sY=0,sV=0;
     const _mv=cy=>{ const nv=Math.max(0,Math.min(127,sV+Math.round((sY-cy)/2))); if(nv!==shownKnob()) applyVal(nv); };
@@ -3575,22 +3619,15 @@ function updatePatDisp(){
   const el=document.getElementById('pat-disp');
   if(!el) return;
   if(currentMode==='set'){
-    // SETTINGS has no SAVED/UNSAVED badge, but the badge (a bordered pill) makes
-    // the header ~7px taller in every other mode. Reserve that exact height with
-    // an invisible placeholder mirroring the pill's box, so the display grid and
-    // the status bar below it sit at the SAME position/size as in STEP etc.
-    el.innerHTML='<span style="display:inline-block;padding:1px 6px;border:1px solid transparent;border-radius:3px;letter-spacing:.08em;visibility:hidden;">SAVED</span>';
+    // SETTINGS has no Bank/Pat readout. Reserve one text line of height with an
+    // invisible placeholder so the display grid/status bar sit at the same
+    // position as in the other modes.
+    el.innerHTML='<span style="visibility:hidden;">Bank 1 &middot; Pat 1</span>';
     el.style.color='';
     return;
   }
   const patNum=(activePattern!==null?activePattern:0)+1;
-  const saved=!patternDirty;
-  const statusColor=saved?'var(--seq-yellow)':'var(--seq-red)';
-  // Bank/Pat in the normal header color; the saved/unsaved status as a small
-  // separated pill with its own border so it reads as distinct status.
-  el.innerHTML='<span style="color:var(--seq-yellow);">Bank '+(activeBank+1)+' &middot; Pat '+patNum+'</span>'
-    +'<span style="display:inline-block;margin-left:7px;padding:1px 6px;border:1px solid '+statusColor+';border-radius:3px;color:'+statusColor+';letter-spacing:.08em;">'
-    +(saved?'SAVED':'UNSAVED')+'</span>';
+  el.innerHTML='<span style="color:var(--seq-yellow);">Bank '+(activeBank+1)+' &middot; Pat '+patNum+'</span>';
   el.style.color='';
 }
 
@@ -3620,11 +3657,7 @@ function updatePartIndicator(){
   // other modes keep just the bank (set above by setBankInfo).
   if(isPatLike()){
     const pending=pendingBank!==null?' → Bank '+(pendingBank+1)+' Pat '+(pendingPattern+1):'';
-    const saved=patternStore[activeBank][activePattern]!==null;
-    const statusColor=patternDirty?'var(--seq-red)':(saved?'var(--seq-text-dim)':'var(--seq-text-dim)');
-    const statusText=patternDirty?'UNSAVED':(saved?'SAVED':'EMPTY');
-    const stateBadge=' <span style="display:inline-block;margin-left:7px;padding:1px 6px;border:1px solid '+statusColor+';border-radius:3px;color:'+statusColor+';letter-spacing:.06em;">'+statusText+'</span>';
-    document.getElementById('part-indicator').innerHTML='Bank '+(activeBank+1)+' · Pat '+(activePattern+1)+stateBadge+pending;
+    document.getElementById('part-indicator').innerHTML='Bank '+(activeBank+1)+' · Pat '+(activePattern+1)+pending;
     return;
   }
   const p=parts[activePart];const tag=p.muted?' [MUTED]':p.soloed?' [SOLO]':'';
@@ -3798,7 +3831,7 @@ function buildSteps(){
   const grid=document.getElementById('step-grid');grid.innerHTML='';
   grid.classList.toggle('ctrl-mode', currentMode==='ctrl');
   const stepTitle=document.getElementById('step-panel-title');
-  if(stepTitle) stepTitle.textContent=saveBrowsing?'Save → Pattern':currentMode==='key'?'Keyboard':currentMode==='ctrl'?'Step Sequencer':currentMode==='set'?'Settings':isPatLike()?'Pattern':'Step Sequencer';
+  if(stepTitle) stepTitle.textContent=saveBrowsing?(browseLoad?'Load \u2190 Pattern':'Save \u2192 Pattern'):currentMode==='key'?'Keyboard':currentMode==='ctrl'?'Step Sequencer':currentMode==='set'?'Settings':isPatLike()?'Pattern':'Step Sequencer';
 
   if(saveBrowsing){
     for(let slot=0;slot<16;slot++){
@@ -3810,8 +3843,8 @@ function buildSteps(){
       const div=document.createElement('div');div.className='step-btn';
       div.innerHTML=`<div class="${padCls}" id="spad-${slot}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
       div.dataset.pressable='1';
-      div.addEventListener('click',e=>{ if(e.detail===0) return; saveToSlot(patIdx); });
-      div.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(div); saveToSlot(patIdx); },{passive:false});
+      div.addEventListener('click',e=>{ if(e.detail===0) return; if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); });
+      div.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(div); if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); },{passive:false});
       grid.appendChild(div);
     }
     return;
@@ -3876,7 +3909,7 @@ function buildSteps(){
       let padCls='step-pad'+(isCurrent?' on':'')+(isPending?' playhead':'')+(hasData?' has-data':'');
       if(!hasData&&!isCurrent) padCls+=' inactive';
       const div=document.createElement('div');div.className='step-btn';
-      div.innerHTML=`<div class="${padCls}" id="spad-${slot}" style="${isCurrent&&patternDirty?'outline:2px solid var(--seq-red);outline-offset:-2px':''}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
+      div.innerHTML=`<div class="${padCls}" id="spad-${slot}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
       div.addEventListener('click',e=>{
         if(saveHeld){
           saveToSlot(patIdx);
@@ -4247,7 +4280,8 @@ function buildSoundEditor(){
   // CHRD synth: OSC1 follows the MIDI note (no Tune/Freq), Tone becomes the
   // low-pass FILTER, and OSC2/OSC3 get semitone detune rows.
   const isChrd=(p.type==='chrd');
-  const rowTune=document.getElementById('se-row-tune'); if(rowTune) rowTune.style.display=isChrd?'none':'flex';
+  const noTune=(isChrd||p.type==='fm'); // both follow the played note now
+  const rowTune=document.getElementById('se-row-tune'); if(rowTune) rowTune.style.display=noTune?'none':'flex';
   const toneLbl=document.getElementById('se-tone-label'); if(toneLbl) toneLbl.textContent=isChrd?'Filter':'Tone';
   const rowD2=document.getElementById('se-row-det2'); if(rowD2) rowD2.style.display=isChrd?'flex':'none';
   const rowD3=document.getElementById('se-row-det3'); if(rowD3) rowD3.style.display=isChrd?'flex':'none';
@@ -4982,34 +5016,55 @@ window.SoundEngine={
       o1.start(when);o2.start(when);o1.stop(when+decay+0.02);o2.stop(when+decay+0.02);
       break;}
     case 'fm':{
-      // 2-operator FM percussion: a sine CARRIER frequency-modulated by a sine
-      // MODULATOR. `freq` = carrier pitch (repitched by MIDI note), `tone`
-      // drives both the modulator ratio and the modulation depth, and a fast
-      // mod-depth envelope gives the percussive metallic "click→tone" decay.
+      // 2-operator FM, TUNED TO THE PLAYED NOTE (concert pitch) so it sits in
+      // tune with the CHORD synth and external instruments. `tone` drives the
+      // modulator ratio and depth; MOD TYPE (p.fmMod) selects the modulator
+      // waveform — index 0 (SINE) reproduces the original FM sound exactly. The
+      // modulation index (depth ÷ carrier) is unchanged, so only the pitch moves
+      // into tune; the timbre stays the same at the default MOD TYPE.
       const t=Math.max(0,Math.min(1,p.tone));
+      const baseHz=midiToHz(note);          // carrier follows the note, like CHRD
       // Modulator ratio: low tone → harmonic/hollow (1–2×), high tone →
-      // inharmonic/metallic (up to ~7×). Stepped a touch for musical results.
+      // inharmonic/metallic (up to ~7×).
       const ratio=1 + t*6;
       // Modulation index (depth) scales with tone and carrier freq.
-      const modDepth=freq*(0.5 + t*8);
+      const modDepth=baseHz*(0.5 + t*8);
       const carrier=ctx.createOscillator();carrier.type='sine';
-      carrier.frequency.setValueAtTime(freq,when);
-      const modulator=ctx.createOscillator();modulator.type='sine';
-      modulator.frequency.setValueAtTime(freq*ratio,when);
+      carrier.frequency.setValueAtTime(baseHz,when);
       // Mod depth envelope — decays faster than amplitude for the FM "pluck"
       const modGain=ctx.createGain();
       const modDecay=Math.max(0.01, decay*0.5);
       modGain.gain.setValueAtTime(modDepth,when);
       modGain.gain.exponentialRampToValueAtTime(Math.max(0.001,modDepth*0.02),when+modDecay);
-      modulator.connect(modGain);
       modGain.connect(carrier.frequency); // FM: modulate carrier frequency
+      // ── MOD TYPE: 0=SINE 1=TRI 2=SQR 3=SAW use a waveform modulator; 4=S&H
+      // feeds the carrier a stepped-random signal for a noisy/metallic character.
+      const modType=(p.fmMod|0);
+      if(modType>=0 && modType<=3){
+        const modulator=ctx.createOscillator();
+        modulator.type=['sine','triangle','square','sawtooth'][modType];
+        modulator.frequency.setValueAtTime(baseHz*ratio,when);
+        modulator.connect(modGain);
+        modulator.start(when);modulator.stop(when+decay+0.05);
+      } else {
+        // Sample & Hold: a random value held for each modulator period, looped.
+        const rate=Math.max(1, baseHz*ratio);
+        const stepSamples=Math.max(1, Math.round(ctx.sampleRate/rate));
+        const periods=64;
+        const sbuf=ctx.createBuffer(1, stepSamples*periods, ctx.sampleRate);
+        const sd=sbuf.getChannelData(0);
+        for(let i=0;i<periods;i++){ const r=Math.random()*2-1; for(let j=0;j<stepSamples;j++) sd[i*stepSamples+j]=r; }
+        const src=ctx.createBufferSource(); src.buffer=sbuf; src.loop=true;
+        src.connect(modGain);
+        src.start(when); src.stop(when+decay+0.05);
+      }
       // Amplitude envelope: quick attack, exponential decay
       gain.gain.setValueAtTime(0.0001,when);
       gain.gain.exponentialRampToValueAtTime(vol,when+0.003);
       gain.gain.exponentialRampToValueAtTime(0.001,when+decay);
       carrier.connect(gain);
-      carrier.start(when);modulator.start(when);
-      carrier.stop(when+decay+0.05);modulator.stop(when+decay+0.05);
+      carrier.start(when);
+      carrier.stop(when+decay+0.05);
       break;}
     case 'chrd':{
       // CHRD — 3-oscillator monophonic square-wave synth. OSC1 is hardwired to
@@ -6031,10 +6086,11 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();
     if(saveBrowsing){
       if(!e.repeat){
-        const patIdx=patternPage*16+CODE_TO_SLOT[e.code];
-        saveToSlot(patIdx);
+        const slot=CODE_TO_SLOT[e.code];
+        const patIdx=patternPage*16+slot;
         const grid=document.getElementById('step-grid');
-        if(grid&&grid.children[CODE_TO_SLOT[e.code]]) pressOn(grid.children[CODE_TO_SLOT[e.code]]);
+        if(grid&&grid.children[slot]) pressOn(grid.children[slot]); // feedback while grid still shows patterns
+        if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx);
       }
       return;
     }
@@ -6137,7 +6193,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Minus'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('key');pressOn(document.getElementById('tab-key'));}return;}
   if(e.code==='Equal'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('ctrl');pressOn(document.getElementById('tab-ctrl'));}return;}
   if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='pat'){engageLooper(4);}else if(currentMode==='ctrl'){doCtrlSave();}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
-  if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else{document.getElementById('ctrl-reload').click();}pressOn(document.getElementById('ctrl-reload'));}return;}
+  if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else if(currentMode==='ctrl'){document.getElementById('ctrl-reload').click();}else{beginLoadHold();}pressOn(document.getElementById('ctrl-reload'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){newProject();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(1);pressOn(document.getElementById('ctrl-clear'));}return;}
@@ -6172,7 +6228,7 @@ document.addEventListener('keyup',e=>{
     else if(looperActive&&(currentMode==='pat'||currentMode==='set')) releaseLooper(4);
     else if(currentMode!=='ctrl') endSaveHold();
   }
-  if(e.code==='KeyP'){pressOff(document.getElementById('ctrl-reload'));if(currentMode==='key')releaseRoll(2);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(2);}
+  if(e.code==='KeyP'){pressOff(document.getElementById('ctrl-reload'));if(currentMode==='key')releaseRoll(2);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(2);else if(loadHeld)reloadFromLoadHold();}
   if(e.code==='BracketLeft'){pressOff(document.getElementById('ctrl-clear'));if(currentMode==='key')releaseRoll(1);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(1);}
   if(e.code==='BracketRight'){pressOff(document.getElementById('ctrl-none'));if(ctrlAllHeld)ctrlAllHeld=false;if(currentMode==='key')releaseRoll(0.5);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(0.5);else if(currentMode==='step'&&isRandomPanelOpen()){closeRandomParams();randomFillPart();restoreSequencerDisplay();}}
   if(e.code in CODE_TO_PAGE){const _rbs=document.querySelectorAll('.range-btn');Object.values(CODE_TO_PAGE).forEach(i=>{if(_rbs[i])pressOff(_rbs[i]);});}
@@ -6292,6 +6348,13 @@ let saveBrowsing=false; // STEP-mode save: only the main grid shows pattern slot
 let saveReturnMode='step';
 let saveSnapshot=null;
 let saveOrigBank=0, saveOrigPattern=0, saveClickCount=0;
+let saveLastBank=0, saveLastPat=0; // last slot written during the current save-hold
+// STEP-mode LOAD-browse: holding PTRN LOAD shows the pattern grid (like SAVE),
+// but tapping a slot LOADS that pattern. browseLoad reuses saveBrowsing's
+// rendering/navigation; loadHeld tracks the latched browse; the _loadHold*
+// fields drive mouse hold-detection (quick click reloads, hold opens browse).
+let loadHeld=false, browseLoad=false;
+let _loadHoldTimer=null, _loadHoldFired=false;
 
 function beginSaveHold(){
   saveHeld=true;
@@ -6311,9 +6374,10 @@ function saveToSlot(patIdx){
   if(!saveSnapshot) return;
   patternStore[activeBank][patIdx]=saveSnapshot;
   saveClickCount++;
+  saveLastBank=activeBank; saveLastPat=patIdx; // remember where we just saved
   if(activeBank===saveOrigBank&&patIdx===saveOrigPattern) patternDirty=false;
   buildSteps();
-  setStatus('Saved → Bank '+(activeBank+1)+' Pat '+(patIdx+1));
+  setStatus('Copied → Bank '+(activeBank+1)+' Pat '+(patIdx+1));
 }
 
 function endSaveHold(){
@@ -6321,20 +6385,73 @@ function endSaveHold(){
   saveHeld=false;
   const sv=document.getElementById('ctrl-save')?.querySelector('.ctrl-val');
   if(sv){sv.style.borderColor='';sv.style.color='';}
-  // Quick tap with no destination chosen: save the current pattern in place
-  // (the bank/pattern that was active when Save began).
+  // Quick tap with no destination chosen: nothing to copy elsewhere. Edits are
+  // already auto-saved into the current slot, so just stay on it.
   if(saveClickCount===0){
-    patternStore[saveOrigBank][saveOrigPattern]=saveSnapshot;
     patternDirty=false;
-    setStatus('Saved \u2192 Bank '+(saveOrigBank+1)+' Pat '+(saveOrigPattern+1));
+    setStatus('Pattern auto-saved \u2192 Bank '+(saveOrigBank+1)+' Pat '+(saveOrigPattern+1));
+    activeBank=saveOrigBank; activePattern=saveOrigPattern;
+  } else {
+    // Saved to one or more slots: continue on the LAST slot we saved into, so
+    // the sequencer plays the newly saved pattern instead of the previous one.
+    // The slot holds an exact copy of the live parts, so playback is seamless —
+    // we just repoint the active pattern (no reload, no playhead reset).
+    activeBank=saveLastBank; activePattern=saveLastPat;
+    loadedBank=saveLastBank; loadedPattern=saveLastPat; // live parts now belong to the copied slot
+    pendingBank=null; pendingPattern=null;
+    patternDirty=false;
+    if(saveLastBank!==saveOrigBank||saveLastPat!==saveOrigPattern)
+      setStatus((playing?'Now playing':'Switched to')+' \u2192 Bank '+(saveLastBank+1)+' Pat '+(saveLastPat+1));
   }
   saveSnapshot=null;
   saveBrowsing=false;
-  // Restore original bank/pattern so the playing pattern identity is unchanged
-  activeBank=saveOrigBank; activePattern=saveOrigPattern;
-  buildSteps();buildRangeBar();buildParts();updatePartIndicator();
+  buildSteps();buildRangeBar();buildParts();buildPatternGrids();updatePartIndicator();
 }
 
+// ── STEP-mode PTRN LOAD: hold-to-browse-and-load ─────────────────────
+// Open the pattern-browse grid (reusing the SAVE-browse rendering + bank/page
+// navigation) in LOAD mode. Tapping any slot loads that pattern.
+function beginLoadHold(){
+  if(saveHeld) endSaveHold();   // never overlap save- and load-browse
+  loadHeld=true; browseLoad=true;
+  saveReturnMode=currentMode;
+  saveOrigBank=activeBank; saveOrigPattern=activePattern;
+  saveBrowsing=true;            // reuse the pattern-grid browse view + navigation
+  if(playhead>=0&&isStepLike()){const pv=document.getElementById('spad-'+playhead);if(pv)pv.classList.remove('playhead');}
+  buildSteps();buildRangeBar();buildParts();
+  setStatus('Tap a pattern to load — tap LOAD again to cancel');
+  const rv=document.getElementById('ctrl-reload')?.querySelector('.ctrl-val');
+  if(rv){rv.style.borderColor='var(--seq-yellow)';rv.style.color='var(--seq-yellow)';}
+}
+function clearLoadBrowseUI(){
+  loadHeld=false; browseLoad=false; saveBrowsing=false;
+  const rv=document.getElementById('ctrl-reload')?.querySelector('.ctrl-val');
+  if(rv){rv.style.borderColor='';rv.style.color='';}
+}
+function endLoadHold(){       // cancel load-browse without loading anything
+  if(!loadHeld) return;
+  clearLoadBrowseUI();
+  activeBank=saveOrigBank; activePattern=saveOrigPattern;
+  buildSteps();buildRangeBar();buildParts();updatePartIndicator();
+  setStatus('Load cancelled');
+}
+// Releasing a HELD PTRN LOAD (keyboard 'P') without having tapped a slot does
+// the quick-tap default: reload the current pattern. Mirrors how releasing a
+// held 'O' saves the current pattern via endSaveHold.
+function reloadFromLoadHold(){
+  if(!loadHeld) return;
+  clearLoadBrowseUI();
+  activeBank=saveOrigBank; activePattern=saveOrigPattern;
+  if(activePattern!==null){ if(playing) reloadPatternLive(); else loadPattern(activeBank,activePattern,true); }
+  setStatus('Reloaded Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
+  buildSteps();buildRangeBar();buildParts();updatePartIndicator();
+}
+function loadFromSlot(patIdx){ // load the chosen pattern (any bank/page) and exit
+  clearLoadBrowseUI();
+  if(playing){ queuePatternChange(activeBank,patIdx); setStatus('Queued load \u2192 Bank '+(activeBank+1)+' Pat '+(patIdx+1)); }
+  else { loadPattern(activeBank,patIdx,true); setStatus('Loaded \u2192 Bank '+(activeBank+1)+' Pat '+(patIdx+1)); }
+  buildSteps();buildRangeBar();buildParts();updatePartIndicator();
+}
 document.getElementById('ctrl-save').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ downloadProject(); flashCtrlBtn('ctrl-save'); return; } // SAVE
   if(currentMode==='key') engageRoll(4);
@@ -6353,6 +6470,12 @@ document.getElementById('ctrl-save').addEventListener('click',e=>{
 document.getElementById('ctrl-reload').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); return; } // LOAD
   if(currentMode==='key') engageRoll(2); else if(currentMode==='pat') engageLooper(2);
+  else if(currentMode==='step' && !loadHeld){
+    // Hold opens load-browse; a quick release (handled on mouseup/click) reloads
+    // the current pattern as before.
+    _loadHoldFired=false;
+    _loadHoldTimer=setTimeout(()=>{ _loadHoldTimer=null; _loadHoldFired=true; beginLoadHold(); },300);
+  }
 });
 document.getElementById('ctrl-clear').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ newProject(); flashCtrlBtn('ctrl-clear'); return; } // NEW
@@ -6461,6 +6584,7 @@ document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
 });
 document.addEventListener('mouseup',()=>{
   if(_touchHoldCount>0) return; // touch is driving holds; ignore synthesized mouseups
+  if(_loadHoldTimer){ clearTimeout(_loadHoldTimer); _loadHoldTimer=null; } // released before hold threshold → quick click
   if(saveHeld) endSaveHold();
   if(looperActive&&(currentMode==='pat'||currentMode==='set')) releaseLooper();
   if(rollActive) releaseRoll();
@@ -6505,6 +6629,12 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       if(saveHeld){ endSaveHold(); }            // tap again while browsing → finish
       else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!saveHeld) beginSaveHold(); },300); }
     }
+    // STEP Load: match desktop. A quick TAP reloads the current pattern; a
+    // LONG-PRESS opens load-browse so you can tap any pattern slot to load it.
+    else if(currentMode==='step' && id==='ctrl-reload'){
+      if(loadHeld){ endLoadHold(); }            // tap again while browsing → cancel
+      else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!loadHeld) beginLoadHold(); },300); }
+    }
     // STEP Random: show the random-range params while held; randomize on release.
     else if(currentMode==='step' && id==='ctrl-none'){
       showRandomParams(); randomTrigger='touch'; setStatus('Random range — release to randomize');
@@ -6535,6 +6665,19 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       // then tap Save again to finish (which saves the current pattern if still
       // no slot was picked).
       if(saveHeld && saveClickCount>0) endSaveHold();
+      return;
+    }
+    const isStepLoadHold=(currentMode==='step' && id==='ctrl-reload');
+    if(isStepLoadHold){
+      if(holdTimer){
+        // Released before the hold threshold → quick TAP. Reload the current
+        // pattern (existing behavior) via the button's click handler.
+        clearTimeout(holdTimer); holdTimer=null;
+        if(!loadHeld) el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+        return;
+      }
+      // Hold opened load-browse: stay LATCHED so the user can tap any pattern
+      // slot to load it (the slot tap loads and exits). Tap LOAD again to cancel.
       return;
     }
     // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
@@ -6584,6 +6727,8 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
 });
 
 document.getElementById('ctrl-reload').addEventListener('click',()=>{
+  if(_loadHoldFired){ _loadHoldFired=false; return; } // a hold opened load-browse — don't also reload
+  if(currentMode==='step' && loadHeld){ endLoadHold(); return; } // tap again while browsing → cancel
   if(isPatLike()) return;
   if(currentMode==='ctrl'){
     const ps=ctrlTargetParts();
@@ -6844,6 +6989,7 @@ function deserializeAll(data){
     if(Array.isArray(data.liveParts)) restoreParts(data.liveParts);
     else if(patternStore[activeBank][activePattern]) restoreParts(patternStore[activeBank][activePattern]);
     patternDirty=false;
+    loadedBank=activeBank; loadedPattern=activePattern;
     // Refresh everything on screen
     for(let i=0;i<8;i++){resetPartPlayState(i);partInPhase[i]=true;}
     buildParts();buildSteps();buildRangeBar();buildSoundEditor();buildPatternGrids();
@@ -7061,6 +7207,7 @@ function newProject(){
   if(typeof resetSoundEngineDefaults==='function') resetSoundEngineDefaults();
 
   activeBank=0; activePattern=0; activePart=0; patternPage=0;
+  loadedBank=0; loadedPattern=0;
   patternDirty=false;
   if(typeof setTempoVal==='function') setTempoVal(120); else tempo=120;
   for(let i=0;i<8;i++){resetPartPlayState(i);partInPhase[i]=true;}
@@ -7595,6 +7742,12 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
 })();
 
 initMIDI();
+// Auto-save: persist the live pattern into its slot when it has CHANGED. The
+// tick is a no-op during idle playback, so it never competes with the audio
+// scheduler. Switches flush immediately (see loadPattern); hide/close flush too.
+setInterval(autoSaveTick, 600);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) commitLiveToSlot(); });
+window.addEventListener('pagehide',()=>{ commitLiveToSlot(); });
 </script>
 </body>
 </html>
