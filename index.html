@@ -330,6 +330,11 @@
      center the virtual display vertically within it. */
   body.mobile-mode:not(.portrait) .seq-right > .panel:first-child{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;}
   body.mobile-mode:not(.portrait) .seq-right > .panel:first-child .smd-wrap{margin-bottom:0;}
+  /* The grid is pinned to a 2:1 box in JS for this case, so its tracks are
+     already square — let the cells simply fill their tracks instead of using
+     their own aspect-ratio:1 (which WebKit also mis-sizes in this flex context,
+     the same bug worked around for .step-pad). */
+  body.mobile-mode:not(.portrait) .smd-cell{aspect-ratio:auto;height:auto;min-height:0;}
   body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
     flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
@@ -1696,21 +1701,28 @@ function renormalizeSmdAspect(){
   const portrait=document.body.classList.contains('portrait');
   const midiPage=(typeof currentMode!=='undefined' && currentMode==='set' &&
                   (settingsPage===0||settingsPage===8));
-  g.style.aspectRatio=(portrait && !midiPage) ? 'auto' : '2 / 1';
-  // WebKit (iPad) mis-sizes a grid's `aspect-ratio` when it lives inside the
-  // centered, definite-height flex panel used for mobile landscape — the cells
-  // collapse into wide rectangles. Pin an explicit height (= width / 2) there so
-  // the 2:1 ratio holds in every engine. (Same class of WebKit bug worked around
-  // for .step-pad above.) Cleared in all other cases so they keep aspect-ratio.
-  const mobileLandscape = document.body.classList.contains('mobile-mode') && !portrait && !midiPage;
   // Only the NORMAL cell grid uses the stylesheet `display:grid` (inline display
   // is empty). Special pages (TEMPO readout, MIDI forms) override it to flex with
   // their own sizing, so leave those alone.
   const normalGrid = !g.style.display;
+  const mobileLandscape = document.body.classList.contains('mobile-mode') && !portrait && !midiPage;
   if(mobileLandscape && normalGrid){
+    // WebKit (iPad) mis-sizes a grid's `aspect-ratio` when it lives inside the
+    // centered, definite-height flex panel used for mobile landscape — the cells
+    // collapse into wide rectangles. Sidestep aspect-ratio ENTIRELY here: drive
+    // the box from an explicit pixel height (= width / 2) and turn the ratio off
+    // so nothing competes with it. (A ResizeObserver re-runs this whenever the
+    // measured width settles, so timing/late-layout can't leave it stale.)
     const w=g.clientWidth;
-    g.style.height = (w>0) ? Math.round(w/2)+'px' : '';
+    if(w>0){
+      g.style.aspectRatio='auto';
+      g.style.height=Math.round(w/2)+'px';
+    }else{
+      g.style.aspectRatio='2 / 1';
+      g.style.height='';
+    }
   }else{
+    g.style.aspectRatio=(portrait && !midiPage) ? 'auto' : '2 / 1';
     g.style.height='';
   }
 }
@@ -7656,6 +7668,21 @@ if(window.matchMedia){
 }
 applyMobileMode();
 applyPortrait();
+// Safety net for the SMD display height: recompute it whenever the grid's
+// measured width actually changes (flex reflow, rotation, font load, scale).
+// ResizeObserver tracks the unscaled content box (CSS transform doesn't affect
+// it), and the width guard prevents the height write from re-triggering it.
+if(window.ResizeObserver){
+  const _smdGrid=document.getElementById('smd-grid');
+  if(_smdGrid){
+    let _smdLastW=-1;
+    const _smdRO=new ResizeObserver(()=>{
+      const w=_smdGrid.clientWidth;
+      if(w!==_smdLastW){ _smdLastW=w; renormalizeSmdAspect(); }
+    });
+    _smdRO.observe(_smdGrid);
+  }
+}
 // Manual view toggle: flips between portrait and wide, overriding auto.
 (function(){
   const tg=document.getElementById('view-toggle');
