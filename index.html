@@ -311,6 +311,19 @@
   /* The status bar is relocated (via JS) to sit between the button row and the
      sound engine in portrait — give it the same 6px separation as other rows. */
   body.portrait #status-panel{margin-top:6px;}
+  /* Landscape (desktop + mobile landscape): the status bar is pulled out of the
+     right column (via JS) and placed as ONE full-width row at the bottom, just
+     under the action-button row. Same 6px separation as every other row. An
+     identical empty placeholder (#status-placeholder) is left in the right
+     column so the two-column heights stay locked and nothing reflows. */
+  body:not(.portrait) #status-panel{margin-top:6px;}
+  body:not(.portrait) #status-placeholder{flex:1;}
+  /* Mobile landscape only: there is no placeholder, so the right column's SMD
+     display panel would sit at the top with empty space below it. Let the gray
+     panel grow to fill the full column height (top buttons → bottom buttons) and
+     center the virtual display vertically within it. */
+  body.mobile-mode:not(.portrait) .seq-right > .panel:first-child{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;}
+  body.mobile-mode:not(.portrait) .seq-right > .panel:first-child .smd-wrap{margin-bottom:0;}
   body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
   body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
     flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
@@ -331,11 +344,7 @@
     color:var(--seq-text);padding:6px 14px;transition:all .1s;white-space:nowrap;min-width:96px;}
   .rec-btn:hover{border-color:var(--seq-yellow);}
   .rec-btn:active{transform:translateY(1px);}
-  .rec-btn .rec-dot{width:11px;height:11px;border-radius:50%;background:var(--seq-red);flex-shrink:0;
-    box-shadow:0 0 0 1px #0004 inset;}
   .rec-btn.armed{border-color:var(--seq-red);color:#fff;background:#2a1410;}
-  .rec-btn.armed .rec-dot{animation:recPulse 1s steps(1,end) infinite;}
-  @keyframes recPulse{0%{opacity:1;}50%{opacity:.12;}100%{opacity:1;}}
   .rec-level{position:relative;width:6px;align-self:stretch;border-radius:2px;
     background:var(--seq-btn-bg);border:1px solid var(--seq-border);overflow:hidden;flex-shrink:0;}
   .rec-level-fill{position:absolute;left:0;right:0;bottom:0;height:0%;
@@ -353,7 +362,24 @@
   .rec-save:active{transform:translateY(1px);}
   .rec-save.disabled{opacity:.4;pointer-events:none;background:var(--seq-btn-bg);
     border-color:var(--seq-border);color:var(--seq-text-dim);}
-  @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;} }
+  /* Compact PREVIEW (play/stop) for the last take — sits beside SAVE WAV and
+     plays lastBlob directly, no file save needed. Neutral so it doesn't clash
+     with the yellow SAVE WAV or the red armed BOUNCE; yellow accent while it
+     plays. */
+  .rec-prev{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:var(--seq-text);padding:6px 12px;transition:all .1s;white-space:nowrap;}
+  .rec-prev:hover{border-color:var(--seq-yellow);}
+  .rec-prev:active{transform:translateY(1px);}
+  .rec-prev.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
+  .rec-prev.disabled{opacity:.4;pointer-events:none;}
+  /* Keep the button a constant size across the PREVIEW ⇄ STOP swap: reserve a
+     fixed slot for the icon and for the (wider) label so "STOP" doesn't shrink it. */
+  #rec-preview-icon{display:inline-block;width:12px;text-align:center;}
+  #rec-preview-label{display:inline-block;min-width:58px;text-align:center;}
+  @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;}
+    .rec-prev{padding:6px 10px;} .rec-save{padding:6px 10px;} }
 </style>
 </head>
 <body>
@@ -366,13 +392,16 @@
        (the click bypasses the master chain straight to the output). The take
        is saved to disk as a 16-bit stereo WAV file. -->
   <div class="rec-bar" id="rec-bar">
-    <div class="rec-btn" id="rec-toggle" title="Start / stop recording the sound-engine output (no metronome click)">
-      <span class="rec-dot"></span><span id="rec-toggle-label">REC</span>
+    <div class="rec-btn" id="rec-toggle" title="Bounce the full sound-engine output to a WAV file (no metronome click)">
+      <span id="rec-toggle-label">BOUNCE</span>
     </div>
     <div class="rec-level"><div class="rec-level-fill" id="rec-level-fill"></div></div>
     <div class="rec-meta">
       <span class="rec-time" id="rec-time">00:00.0</span>
       <span class="rec-status" id="rec-status">Ready — captures the output, click excluded</span>
+    </div>
+    <div class="rec-prev disabled" id="rec-preview" title="Preview the last take (no save needed)">
+      <span id="rec-preview-icon" style="font-size:11px;line-height:1;">&#9654;</span><span id="rec-preview-label">PREVIEW</span>
     </div>
     <div class="rec-save disabled" id="rec-save" title="Save the last take as a WAV file">
       <span style="font-size:14px;line-height:1;">&#x2913;</span><span>SAVE WAV</span>
@@ -1037,10 +1066,26 @@ let pendingPattern=null;
 let loadedBank=0, loadedPattern=0;
 let _patChanged=false;
 function markPatternChanged(){ _patChanged=true; }
+// A pattern counts as having CONTENT if any part has a step on or any CTRL/
+// sound automation lock. Non-default part settings (speed, range, sends, etc.)
+// alone don't count — they make no sound without steps — so an untouched
+// pattern that's merely been played or visited stays "empty".
+function liveHasContent(){
+  for(let i=0;i<8;i++){
+    const p=parts[i];
+    if(p && p.steps && p.steps.some(Boolean)) return true;
+    if(ctrlLocks[i] && Object.keys(ctrlLocks[i]).length) return true;
+    if(soundCtrlLocks[i] && Object.keys(soundCtrlLocks[i]).length) return true;
+  }
+  return false;
+}
 function commitLiveToSlot(){   // unconditional write of live parts → loaded slot
   if(saveBrowsing||loadHeld||loadedPattern===null) return;
   if(typeof paramDragActive!=='undefined'&&paramDragActive) return; // not mid-gesture
-  patternStore[loadedBank][loadedPattern]=snapshotParts();
+  // Empty patterns are stored as null (an empty slot), so just playing/visiting
+  // one doesn't make it look "saved" with a content dot. A pattern that was
+  // cleared to empty likewise drops its dot, which matches what's in it.
+  patternStore[loadedBank][loadedPattern]=liveHasContent()?snapshotParts():null;
   patternDirty=false; _patChanged=false;
 }
 function autoSaveTick(){       // periodic: only works when something changed
@@ -1297,6 +1342,14 @@ function refreshActionBtnLabels(mode){
 }
 
 function setMode(mode){
+  // Switching tabs ends any in-progress step edit. On mobile a finger-hold on a
+  // step pad can get "stuck" — heldStepAbs left set with no finger actually down
+  // — if the pad's <div> was rebuilt mid-touch (its touchend then never reaches
+  // the grid-level delegate that calls endHold). Carried into the CTRL tab, that
+  // stale hold makes an ordinary knob move record as a per-step parameter lock.
+  // A deliberate tab tap means the step finger is already up, so drop it here.
+  if(heldStepAbs!==-1) endHold();
+  stepTouchId=null;
   // Leaving the CTRL tab (or switching tabs at all) drops a latched PART SETUP.
   if(_partSetupLatched){ _partSetupLatched=false; heldPartPi=-1; }
   if(currentMode==='key'&&mode!=='key'){ stopArp(); keyHeld.forEach(s=>{const m=keyHeldMidi.get(s);if(m)sendMidiNoteOff(m.ch,m.note);}); keyHeldMidi.clear(); keyHeld.clear(); }
@@ -7447,22 +7500,38 @@ function portraitActive(){
 function applyPortrait(){
   const on=portraitActive();
   document.body.classList.toggle('portrait', on);
-  // Move the status bar so in PORTRAIT it sits between the action button row
-  // and the sound engine bar; in landscape it lives in its normal column slot.
+  // Move the status bar so it sits as ONE full-width row at the bottom (just
+  // before the sound-engine bar) in BOTH layouts. On DESKTOP landscape we also
+  // drop an identical empty placeholder into the right column where the status
+  // bar used to live, so the two-column heights stay locked and nothing reflows.
+  // Portrait and mobile landscape need no placeholder.
   const statusPanel=document.getElementById('status-panel');
   const seqRight=document.querySelector('.seq-right');
   const bottomBar=document.querySelector('.seq-bottom-bar');
-  if(statusPanel){
-    if(on){
-      // Place directly before the sound engine (after the action button row).
-      if(bottomBar && statusPanel.nextElementSibling!==bottomBar){
-        bottomBar.parentNode.insertBefore(statusPanel, bottomBar);
+  if(statusPanel && bottomBar){
+    // Always anchor the real status bar just above the sound-engine bar.
+    if(statusPanel.nextElementSibling!==bottomBar){
+      bottomBar.parentNode.insertBefore(statusPanel, bottomBar);
+    }
+    let placeholder=document.getElementById('status-placeholder');
+    // Placeholder is for DESKTOP landscape only — not portrait, not mobile
+    // landscape (a real phone/tablet, including one forced into "Wide" mode).
+    const wantPlaceholder = !on && !isMobileMode();
+    if(wantPlaceholder){
+      // Ensure an identical empty placeholder occupies the old slot (last child
+      // of the right column) so the two-column layout doesn't move.
+      if(!placeholder){
+        placeholder=document.createElement('div');
+        placeholder.id='status-placeholder';
+        placeholder.className='panel';
+        placeholder.setAttribute('style','flex:1;display:flex;align-items:center;');
+        placeholder.innerHTML='<div class="status-bar" style="margin:0;border:none;padding:0;background:transparent;"></div>';
       }
-    }else{
-      // Restore into the right column (as its last panel).
-      if(seqRight && statusPanel.parentNode!==seqRight){
-        seqRight.appendChild(statusPanel);
+      if(seqRight && placeholder.parentNode!==seqRight){
+        seqRight.appendChild(placeholder);
       }
+    }else if(placeholder){
+      placeholder.remove();
     }
   }
   // Portrait reflows fluidly to fill the screen width (max 560px) and scrolls
@@ -7776,7 +7845,55 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   const elStatus = document.getElementById('rec-status');
   const elSave   = document.getElementById('rec-save');
   const elLevel  = document.getElementById('rec-level-fill');
+  const elPreview   = document.getElementById('rec-preview');
+  const elPrevIcon  = document.getElementById('rec-preview-icon');
+  const elPrevLabel = document.getElementById('rec-preview-label');
   if(!elBar||!elToggle) return; // bar not present — nothing to wire
+
+  // ── Take preview ───────────────────────────────────────────────────
+  // Plays the last recorded WAV (lastBlob) so the user can audition it without
+  // saving a file first. It plays THROUGH the Web Audio context (decode → buffer
+  // source → destination), i.e. the same output path as the live sequencer.
+  // A plain <audio> element is avoided on purpose: on iOS the ringer/mute switch
+  // silences HTMLMediaElements even while Web Audio is audible, which makes an
+  // Audio() preview seem dead. The source connects straight to destination (not
+  // the recorder tap on the master bus), so a preview is never itself recorded.
+  let previewSrc=null, previewBuf=null, previewBufFor=null;
+  function stopPreview(){
+    if(previewSrc){ try{ previewSrc.onended=null; previewSrc.stop(); }catch(e){} try{ previewSrc.disconnect(); }catch(e){} previewSrc=null; }
+    if(elPreview) elPreview.classList.remove('playing');
+    if(elPrevIcon) elPrevIcon.innerHTML='&#9654;';   // ► play
+    if(elPrevLabel) elPrevLabel.textContent='PREVIEW';
+  }
+  function togglePreview(){
+    if(!lastBlob) return;
+    if(previewSrc){ stopPreview(); return; }          // already playing → stop
+    const ctx=getCtx();
+    if(ctx.state==='suspended'){ try{ ctx.resume(); }catch(e){} }
+    const playBuf=(buf)=>{
+      try{
+        const src=ctx.createBufferSource();
+        src.buffer=buf;
+        src.connect(ctx.destination);
+        src.onended=()=>{ if(src===previewSrc) stopPreview(); };
+        src.start();
+        previewSrc=src;
+        elPreview.classList.add('playing');
+        elPrevIcon.innerHTML='&#9632;';               // ■ stop
+        elPrevLabel.textContent='STOP';
+      }catch(e){ stopPreview(); }
+    };
+    if(previewBufFor===lastBlob && previewBuf){ playBuf(previewBuf); return; } // decoded already
+    const decode=(arr)=>{
+      // Support both the modern promise form and old Safari's callback form.
+      const ok=(buf)=>{ previewBuf=buf; previewBufFor=lastBlob; playBuf(buf); };
+      const fail=()=>stopPreview();
+      try{ const r=ctx.decodeAudioData(arr, ok, fail); if(r&&r.then) r.then(ok,fail); }
+      catch(e){ stopPreview(); }
+    };
+    if(lastBlob.arrayBuffer){ lastBlob.arrayBuffer().then(decode, ()=>stopPreview()); }
+    else { const fr=new FileReader(); fr.onload=()=>decode(fr.result); fr.onerror=()=>stopPreview(); fr.readAsArrayBuffer(lastBlob); }
+  }
 
   function fmtTime(sec){
     sec=Math.max(0,sec);
@@ -7793,6 +7910,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   }
 
   function startRec(){
+    stopPreview(); // don't keep auditioning the previous take while a new one records
     // Ensure the audio graph + master chain exist (they may not yet if no pad
     // has been hit), then grab the master output node as the tap point.
     let ctx=null, vol=null;
@@ -7842,6 +7960,11 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     elStatus.textContent='Recording\u2026';
     elTime.textContent='00:00.0';
     tick();
+    // Pressing BOUNCE also rolls the transport — same as hitting Play at the
+    // same moment. The tap is already connected above, so playback is captured
+    // from its first note. startPlay() no-ops if already playing and resumes
+    // from the current pattern/state, so an in-progress take isn't disturbed.
+    if(typeof startPlay==='function' && !playing) startPlay();
   }
 
   function stopRec(){
@@ -7857,7 +7980,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
 
     elBar.classList.remove('armed');
     elToggle.classList.remove('armed');
-    elLabel.textContent='REC';
+    elLabel.textContent='BOUNCE';
 
     if(recLen<1){
       elStatus.textContent='Nothing recorded';
@@ -7868,8 +7991,9 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     lastName='stepseq-'+stamp()+'.wav';
     recL=[]; recR=[]; // free the raw PCM chunks
     elSave.classList.remove('disabled');
+    elPreview.classList.remove('disabled');
     elTime.textContent=fmtTime(dur);
-    elStatus.textContent='Take ready \u2014 '+fmtTime(dur)+' \u00b7 '+(lastBlob.size/1048576).toFixed(2)+' MB \u00b7 press SAVE WAV';
+    elStatus.textContent='Take ready \u2014 '+fmtTime(dur)+' \u00b7 '+(lastBlob.size/1048576).toFixed(2)+' MB';
   }
 
   function stamp(){
@@ -7915,6 +8039,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
 
   elToggle.addEventListener('click',()=>{ recording?stopRec():startRec(); });
   elSave.addEventListener('click',saveWav);
+  elPreview.addEventListener('click',togglePreview);
 })();
 
 initMIDI();
