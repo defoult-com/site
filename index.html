@@ -7463,26 +7463,30 @@ let appScale=1; // current uniform UI scale (1 = full size); used to keep drag f
 // mode we hide the keyboard-shortcut hint labels (no physical keyboard).
 function isMobileMode(){
   const mm = window.matchMedia ? (q)=>window.matchMedia(q).matches : ()=>false;
-  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
+  const touchPts = navigator.maxTouchPoints || 0;
+  const touch = ('ontouchstart' in window) || touchPts>0;
   if(!touch) return false;                        // no touch at all → desktop
 
-  // Detect a genuine mobile/tablet OS from the platform first. Samsung tablets
-  // (and many Android devices) ship with an S-Pen/stylus, which reports a FINE
-  // pointer AND hover capability — that made the old pointer-only test wrongly
-  // fall back to desktop. A platform check is reliable for these and still
-  // excludes desktops that merely have a touchscreen (Windows/macOS report a
-  // desktop UA and are caught by the pointer heuristic below).
-  const ua = navigator.userAgent || '';
-  const uaMobileOS =
-    /Android|iPhone|iPod|iPad|Windows Phone|webOS|BlackBerry|BB10|Tizen|SailfishOS|KAIOS|Mobile/i.test(ua)
-    || (navigator.userAgentData && navigator.userAgentData.mobile === true)
-    // iPadOS 13+ masquerades as desktop "Macintosh" but has multi-touch.
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if(uaMobileOS) return true;
+  const ua   = navigator.userAgent || '';
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
 
-  // Fallback for anything the UA check missed: a coarse primary pointer with no
-  // mouse/hover is a touch-primary device. This keeps a small DESKTOP window
-  // (mouse → fine pointer + hover) from being treated as mobile.
+  // 1) Explicit mobile/tablet OS in the UA (normal Android/iOS browsing).
+  if(/Android|iPhone|iPod|iPad|Windows Phone|webOS|BlackBerry|BB10|Tizen|SailfishOS|KAIOS|Mobile/i.test(ua)) return true;
+  if(navigator.userAgentData && navigator.userAgentData.mobile === true) return true;
+
+  // 2) UA-INDEPENDENT tablet check. Android tablets (esp. Samsung) frequently
+  //    default to "Desktop site", which spoofs a desktop UA (no "Android"/
+  //    "Mobile") and, with an S-Pen, also reports a fine pointer + hover — so
+  //    the checks above and the pointer heuristic below both miss them. iPadOS
+  //    does the same masquerade but is caught here too. The reliable signal is:
+  //    the device has a touchscreen (multi-touch) and is NOT a genuine Windows
+  //    or macOS desktop. Real Windows/macOS desktops (the cases we must keep on
+  //    desktop, including touchscreen laptops) are identified by platform/UA.
+  const isWindowsDesktop = /Win/i.test(plat) || /Windows/i.test(ua);
+  const isMacDesktop     = /Mac/i.test(plat) && touchPts <= 1;  // iPad reports touchPts>1
+  if(touchPts > 1 && !isWindowsDesktop && !isMacDesktop) return true;
+
+  // 3) Final fallback: a coarse primary pointer with no mouse/hover.
   const coarse   = mm('(pointer: coarse)');      // primary pointer is a finger
   const anyFine  = mm('(any-pointer: fine)');     // a mouse/trackpad exists
   const canHover = mm('(hover: hover)');          // a true hover device (mouse)
