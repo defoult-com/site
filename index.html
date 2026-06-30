@@ -96,6 +96,12 @@
   .step-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;min-height:16px;}
   .step-panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;line-height:16px;}
   .part-indicator{font-size:11px;color:var(--seq-yellow);font-weight:bold;line-height:16px;height:16px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;}
+  /* Very small phones (body.tiny-screen, set from JS): drop the Parts and Step
+     panel header rows entirely so the whole layout packs tighter. The display:
+     none removes the row and its bottom margin, reclaiming the vertical space.
+     Bigger phones and tablets never get this class, so they look unchanged. */
+  body.tiny-screen #parts-panel-header,
+  body.tiny-screen .step-panel-header{display:none!important;}
   .part-num.part-disabled{opacity:.35;cursor:default;}
   .step-pad.page-disabled{opacity:.3;cursor:default;}
   .ctrl-btn.ctrl-disabled{opacity:.3;cursor:default;pointer-events:none;}
@@ -440,7 +446,7 @@
   <div class="seq-main active" id="seq-main">
     <div class="seq-left">
       <div class="panel">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+        <div class="parts-panel-header" id="parts-panel-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <div class="panel-title" id="parts-panel-title" style="margin-bottom:0;">Parts</div>
           <div class="pat-info" id="parts-pat-info"></div>
         </div>
@@ -7493,7 +7499,14 @@ function isMobileMode(){
   return coarse && !anyFine && !canHover;
 }
 function applyMobileMode(){
-  document.body.classList.toggle('mobile-mode', isMobileMode());
+  const mob = isMobileMode();
+  document.body.classList.toggle('mobile-mode', mob);
+  // Very small phones (≈ iPhone SE / 13 mini, ≤380px on their short side): hide
+  // the Parts and Step panel header rows to pack the layout tighter. Uses the
+  // device's fixed short side (orientation- and browser-chrome-independent) so
+  // bigger phones (≥390px) and tablets are never affected.
+  const shortSide = Math.min(screen.width || 9999, screen.height || 9999);
+  document.body.classList.toggle('tiny-screen', mob && shortSide <= 380);
   // Show the portrait/wide toggle only on genuine touch-primary devices (a
   // coarse pointer with no mouse hover) — NOT desktops that merely report a
   // touchscreen. Use a slightly looser test than isMobileMode so a touch
