@@ -1697,6 +1697,22 @@ function renormalizeSmdAspect(){
   const midiPage=(typeof currentMode!=='undefined' && currentMode==='set' &&
                   (settingsPage===0||settingsPage===8));
   g.style.aspectRatio=(portrait && !midiPage) ? 'auto' : '2 / 1';
+  // WebKit (iPad) mis-sizes a grid's `aspect-ratio` when it lives inside the
+  // centered, definite-height flex panel used for mobile landscape — the cells
+  // collapse into wide rectangles. Pin an explicit height (= width / 2) there so
+  // the 2:1 ratio holds in every engine. (Same class of WebKit bug worked around
+  // for .step-pad above.) Cleared in all other cases so they keep aspect-ratio.
+  const mobileLandscape = document.body.classList.contains('mobile-mode') && !portrait && !midiPage;
+  // Only the NORMAL cell grid uses the stylesheet `display:grid` (inline display
+  // is empty). Special pages (TEMPO readout, MIDI forms) override it to flex with
+  // their own sizing, so leave those alone.
+  const normalGrid = !g.style.display;
+  if(mobileLandscape && normalGrid){
+    const w=g.clientWidth;
+    g.style.height = (w>0) ? Math.round(w/2)+'px' : '';
+  }else{
+    g.style.height='';
+  }
 }
 
 function resetSmdGridStyle(){
