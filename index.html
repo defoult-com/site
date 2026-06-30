@@ -7463,14 +7463,29 @@ let appScale=1; // current uniform UI scale (1 = full size); used to keep drag f
 // mode we hide the keyboard-shortcut hint labels (no physical keyboard).
 function isMobileMode(){
   const mm = window.matchMedia ? (q)=>window.matchMedia(q).matches : ()=>false;
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
+  if(!touch) return false;                        // no touch at all → desktop
+
+  // Detect a genuine mobile/tablet OS from the platform first. Samsung tablets
+  // (and many Android devices) ship with an S-Pen/stylus, which reports a FINE
+  // pointer AND hover capability — that made the old pointer-only test wrongly
+  // fall back to desktop. A platform check is reliable for these and still
+  // excludes desktops that merely have a touchscreen (Windows/macOS report a
+  // desktop UA and are caught by the pointer heuristic below).
+  const ua = navigator.userAgent || '';
+  const uaMobileOS =
+    /Android|iPhone|iPod|iPad|Windows Phone|webOS|BlackBerry|BB10|Tizen|SailfishOS|KAIOS|Mobile/i.test(ua)
+    || (navigator.userAgentData && navigator.userAgentData.mobile === true)
+    // iPadOS 13+ masquerades as desktop "Macintosh" but has multi-touch.
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(uaMobileOS) return true;
+
+  // Fallback for anything the UA check missed: a coarse primary pointer with no
+  // mouse/hover is a touch-primary device. This keeps a small DESKTOP window
+  // (mouse → fine pointer + hover) from being treated as mobile.
   const coarse   = mm('(pointer: coarse)');      // primary pointer is a finger
   const anyFine  = mm('(any-pointer: fine)');     // a mouse/trackpad exists
   const canHover = mm('(hover: hover)');          // a true hover device (mouse)
-  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
-  if(!touch) return false;                        // no touch at all → desktop
-  // A real phone/tablet: coarse primary pointer AND no fine pointer / no hover.
-  // This deliberately ignores raw screen size, so a small DESKTOP window (which
-  // has a mouse → fine pointer + hover) is never treated as mobile.
   return coarse && !anyFine && !canHover;
 }
 function applyMobileMode(){
