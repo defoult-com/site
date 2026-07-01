@@ -63,7 +63,9 @@
      space just sits below it (buttons are unchanged). */
   body:not(.portrait) #step-panel{flex:1 1 auto;}
   .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
-  .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;margin-bottom:6px;}
+  /* parts-grid is the LAST child of its gray panel — no bottom margin, so the
+     panel's 8px padding reads the same on all four sides. */
+  .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
   .pnum-n{font-size:11px;line-height:1;}
@@ -176,7 +178,9 @@
   .set-toggle-track{display:flex;width:100%;gap:2px;}
   .set-toggle-seg{flex:1;height:8px;border-radius:2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);transition:background .1s,border-color .1s;}
   .set-toggle-seg.on{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);}
-  .smd-wrap{background:var(--seq-yellow-bg);border:1px solid var(--seq-yellow-dark);border-radius:3px;padding:6px;margin-bottom:6px;}
+  /* smd-wrap is the ONLY child of its gray panel — no bottom margin, so the
+     panel's 8px padding reads the same on all four sides. */
+  .smd-wrap{background:var(--seq-yellow-bg);border:1px solid var(--seq-yellow-dark);border-radius:3px;padding:6px;}
   .smd-header{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--seq-yellow);letter-spacing:.1em;margin-bottom:6px;text-transform:uppercase;}
   .smd-grid{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1fr;gap:4px;aspect-ratio:4/2;}
   .smd-cell{background:var(--seq-btn-bg);border:1px solid var(--seq-yellow-dark);border-radius:2px;padding:4px 2px;text-align:center;position:relative;transition:border-color .1s,background .1s;display:flex;flex-direction:column;justify-content:center;align-items:center;overflow:hidden;aspect-ratio:1;}
@@ -317,19 +321,17 @@
   /* The status bar is relocated (via JS) to sit between the button row and the
      sound engine in portrait — give it the same 6px separation as other rows. */
   body.portrait #status-panel{margin-top:6px;}
-  /* Landscape (desktop + mobile landscape): the status bar is pulled out of the
-     right column (via JS) and placed as ONE full-width row at the bottom, just
-     under the action-button row. Same 6px separation as every other row. An
-     identical empty placeholder (#status-placeholder) is left in the right
-     column so the two-column heights stay locked and nothing reflows. */
-  body:not(.portrait) #status-panel{margin-top:6px;}
-  body:not(.portrait) #status-placeholder{flex:1;}
+  /* Mobile landscape: the status bar is pulled out of the right column (via JS)
+     and placed as ONE full-width row at the bottom, just under the action-button
+     row. Same 6px separation as every other row. On DESKTOP landscape the status
+     bar stays in the right column under the virtual display (its markup slot),
+     where the column's own 6px gap spaces it — so no extra margin there. */
+  body.mobile-mode:not(.portrait) #status-panel{margin-top:6px;}
   /* Mobile landscape only: there is no placeholder, so the right column's SMD
      display panel would sit at the top with empty space below it. Let the gray
      panel grow to fill the full column height (top buttons → bottom buttons) and
      center the virtual display vertically within it. */
   body.mobile-mode:not(.portrait) .seq-right > .panel:first-child{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;}
-  body.mobile-mode:not(.portrait) .seq-right > .panel:first-child .smd-wrap{margin-bottom:0;}
   /* The grid is pinned to a 2:1 box in JS for this case, so its tracks are
      already square — let the cells simply fill their tracks instead of using
      their own aspect-ratio:1 (which WebKit also mis-sizes in this flex context,
@@ -1136,6 +1138,9 @@ function snapshotParts(){
 }
 
 function restoreParts(snapshot){
+  // Pattern switch replaces sequence + lock data wholesale — any in-flight
+  // single-step lock overrides from the outgoing pattern are now meaningless.
+  if(typeof clearLockOverrides==='function') clearLockOverrides();
   snapshot.forEach((saved,i)=>{
     // Preserve live (global) mute/solo across pattern load
     const keepMuted=parts[i].muted, keepSoloed=parts[i].soloed;
@@ -1194,6 +1199,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
       p.swing=0;p.seqOffset=0;p.midiDly=0;p.midiDlyTime=DEFAULT_DLY_TIME_IDX;p.dlyFb=0;p.dlyPitch=0;
       for(const key in ctrlLocks[i]) delete ctrlLocks[i][key];
       for(const key in soundCtrlLocks[i]) delete soundCtrlLocks[i][key];
+      if(typeof clearLockOverrides==='function') clearLockOverrides(i);
     });
   } else {
     restoreParts(snap);
@@ -1221,7 +1227,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
       }
     }
   }
-  buildParts();buildSteps();buildRangeBar();buildPatternGrids();updateSmdDisplay();
+  buildParts();buildSteps();buildRangeBar();buildPatternGrids();updateSmdDisplay();updatePartIndicator();
   if(seOpen) buildSoundEditor();
   if(currentMode==='ctrl') showCtrlPanel();
   setStatus('Loaded Bank '+(bank+1)+' Pattern '+(pattern+1));
@@ -1249,7 +1255,7 @@ function reloadPatternLive(){
     const len=parts[pi].seqEnd-parts[pi].seqStart+1;
     if(len>0 && playState[pi].pos>=len) playState[pi].pos=playState[pi].pos%len;
   }
-  buildParts();buildSteps();buildRangeBar();buildPatternGrids();updateSmdDisplay();
+  buildParts();buildSteps();buildRangeBar();buildPatternGrids();updateSmdDisplay();updatePartIndicator();
   if(seOpen) buildSoundEditor();
   if(currentMode==='ctrl') showCtrlPanel();
 }
@@ -2500,8 +2506,46 @@ const CTRL_CC_DEFAULTS=[7,74,73,91,10,71,72,93];
 const ctrlCCNums=Array.from({length:8},()=>CTRL_CC_DEFAULTS.slice());
 const ctrlCCVals=Array.from({length:8},()=>Array(8).fill(64)); // [part][ctrl] live value
 // CTRL parameter locks: ctrlLocks[part][abs] = {idx:value,...} (sparse).
-// A locked value overrides the live value for that step on playback.
+// A locked value overrides the GLOBAL live value ONLY for the step it is on:
+// the very next step without a lock snaps the parameter back to the global
+// value (ctrlCCVals / soundLive), which the user can change at any time and
+// which is never overwritten by locks.
 const ctrlLocks=Array.from({length:8},()=>({}));
+// Per-part set of CTRL params currently overridden by a step lock during
+// playback: ctrlLockOverride[part] = {idx:true}. When a step has no lock for
+// an idx in this set, the global ctrlCCVals value is re-sent and the flag
+// cleared — this is what makes locks single-step instead of sticky.
+const ctrlLockOverride=Array.from({length:8},()=>({}));
+// Same idea for DRUM MACHINE sound locks, but the map stores the EXACT global
+// engine value captured just before the lock overrode it (so restoring is
+// bit-exact, not knob-quantised): soundLockOverride[part] = {idx:exactValue}.
+const soundLockOverride=Array.from({length:8},()=>({}));
+function clearLockOverrides(pi){
+  if(pi===undefined){ for(let i=0;i<8;i++) clearLockOverrides(i); return; }
+  const co=ctrlLockOverride[pi]; for(const k in co) delete co[k];
+  const so=soundLockOverride[pi]; for(const k in so) delete so[k];
+}
+// Snap every lock-overridden parameter back to its global value (used on STOP
+// so the sound / MIDI device doesn't stay stuck on the last step's lock).
+function restoreLockOverrides(){
+  for(let pi=0;pi<8;pi++){
+    const so=soundLockOverride[pi];
+    for(const k in so){ const def=sndDefs(pi)[+k]; const v=so[k]; delete so[k];
+      if(!def) continue;
+      if(def.schedule&&typeof audioCtx!=='undefined'&&audioCtx) def.schedule(pi,v,audioCtx.currentTime); else def.set(pi,v);
+    }
+    const co=ctrlLockOverride[pi];
+    const port=resolveOutPort(pi), outCh=resolveOutCh(pi);
+    for(const k in co){ delete co[k];
+      if(port){ try{ port.send([0xB0|outCh, ctrlCCNums[pi][+k], ctrlCCVals[pi][+k]]); }catch(e){} }
+    }
+  }
+  // Repaint the live CTRL panel (if visible) back to the global values.
+  if(currentMode==='ctrl'&&heldStepAbs===-1){
+    if(isDrumMachine()){ if(typeof syncSoundDisplayCells==='function') syncSoundDisplayCells(); }
+    else for(let i=0;i<8;i++){ const e2=document.getElementById('cctrl-'+i+'-val'); if(e2) e2.textContent=ctrlCCVals[activePart][i]; }
+  }
+}
 // Per-part saved snapshot of the CTRL setup (live values, output CC numbers,
 // and all parameter locks). Used by the CTRL-mode Save/Reload/Clear buttons.
 const ctrlSaveStore=Array(8).fill(null);
@@ -2534,12 +2578,14 @@ function reloadCtrlPart(pi){
   // Replace locks wholesale
   for(const k in ctrlLocks[pi]) delete ctrlLocks[pi][k];
   Object.assign(ctrlLocks[pi], JSON.parse(JSON.stringify(s.locks)));
+  clearLockOverrides(pi);
   return true;
 }
 function clearCtrlPart(pi){
   if(isDrumMachine()){ clearSoundCtrlPart(pi); return; }
   for(let i=0;i<8;i++){ ctrlCCVals[pi][i]=64; ctrlCCNums[pi][i]=CTRL_CC_DEFAULTS[i]; }
   for(const k in ctrlLocks[pi]) delete ctrlLocks[pi][k];
+  clearLockOverrides(pi);
 }
 function flashCtrlBtn(id){
   const el=document.getElementById(id); if(!el) return;
@@ -2639,7 +2685,9 @@ function recordCtrlLock(idx,val){
 // engine parameters instead of sending MIDI CCs. It reuses the exact same
 // per-step parameter LOCK + live RECORDING behaviour as the MIDI CTRL parts:
 //   · locks are stored per part/step as 0-127 "knob" values in soundCtrlLocks
-//     (mirroring ctrlLocks) and applied to the sound at each step on playback,
+//     (mirroring ctrlLocks) and applied to the sound ONLY on the step they sit
+//     on; the next step without a lock snaps the parameter back to the global
+//     live value, which locks never overwrite,
 //   · live values ARE the part's own sound fields, so the panel always reflects
 //     (and is reflected by) the Sound editor.
 // Cell order = display grid order: row1 VOLUME PAN REV-SND DLY-SND,
@@ -2730,7 +2778,11 @@ const soundCtrlSaveStore=Array(8).fill(null);
 function getSoundLock(part,abs,idx){ const s=soundCtrlLocks[part][abs]; return (s&&s[idx]!==undefined)?s[idx]:undefined; }
 function setSoundLock(part,abs,idx,val){ if(!soundCtrlLocks[part][abs]) soundCtrlLocks[part][abs]={}; soundCtrlLocks[part][abs][idx]=val; }
 function soundStepHasLocks(part,abs){ const s=soundCtrlLocks[part][abs]; return !!s && Object.keys(s).length>0; }
-function syncSoundLiveFromParts(pi){ const p=parts[pi]; sndDefs(pi).forEach((d,idx)=>{ soundLive[pi][idx]=sndToKnob(d,d.get(p)); }); }
+// Re-derive the global knob mirror from the engine fields. While a step lock
+// is actively overriding a parameter during playback, the engine field holds
+// the LOCK value — use the captured pre-lock global instead, so locks can
+// never leak into the global.
+function syncSoundLiveFromParts(pi){ const p=parts[pi]; const over=soundLockOverride[pi]; sndDefs(pi).forEach((d,idx)=>{ const g=(over&&over[idx]!==undefined)?over[idx]:d.get(p); soundLive[pi][idx]=sndToKnob(d,g); }); }
 // ── Two-way sync between the Sound-editor sliders and the SOUND CTRL display ──
 // Both read/write the same parts[] fields, so they share a single source of
 // truth; these helpers just keep the two on-screen representations visually in
@@ -2771,26 +2823,43 @@ function recordSoundLock(idx,knob){
   markStepLockDot(activePart,abs);
 }
 // Apply a step's sound-parameter locks at the step time (the automation lane).
+// Locks are SINGLE-STEP: a lock sets the engine parameter only for its own
+// step; the next step without a lock restores the GLOBAL value. The exact
+// (non-quantised) global value is captured in soundLockOverride the moment a
+// run of locks begins, and soundLive (the global knob mirror) is never
+// overwritten by locks.
 function playSoundLocks(pi, shiftedAbs, fireAt){
   const locks=soundCtrlLocks[pi][shiftedAbs];
-  if(!locks) return;
-  for(const k in locks){
-    const idx=+k, knob=locks[k], def=sndDefs(pi)[idx];
-    if(!def) continue;
-    const v=sndFromKnob(def,knob);
+  const over=soundLockOverride[pi];
+  let hasOver=false; for(const k in over){ hasOver=true; break; }
+  if(!locks&&!hasOver) return;
+  const defs=sndDefs(pi);
+  const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
+  const applyAt=(idx,v)=>{
+    const def=defs[idx]; if(!def) return;
     // FX params (pan/rev/dly) use SHARED per-part nodes, so schedule them at the
     // exact step time to avoid lookahead smear. Per-voice params (vol/freq/etc.)
     // are baked into each voice at fireNote, so a plain field set is correct.
     if(def.schedule) def.schedule(pi, v, fireAt); else def.set(pi, v);
-    soundLive[pi][idx]=knob;
     if(pi===activePart && currentMode==='ctrl' && isDrumMachine() && heldStepAbs===-1){
-      const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
-      setTimeout(()=>{ const e2=document.getElementById('sndctrl-'+idx+'-val'); if(e2) e2.textContent=def.fmt(sndFromKnob(def,knob)); }, delayMs);
+      setTimeout(()=>{ const e2=document.getElementById('sndctrl-'+idx+'-val'); if(e2) e2.textContent=def.fmt(v); }, delayMs);
     }
+  };
+  // Params locked on a previous step but NOT on this one → back to global.
+  for(const k in over){
+    if(!locks||locks[k]===undefined){ const v=over[k]; delete over[k]; applyAt(+k, v); }
+  }
+  // This step's locks. Capture the exact global value the first time a run of
+  // locks starts, so the next unlocked step restores it precisely.
+  if(locks) for(const k in locks){
+    const idx=+k, def=defs[idx]; if(!def) continue;
+    if(over[k]===undefined) over[k]=def.get(parts[pi]);
+    applyAt(idx, sndFromKnob(def, locks[k]));
   }
 }
 function clearSoundCtrlPart(pi){
   for(const k in soundCtrlLocks[pi]) delete soundCtrlLocks[pi][k];
+  clearLockOverrides(pi);
   sndDefs(pi).forEach((d,idx)=>{ const dv=d.def(parts[pi]); d.set(pi,dv); soundLive[pi][idx]=sndToKnob(d,dv); });
 }
 function saveSoundCtrlPart(pi){ syncSoundLiveFromParts(pi); soundCtrlSaveStore[pi]={ locks:JSON.parse(JSON.stringify(soundCtrlLocks[pi])), live:soundLive[pi].slice() }; }
@@ -2798,6 +2867,7 @@ function reloadSoundCtrlPart(pi){
   const s=soundCtrlSaveStore[pi]; if(!s) return false;
   for(const k in soundCtrlLocks[pi]) delete soundCtrlLocks[pi][k];
   Object.assign(soundCtrlLocks[pi], JSON.parse(JSON.stringify(s.locks)));
+  clearLockOverrides(pi);
   sndDefs(pi).forEach((d,idx)=>{ const knob=s.live[idx]; soundLive[pi][idx]=knob; d.set(pi, sndFromKnob(d,knob)); });
   return true;
 }
@@ -2835,7 +2905,11 @@ function showSoundCtrlPanel(){
         markStepLockDot(activePart,lockAbs);
       } else {
         soundLive[activePart][idx]=nk;
-        def.set(activePart, sndFromKnob(def,nk));
+        const nv=sndFromKnob(def,nk);
+        def.set(activePart, nv);
+        // If a step lock is overriding this param right now, the user's move
+        // becomes the NEW global — retarget the pending snap-back to it.
+        if(soundLockOverride[activePart][idx]!==undefined) soundLockOverride[activePart][idx]=nv;
         if(recording&&playing) recordSoundLock(idx,nk);
         if(typeof syncSoundEditorControls==='function') syncSoundEditorControls(); // editor sliders follow
       }
@@ -2844,7 +2918,7 @@ function showSoundCtrlPanel(){
     };
     cell.addEventListener('dblclick',()=>{
       if(lockAbs>=0){ const s=soundCtrlLocks[activePart][lockAbs]; if(s){delete s[idx];} markStepLockDot(activePart,lockAbs); paint(); }
-      else { const dv=def.def(parts[activePart]); def.set(activePart,dv); soundLive[activePart][idx]=sndToKnob(def,dv); paint(); }
+      else { const dv=def.def(parts[activePart]); def.set(activePart,dv); soundLive[activePart][idx]=sndToKnob(def,dv); if(soundLockOverride[activePart][idx]!==undefined) soundLockOverride[activePart][idx]=dv; paint(); }
       markPatternChanged();
     });
     let sY=0,sV=0;
@@ -3827,17 +3901,23 @@ function updatePatDisp(){
     el.style.color='';
     return;
   }
-  const patNum=(activePattern!==null?activePattern:0)+1;
-  el.innerHTML='<span style="color:var(--seq-yellow);">Bank '+(activeBank+1)+' &middot; Pat '+patNum+'</span>';
+  // The virtual display ALWAYS shows the pattern that is actually loaded /
+  // playing (loadedBank/loadedPattern) — never the PTRN-tab browse selection
+  // (activeBank), which can point at a different bank while the user is just
+  // looking around. Browsing therefore no longer changes this readout.
+  const patNum=(loadedPattern!==null?loadedPattern:0)+1;
+  el.innerHTML='<span style="color:var(--seq-yellow);">Bank '+(loadedBank+1)+' &middot; Pat '+patNum+'</span>';
   el.style.color='';
 }
 
 function updatePartIndicator(){
   updatePatDisp();
   if(typeof markSaveDirty==='function') markSaveDirty();
-  // Parts panel header (top-right) always shows the current pattern BANK in
-  // yellow, mirroring how the active part is shown by the Step Sequencer header.
-  const setBankInfo=()=>{ const b=document.getElementById('parts-pat-info'); if(b) b.innerHTML='Bank '+(activeBank+1); };
+  // Parts panel header (top-right) shows the pattern BANK in yellow. In PTRN
+  // mode (and while save/load-browsing, where the parts panel IS the bank
+  // picker) it shows the browsed/selected bank; in every other mode it shows
+  // the bank of the pattern that is actually loaded / playing.
+  const setBankInfo=()=>{ const b=document.getElementById('parts-pat-info'); if(b) b.innerHTML='Bank '+(((currentMode==='pat'||saveBrowsing)?activeBank:loadedBank)+1); };
   setBankInfo();
   if(currentMode==='set'){
     const pi2=document.getElementById('part-indicator');
@@ -5935,22 +6015,30 @@ function schedulePlayhead(pi,abs,stepAt){
 }
 
 // Send a step's CTRL parameter locks as CC (automation), at the step time.
+// Locks are SINGLE-STEP: a locked value is sent only for its own step; on the
+// next step without a lock the GLOBAL live value (ctrlCCVals) is re-sent.
+// Locks never overwrite ctrlCCVals — that is the user's always-editable
+// "as if there were no locks" value.
 function playCtrlLocks(pi, shiftedAbs, fireAt){
   const locks=ctrlLocks[pi][shiftedAbs];
-  if(!locks) return;
+  const over=ctrlLockOverride[pi];
+  let hasOver=false; for(const k in over){ hasOver=true; break; }
+  if(!locks&&!hasOver) return;
   const port=resolveOutPort(pi), outCh=resolveOutCh(pi);
   const tMs=performance.now()+Math.max(0,(fireAt-audioCtx.currentTime)*1000);
-  for(const k in locks){
-    const ci=+k, val=locks[k], ccNum=ctrlCCNums[pi][ci];
-    if(port){ try{ port.send([0xB0|outCh, ccNum, val], tMs); }catch(e){} }
-    if(pi===activePart){
-      ctrlCCVals[pi][ci]=val;
-      if(currentMode==='ctrl'&&heldStepAbs===-1){
-        const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
-        setTimeout(()=>{const e2=document.getElementById('cctrl-'+ci+'-val'); if(e2)e2.textContent=val;}, delayMs);
-      }
+  const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
+  const sendCC=(ci,val)=>{
+    if(port){ try{ port.send([0xB0|outCh, ctrlCCNums[pi][ci], val], tMs); }catch(e){} }
+    if(pi===activePart&&currentMode==='ctrl'&&heldStepAbs===-1){
+      setTimeout(()=>{const e2=document.getElementById('cctrl-'+ci+'-val'); if(e2)e2.textContent=val;}, delayMs);
     }
+  };
+  // Params locked on a previous step but NOT on this one → back to global.
+  for(const k in over){
+    if(!locks||locks[k]===undefined){ delete over[k]; sendCC(+k, ctrlCCVals[pi][+k]); }
   }
+  // This step's locks (apply for this step only; global stays untouched).
+  if(locks) for(const k in locks){ over[k]=true; sendCC(+k, locks[k]); }
 }
 
 function scheduleDrum(pi,abs,isOffBeat,stepAt){
@@ -6257,6 +6345,8 @@ function stopPlay(){
   recordSkipOnce.forEach(s=>s.clear());
   loopHistory.forEach(h=>h.length=0);
   playing=false;paused=false;looperActive=false;looperHeld=[];stopSchedClock();
+  // Single-step locks: snap every overridden parameter back to its global value.
+  restoreLockOverrides();
   // Arp keeps going free-running if keys are still held
   if(arpActive){ arpFreeRun(); }
   if(playhead>=0){if(isStepLike()){const prev=document.getElementById('spad-'+playhead);if(prev)prev.className='step-pad'+(shiftedIsOn(activePart,playhead)?' on':'');}playhead=-1;}
@@ -7446,6 +7536,7 @@ function newProject(){
     for(let j=0;j<8;j++){ ctrlCCVals[i][j]=64; ctrlCCNums[i][j]=CTRL_CC_DEFAULTS[j]; }
     for(const key in ctrlLocks[i]) delete ctrlLocks[i][key];
     for(const key in soundCtrlLocks[i]) delete soundCtrlLocks[i][key];
+    clearLockOverrides(i);
     // Per-part step-entry defaults back to factory.
     partStepDefaults[i]={note:0,accent:1,velManual:false,gate:50,oct:5,vel:100,stepOffset:0};
     partPage[i]=0;
@@ -7560,39 +7651,33 @@ function portraitActive(){
 function applyPortrait(){
   const on=portraitActive();
   document.body.classList.toggle('portrait', on);
-  // Move the status bar so it sits as ONE full-width row at the bottom (just
-  // before the sound-engine bar) in BOTH layouts. On DESKTOP landscape we also
-  // drop an identical empty placeholder into the right column where the status
-  // bar used to live, so the two-column heights stay locked and nothing reflows.
-  // Portrait and mobile landscape need no placeholder.
+  // Status bar placement:
+  //   • DESKTOP landscape → the status bar lives in the right column, directly
+  //     under the virtual display (its original markup slot — the spot the old
+  //     empty placeholder used to occupy). No placeholder is needed anymore.
+  //   • Portrait AND mobile landscape (unchanged) → the status bar is pulled
+  //     out of the right column and sits as ONE full-width row at the bottom,
+  //     just before the sound-engine bar.
   const statusPanel=document.getElementById('status-panel');
   const seqRight=document.querySelector('.seq-right');
   const bottomBar=document.querySelector('.seq-bottom-bar');
   if(statusPanel && bottomBar){
-    // Always anchor the real status bar just above the sound-engine bar.
-    if(statusPanel.nextElementSibling!==bottomBar){
-      bottomBar.parentNode.insertBefore(statusPanel, bottomBar);
-    }
-    let placeholder=document.getElementById('status-placeholder');
-    // Placeholder is for DESKTOP landscape only — not portrait, not mobile
-    // landscape (a real phone/tablet, including one forced into "Wide" mode).
-    const wantPlaceholder = !on && !isMobileMode();
-    if(wantPlaceholder){
-      // Ensure an identical empty placeholder occupies the old slot (last child
-      // of the right column) so the two-column layout doesn't move.
-      if(!placeholder){
-        placeholder=document.createElement('div');
-        placeholder.id='status-placeholder';
-        placeholder.className='panel';
-        placeholder.setAttribute('style','flex:1;display:flex;align-items:center;');
-        placeholder.innerHTML='<div class="status-bar" style="margin:0;border:none;padding:0;background:transparent;"></div>';
+    const desktop = !on && !isMobileMode();
+    if(desktop){
+      // Back into the right column (last child = under the SMD display panel).
+      if(seqRight && (statusPanel.parentNode!==seqRight || statusPanel!==seqRight.lastElementChild)){
+        seqRight.appendChild(statusPanel);
       }
-      if(seqRight && placeholder.parentNode!==seqRight){
-        seqRight.appendChild(placeholder);
+    }else{
+      // Mobile (portrait or landscape): anchor just above the sound-engine bar.
+      if(statusPanel.nextElementSibling!==bottomBar){
+        bottomBar.parentNode.insertBefore(statusPanel, bottomBar);
       }
-    }else if(placeholder){
-      placeholder.remove();
     }
+    // The desktop placeholder is obsolete — clean one up if a previous layout
+    // pass (or an old saved DOM state) left it behind.
+    const placeholder=document.getElementById('status-placeholder');
+    if(placeholder) placeholder.remove();
   }
   // Portrait reflows fluidly to fill the screen width (max 560px) and scrolls
   // vertically — no uniform scaling (keeps tap targets full size). Clear any
