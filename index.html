@@ -124,7 +124,10 @@
   .step-pad.has-data::after,.step-pad.dot-flash::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
   .step-pad.on.has-data::after{background:#111a;}
   .step-pad.dot-flash::after{background:#fff!important;width:6px!important;height:6px!important;box-shadow:0 0 4px #fff;transition:none;}
-  .step-pad.has-lock::before{content:'';position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:#60d0d0;box-shadow:0 0 3px #60d0d0;}
+  .step-pad.has-lock::before{content:'';position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 3px #fff;}
+  /* PARM MUTE: while the active part's parameter locks are muted (per-part or
+     global ALL layer), its lock dots turn red — locks exist but won't play. */
+  body.parm-muted .step-pad.has-lock::before{background:var(--seq-red);box-shadow:0 0 3px var(--seq-red);}
   .smd-cell.cc-locked{border-color:#60d0d0;}
   .smd-cell.cc-locked .smd-cell-val{color:#60d0d0;}
   .step-pad.key-note{background:var(--seq-yellow);border-color:var(--seq-yellow);color:#111;font-size:10px;line-height:1;white-space:nowrap;}
@@ -313,6 +316,18 @@
   /* Row 2: the mode-tabs group takes the full next line; its 4 tabs split evenly. */
   body.portrait .mode-tabs-group{flex:1 1 100%;}
   body.portrait .mode-tabs-group .mode-tab{flex:1 1 0;}
+
+  /* ── Portrait: equal button heights across the wrapped rows ─────────
+     In landscape one flex row (align-items:stretch) equalizes transport pads,
+     mode tabs, and action buttons automatically. Portrait wraps them onto
+     separate rows, where each row collapses to its own content height — the
+     icon-only transport pads (play/stop/rec/settings + tempo/metro) and the
+     action-button faces (Mute/Solo/… and, in SETTINGS, ABOUT/DONATE/MANUAL/
+     DRUM MACHINE + the FILE row) came out visibly shorter than the PTRN/STEP/
+     KEYB/CTRL tabs. Pin every face to ONE shared minimum height instead. */
+  body.portrait .mode-tab{box-sizing:border-box;min-height:30px;}
+  body.portrait .tport-top-pad{min-height:30px;}
+  body.portrait #action-btn-row .ctrl-val{box-sizing:border-box;min-height:30px;flex:1;display:flex;align-items:center;justify-content:center;}
 
   /* Action button row (Mute/Solo/Align/Select + Save/Reload/Clear/Random),
      now positioned below the sequencer/status: 8 buttons → exactly 4 per row.
@@ -1263,7 +1278,9 @@ function reloadPatternLive(){
 function queuePatternChange(bank,pattern){
   tempModeMarkChanged();
   pendingBank=bank; pendingPattern=pattern;
-  setStatus('Bank '+(bank+1)+' Pat '+(pattern+1)+' — queued on next bar \u2193\uFE0E');
+  // While looping, the switch waits for the loop: it loads on the first bar
+  // downbeat after every looper button is released.
+  setStatus('Bank '+(bank+1)+' Pat '+(pattern+1)+(looperActive?' — queued, loads on loop release \u2193\uFE0E':' — queued on next bar \u2193\uFE0E'));
   buildPatternGrids();
 }
 
@@ -1350,12 +1367,14 @@ function refreshActionBtnLabels(mode){
     :mode==='pat'?['LOOP 1/4','LOOP 1/8','LOOP 1/16','LOOP 1/32']
     :mode==='key'?['ROLL 1/4','ROLL 1/8','ROLL 1/16','ROLL 1/32']
     :mode==='step'?['PTRN COPY','PTRN LOAD','PTRN CLEAR','PTRN RAND']
-    :mode==='ctrl'?['SAVE','RELD','CLEAR','ALL']
+    :mode==='ctrl'?['PARM','PARM ALL','PARM CLEAR','PARM NUDGE']
     :['Save','Reload','Clear','Random'];
   ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
     const v=document.getElementById(id)?.querySelector('.ctrl-val');
     if(v) v.textContent=looperLabels[i];
   });
+  // PARM / PARM ALL turn red while parameter locks are muted (CTRL tab only).
+  if(typeof refreshParmMuteUI==='function') refreshParmMuteUI();
 }
 
 function setMode(mode){
@@ -2594,6 +2613,41 @@ function flashCtrlBtn(id){
 // While the CTRL "All" button is held, Save/Reload/Clear apply to every part.
 let ctrlAllHeld=false;
 function ctrlTargetParts(){ return ctrlAllHeld ? [0,1,2,3,4,5,6,7] : [activePart]; }
+// ── PARM MUTE (CTRL tab: MUTE + PARM / MUTE + PARM ALL) ─────────────
+// Disables step parameter locks on playback WITHOUT deleting them. Purely a
+// GLOBAL performance state — like part mute/solo it is never stored in
+// patterns and never persisted. Two independent layers:
+//   parmMuted[pi]  — per-part mute, toggled by MUTE + PARM (active part)
+//   parmMuteAll    — all-parts mute, toggled by MUTE + PARM ALL
+// A part's locks are silenced if EITHER layer is on. While muted, the lock
+// players see "no locks on this step", so the existing single-step restore
+// snaps every overridden parameter back to its global value on the next step,
+// and editing/recording locks still works — they just don't play.
+const parmMuted=Array(8).fill(false);
+let parmMuteAll=false;
+function locksMuted(pi){ return parmMuteAll||parmMuted[pi]; }
+function toggleParmMute(){
+  parmMuted[activePart]=!parmMuted[activePart];
+  setStatus('Param locks '+(locksMuted(activePart)?'MUTED':'active')+' — Part '+(activePart+1));
+  refreshParmMuteUI(); flashCtrlBtn('ctrl-save');
+}
+function toggleParmMuteAll(){
+  parmMuteAll=!parmMuteAll;
+  setStatus(parmMuteAll?'Param locks MUTED — ALL parts':'Param locks active — ALL parts');
+  refreshParmMuteUI(); flashCtrlBtn('ctrl-reload');
+}
+// Red label = muted. PARM reflects the ACTIVE part's effective state (its own
+// flag or the ALL layer); PARM ALL reflects the global layer. Only shown in
+// the CTRL tab — other modes' labels keep their normal color.
+function refreshParmMuteUI(){
+  const sv=document.getElementById('ctrl-save')?.querySelector('.ctrl-val');
+  const rv=document.getElementById('ctrl-reload')?.querySelector('.ctrl-val');
+  if(sv) sv.style.color=(currentMode==='ctrl'&&locksMuted(activePart))?'var(--seq-red)':'';
+  if(rv) rv.style.color=(currentMode==='ctrl'&&parmMuteAll)?'var(--seq-red)':'';
+  // Step-grid lock dots for the ACTIVE part go red while its locks are muted
+  // (the grid always shows the active part, so one body class covers it).
+  document.body.classList.toggle('parm-muted', locksMuted(activePart));
+}
 function getCtrlLock(part,abs,idx){
   const s=ctrlLocks[part][abs];
   return (s&&s[idx]!==undefined)?s[idx]:undefined;
@@ -2829,7 +2883,9 @@ function recordSoundLock(idx,knob){
 // run of locks begins, and soundLive (the global knob mirror) is never
 // overwritten by locks.
 function playSoundLocks(pi, shiftedAbs, fireAt){
-  const locks=soundCtrlLocks[pi][shiftedAbs];
+  // PARM MUTE: treat this step as lock-free (locks kept, just not played);
+  // the override-restore below still snaps any held param back to global.
+  const locks=locksMuted(pi)?null:soundCtrlLocks[pi][shiftedAbs];
   const over=soundLockOverride[pi];
   let hasOver=false; for(const k in over){ hasOver=true; break; }
   if(!locks&&!hasOver) return;
@@ -3913,6 +3969,8 @@ function updatePatDisp(){
 function updatePartIndicator(){
   updatePatDisp();
   if(typeof markSaveDirty==='function') markSaveDirty();
+  // PARM label red state follows the active part — keep it in sync on switches.
+  if(typeof refreshParmMuteUI==='function') refreshParmMuteUI();
   // Parts panel header (top-right) shows the pattern BANK in yellow. In PTRN
   // mode (and while save/load-browsing, where the parts panel IS the bank
   // picker) it shows the browsed/selected bank; in every other mode it shows
@@ -4238,7 +4296,10 @@ function buildSteps(){
     const isBelowStart=(stepNum<p.seqStart);
     const dAbs=offsetDataAbs(abs); // data step shown on this pad (offset-aware)
     const isSkipped=p.skip&&p.skip[dAbs]&&!isInactive;
-    const hasLock=currentMode==='ctrl'&&(isDrumMachine()?soundStepHasLocks(activePart,dAbs):stepHasLocks(activePart,dAbs));
+    // Lock dots are shown in both the CTRL tab (where locks are edited) and
+    // the STEP tab, so locked steps stay visible while sequencing. They turn
+    // red via body.parm-muted while the part's locks are muted.
+    const hasLock=(currentMode==='ctrl'||currentMode==='step')&&(isDrumMachine()?soundStepHasLocks(activePart,dAbs):stepHasLocks(activePart,dAbs));
     let padCls='step-pad'+(isOn?' on':'')+(isHead?' playhead':'')+(isInactive?' inactive':'')+(isSkipped?' skipped':'')+(hasLock?' has-lock':'');
     const div=document.createElement('div');div.className='step-btn';div.dataset.pressable='1';
     div.innerHTML=`<div class="${padCls}" id="spad-${abs}">${stepNum}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
@@ -5711,6 +5772,16 @@ function metroClick(when, accent){
   g.gain.exponentialRampToValueAtTime(0.0001, when+0.03);
   osc.connect(g); g.connect(audioCtx.destination);
   osc.start(when); osc.stop(when+0.04);
+  // ── Node cleanup (same iOS audio-graph leak as voices) ─────────────
+  // Stopped-but-connected nodes are not reclaimed by older iOS WebKit; at 2
+  // nodes per beat the metronome alone accumulates thousands of dead nodes on
+  // the audio thread over a long session, causing progressive glitching.
+  // Disconnect once the click has finished — onended, plus a timer fallback
+  // for iOS cases where onended doesn't fire.
+  let _mcDone=false;
+  const _mcClean=()=>{ if(_mcDone) return; _mcDone=true; try{osc.disconnect();}catch(e){} try{g.disconnect();}catch(e){} };
+  osc.onended=_mcClean;
+  setTimeout(_mcClean, Math.max(0,(when-audioCtx.currentTime)*1000)+300);
 }
 // Schedule metronome clicks on quarter-note beats within the lookahead window.
 function scheduleMetronome(until){
@@ -5990,11 +6061,16 @@ function flashPatternDot(when){
   },delayMs);
 }
 
-function fireVisual(pi,shiftedAbs,when,retrigIntervalSec){
+// Flash the step pad at GRID position `gridAbs`. The step grid renders the
+// offset-shifted view (a pad shows the step that actually sounds at that
+// position), so the blink must target the playhead/grid position — NOT the
+// underlying data index (`shiftedAbs`), which with SEQ OFFSET ≠ 0 would blink
+// at the step's original, un-shifted location.
+function fireVisual(pi,gridAbs,when,retrigIntervalSec){
   if(isPatLike()||saveBrowsing) return;
   if(pi!==activePart) return;
   const delayMs=Math.max(0,(when-audioCtx.currentTime)*1000);
-  const capturedAbs=shiftedAbs;
+  const capturedAbs=gridAbs;
   const capturedMode=currentMode;
   setTimeout(()=>{
     if(!playing||currentMode!==capturedMode||saveBrowsing) return;
@@ -6020,7 +6096,9 @@ function schedulePlayhead(pi,abs,stepAt){
 // Locks never overwrite ctrlCCVals — that is the user's always-editable
 // "as if there were no locks" value.
 function playCtrlLocks(pi, shiftedAbs, fireAt){
-  const locks=ctrlLocks[pi][shiftedAbs];
+  // PARM MUTE: treat this step as lock-free (locks kept, just not played);
+  // the override-restore below still snaps any held param back to global.
+  const locks=locksMuted(pi)?null:ctrlLocks[pi][shiftedAbs];
   const over=ctrlLockOverride[pi];
   let hasOver=false; for(const k in over){ hasOver=true; break; }
   if(!locks&&!hasOver) return;
@@ -6098,7 +6176,9 @@ function scheduleDrum(pi,abs,isOffBeat,stepAt){
     const firstDelayMs=(fireAt-audioCtx.currentTime+dlyTimeSec)*1000;
     scheduleRepeat(firstVel, firstDelayMs, 0);
   }
-  fireVisual(pi,shiftedAbs,fireAt,retrigSec);
+  // Blink at the GRID position (`abs`), where this sounding step is displayed
+  // in the offset-shifted view — not at the data index (`shiftedAbs`).
+  fireVisual(pi,abs,fireAt,retrigSec);
   flashPartDot(pi,fireAt);
   flashPatternDot(fireAt);
 }
@@ -6118,7 +6198,8 @@ function scheduleNegativeOffset(pi,nextAbs,currentStepAt,stepSec){
     const t=fireAt+r*retrigSec;
     fireNote(pi,p,nsp,t);
   }
-  fireVisual(pi,shiftedNext,fireAt,retrigSec);
+  // Blink at the GRID position of the upcoming step, matching the shifted view.
+  fireVisual(pi,nextAbs,fireAt,retrigSec);
 }
 
 function schedulePlay(resetAccs=true){
@@ -6183,7 +6264,12 @@ function schedulePlay(resetAccs=true){
     // future (>= now), so the old pattern can be stopped before it and the new
     // pattern plays cleanly from its step 0. We look one bar ahead within the
     // lookahead window.
-    if(bar>0 && pendingBank!==null && pendingPattern!==null){
+    // While the LOOPER is held, the switch is DEFERRED: the loop keeps
+    // replaying its captured window from the current pattern untouched, the
+    // selection stays queued in the background (pending highlight), and only
+    // once every looper button is released does the load fire — on the next
+    // bar downbeat, so playback continues straight into the new pattern.
+    if(bar>0 && pendingBank!==null && pendingPattern!==null && !looperActive){
       // Next downbeat at or after now
       const k=Math.ceil((now-audioStartTime)/bar - 1e-9);
       const nextDownbeat=audioStartTime+k*bar;
@@ -6306,7 +6392,13 @@ function releaseLooper(len){
     const n=Math.floor(loopElapsed[pi]);
     for(let k=0;k<n;k++){ nextAbsStep(pi); playState[pi].stepCount++; }
   }
-  setStatus('Looper off');
+  // A pattern switch queued during the loop now un-freezes: the scheduler
+  // fires it on the next bar downbeat, so playback continues from the new
+  // pattern right after the loop lets go.
+  if(pendingBank!==null&&pendingPattern!==null)
+    setStatus('Looper off \u2192 Bank '+(pendingBank+1)+' Pat '+(pendingPattern+1)+' on next bar \u2193\uFE0E');
+  else
+    setStatus('Looper off');
 }
 
 function startPlay(){
@@ -6545,15 +6637,15 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Digit0'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('step');pressOn(document.getElementById('tab-step'));}return;}
   if(e.code==='Minus'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('key');pressOn(document.getElementById('tab-key'));}return;}
   if(e.code==='Equal'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){enterTempMode('ctrl');pressOn(document.getElementById('tab-ctrl'));}return;}
-  if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='pat'){engageLooper(4);}else if(currentMode==='ctrl'){doCtrlSave();}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
-  if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else if(currentMode==='ctrl'){document.getElementById('ctrl-reload').click();}else{beginLoadHold();}pressOn(document.getElementById('ctrl-reload'));}return;}
+  if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='ctrl'){toggleParmMute();}else if(currentMode==='pat'){engageLooper(4);}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
+  if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else if(currentMode==='ctrl'){toggleParmMuteAll();}else{beginLoadHold();}pressOn(document.getElementById('ctrl-reload'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){newProject();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='pat'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageLooper(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&ctrlHeld){e.preventDefault();if(!e.repeat){if(!isPatLike())document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketRight'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){toggleAutoSave();flashCtrlBtn('ctrl-none');pressOn(document.getElementById('ctrl-none'));}return;}
-  if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){ctrlAllHeld=true;pressOn(document.getElementById('ctrl-none'));setStatus('All: hold + Save/Reload/Clear for every part');}return;}
+  if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){/* PARM NUDGE: no function */pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='step'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));showRandomParams();randomTrigger='key';setStatus('Random range — release to randomize');}return;}
   if(e.code==='BracketRight'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-none').click();pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(0.5);pressOn(document.getElementById('ctrl-none'));}return;}
@@ -6809,16 +6901,16 @@ document.getElementById('ctrl-save').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ downloadProject(); flashCtrlBtn('ctrl-save'); return; } // SAVE
   if(currentMode==='key') engageRoll(4);
   else if(currentMode==='pat') engageLooper(4);
-  else if(currentMode==='ctrl'){ doCtrlSave(); }
+  else if(currentMode==='ctrl'){ toggleParmMute(); }
   else beginSaveHold();
 });
 // Touch taps in CTRL mode dispatch a synthetic click (detail 0) on this button
-// rather than a mousedown, so handle CTRL Save here too. The detail!==0 guard
-// ignores real desktop clicks — the mousedown handler above already saved on
-// those — so Save (and the pattern commit) never fires twice.
+// rather than a mousedown. PARM toggles the active part's parameter-lock mute.
+// The detail!==0 guard ignores real desktop clicks — the mousedown handler
+// above already toggled on those — so it never fires twice.
 document.getElementById('ctrl-save').addEventListener('click',e=>{
   if(e.detail!==0) return;
-  if(currentMode==='ctrl') doCtrlSave();
+  if(currentMode==='ctrl'){ toggleParmMute(); }
 });
 document.getElementById('ctrl-reload').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ openProjectPicker(); flashCtrlBtn('ctrl-reload'); return; } // LOAD
@@ -6932,7 +7024,7 @@ let randomTrigger=null; // 'mouse' | 'key' | 'touch' — how the panel was opene
 document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ toggleAutoSave(); flashCtrlBtn('ctrl-none'); return; } // AUTO-SAVE toggle
   if(currentMode==='key') engageRoll(0.5); else if(currentMode==='pat') engageLooper(0.5);
-  else if(currentMode==='ctrl'){ ctrlAllHeld=true; pressOn(document.getElementById('ctrl-none')); setStatus('All: hold + Save/Reload/Clear for every part'); }
+  else if(currentMode==='ctrl'){ /* PARM NUDGE: no function */ }
   else if(currentMode==='step'){ pressOn(document.getElementById('ctrl-none')); showRandomParams(); randomTrigger='mouse'; setStatus('Random range — release to randomize'); }
 });
 document.addEventListener('mouseup',()=>{
@@ -6973,7 +7065,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     // Engage the press behavior for the current mode (mirrors mousedown).
     if(currentMode==='key'){ engageRoll(div); }
     else if(currentMode==='pat'){ engageLooper(div); }
-    else if(currentMode==='ctrl' && id==='ctrl-none'){ ctrlAllHeld=true; setStatus('All: hold + Save/Reload/Clear for every part'); }
+    else if(currentMode==='ctrl' && id==='ctrl-none'){ /* PARM NUDGE: no function */ }
     // STEP Save: match desktop. A quick TAP saves the current pattern; a
     // LONG-PRESS opens save-browse so you can tap destination slots (then tap
     // Save again to finish). Defer entering browse via a timer so a quick tap
@@ -7084,11 +7176,10 @@ document.getElementById('ctrl-reload').addEventListener('click',()=>{
   if(currentMode==='step' && loadHeld){ endLoadHold(); return; } // tap again while browsing → cancel
   if(isPatLike()) return;
   if(currentMode==='ctrl'){
-    const ps=ctrlTargetParts();
-    let any=false;
-    ps.forEach(pi=>{ if(reloadCtrlPart(pi)) any=true; });
-    if(any){ showCtrlPanel(); buildSteps(); setStatus(ctrlAllHeld?'CTRL reloaded — All parts':'CTRL reloaded — Part '+(activePart+1)); flashCtrlBtn('ctrl-reload'); }
-    else setStatus(ctrlAllHeld?'No saved CTRL':'No saved CTRL for Part '+(activePart+1));
+    // PARM ALL toggles the global parameter-lock mute (all parts). The guard
+    // MUST stay so a CTRL-mode click can never fall through to the pattern
+    // reload below.
+    toggleParmMuteAll();
     return;
   }
   if(activePattern!==null){
@@ -7799,10 +7890,13 @@ function _unlockAudio(){
   try{
     const ctx=getCtx();
     if(ctx.state==='suspended') ctx.resume();
-    // Silent-buffer kick — the reliable iOS unlock.
+    // Silent-buffer kick — the reliable iOS unlock. Disconnect it once played
+    // so repeated unlock attempts don't leave dead nodes on the audio graph.
     const buf=ctx.createBuffer(1,1,22050);
     const src=ctx.createBufferSource();
     src.buffer=buf; src.connect(ctx.destination);
+    src.onended=()=>{ try{src.disconnect();}catch(e){} };
+    setTimeout(()=>{ try{src.disconnect();}catch(e){} }, 500);
     if(src.start) src.start(0); else if(src.noteOn) src.noteOn(0);
     if(ctx.state==='running'){
       _audioUnlocked=true;
