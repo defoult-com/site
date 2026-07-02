@@ -1367,7 +1367,7 @@ function refreshActionBtnLabels(mode){
     :mode==='pat'?['LOOP 1/4','LOOP 1/8','LOOP 1/16','LOOP 1/32']
     :mode==='key'?['ROLL 1/4','ROLL 1/8','ROLL 1/16','ROLL 1/32']
     :mode==='step'?['PTRN COPY','PTRN LOAD','PTRN CLEAR','PTRN RAND']
-    :mode==='ctrl'?['PARM','PARM ALL','PARM CLEAR','PARM NUDGE']
+    :mode==='ctrl'?['PARM M','PARM M ALL','PARM CLEAR','PARM HOLD']
     :['Save','Reload','Clear','Random'];
   ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
     const v=document.getElementById(id)?.querySelector('.ctrl-val');
@@ -1640,9 +1640,15 @@ const CELL_DEFS=[
     reset(){parts[activePart].speedIndex=DEFAULT_SPEED_IDX;if(playing)queueResync(activePart);updateSpdDisplay();updatePartIndicator();buildParts();},
     fmtVal(){return SPEEDS[parts[activePart].speedIndex].label;}},
   {id:'smd-dly-cell',label:'MIDI DLY',kind:'dly',
-    apply(v){parts[activePart].midiDly=Math.round(v/127*100);updateDlyDisplay();updatePartIndicator();},
+    // MUTE (Shift) held → this cell shows/edits the hidden DLY TIME param, so
+    // incoming CC follows suit: shifted = DLY TIME index, plain = MIDI DLY %.
+    apply(v){const p=parts[activePart];
+      if(shiftHeld){ p.midiDlyTime=Math.max(0,Math.min(DLY_TIMES.length-1,Math.round(v/127*(DLY_TIMES.length-1)))); refreshShiftLabels(); }
+      else { p.midiDly=Math.round(v/127*100); updateDlyDisplay(); }
+      updatePartIndicator();},
     reset(){parts[activePart].midiDly=0;parts[activePart].midiDlyTime=DEFAULT_DLY_TIME_IDX;updateDlyDisplay();updatePartIndicator();},
-    fmtVal(){return parts[activePart].midiDly+'%';}},
+    curLabel(){return shiftHeld?'DLY TIME':'MIDI DLY';},
+    fmtVal(){return shiftHeld?DLY_TIMES[parts[activePart].midiDlyTime].label:parts[activePart].midiDly+'%';}},
   {id:'smd-end-cell',label:'SEQ END',kind:'end',
     apply(v){const p=parts[activePart];if(partHasSkips(activePart))clearSkips(activePart);const oldLen=p.seqEnd-p.seqStart+1;parts[activePart].seqEnd=Math.max(p.seqStart,Math.min(64,Math.round(p.seqStart+(v/127)*(64-p.seqStart))));const newLen=parts[activePart].seqEnd-parts[activePart].seqStart+1;playState[activePart].pos=playState[activePart].pos%newLen;if(playing&&newLen!==oldLen&&!isBarAligned(newLen,parts[activePart].speedIndex))partInPhase[activePart]=false;reanchorPartRange(activePart);updateSmdDisplay();updatePartIndicator();buildSteps();buildParts();},
     reset(){const oldLen=parts[activePart].seqEnd-parts[activePart].seqStart+1;parts[activePart].seqEnd=16;const newLen=parts[activePart].seqEnd-parts[activePart].seqStart+1;playState[activePart].pos=playState[activePart].pos%newLen;if(playing&&newLen!==oldLen&&!isBarAligned(newLen,parts[activePart].speedIndex))partInPhase[activePart]=false;updateSmdDisplay();updatePartIndicator();buildSteps();buildParts();},
@@ -1656,9 +1662,15 @@ const CELL_DEFS=[
     reset(){parts[activePart].swing=0;updateSwgDisplay();updatePartIndicator();buildParts();},
     fmtVal(){return (50+parts[activePart].swing)+'%';}},
   {id:'smd-fb-cell',label:'DLY FB',kind:'fb',
-    apply(v){parts[activePart].dlyFb=Math.round(v/127*100);updateFbDisplay();updatePartIndicator();},
+    // MUTE (Shift) held → this cell shows/edits PITCH FB (−12..+12 st, CC
+    // centered at 64), matching the drag/wheel behavior; plain = DLY FB %.
+    apply(v){const p=parts[activePart];
+      if(shiftHeld){ p.dlyPitch=Math.max(-12,Math.min(12,Math.round((v-64)/63*12))); refreshShiftLabels(); }
+      else { p.dlyFb=Math.round(v/127*100); updateFbDisplay(); }
+      updatePartIndicator();},
     reset(){parts[activePart].dlyFb=0;updateFbDisplay();updatePartIndicator();},
-    fmtVal(){return parts[activePart].dlyFb+'%';}},
+    curLabel(){return shiftHeld?'PITCH FB':'DLY FB';},
+    fmtVal(){const p=parts[activePart];if(shiftHeld){const pv=p.dlyPitch||0;return (pv>0?'+':'')+pv;}return p.dlyFb+'%';}},
 ];
 
 // ── Global scroll-wheel for ALL display cells, in every mode/panel ────
@@ -2082,7 +2094,7 @@ function onMidiMessage(e, srcDeviceId){
       flashCell(idx);
       const el=document.getElementById(CELL_DEFS[idx].id+'-val');
       if(el)el.textContent=CELL_DEFS[idx].fmtVal();
-      setStatus(`CC${cc} = ${value} → ${CELL_DEFS[idx].label}`);
+      setStatus(`CC${cc} = ${value} → ${CELL_DEFS[idx].curLabel?CELL_DEFS[idx].curLabel():CELL_DEFS[idx].label}`);
     }
   });
 }
@@ -2633,17 +2645,38 @@ function toggleParmMute(){
 }
 function toggleParmMuteAll(){
   parmMuteAll=!parmMuteAll;
+  // Switching PARM ALL OFF is a full reset: any per-part PARM mutes that were
+  // set before (or while) the ALL layer was on are cleared too, so every
+  // part's locks are guaranteed active again.
+  if(!parmMuteAll) parmMuted.fill(false);
   setStatus(parmMuteAll?'Param locks MUTED — ALL parts':'Param locks active — ALL parts');
   refreshParmMuteUI(); flashCtrlBtn('ctrl-reload');
 }
+// ── PARM HOLD (CTRL tab) ────────────────────────────────────────────
+// OFF (default): step locks are single-step — each lock plays only on its own
+// step and the next unlocked step snaps the parameter back to the global
+// value. ON: locks are STICKY — a locked value lasts until another step lock
+// changes that parameter (classic p-lock latching). Global performance state
+// like PARM/PARM ALL: never saved. Turning HOLD off mid-playback lets the
+// normal restore snap every latched parameter back to global on the next
+// step; PARM mute always wins over HOLD (muted parts restore regardless).
+let parmHold=false;
+function toggleParmHold(){
+  parmHold=!parmHold;
+  setStatus(parmHold?'Param locks HOLD — locks latch until the next lock':'Param locks single-step');
+  refreshParmMuteUI(); flashCtrlBtn('ctrl-none');
+}
 // Red label = muted. PARM reflects the ACTIVE part's effective state (its own
-// flag or the ALL layer); PARM ALL reflects the global layer. Only shown in
-// the CTRL tab — other modes' labels keep their normal color.
+// flag or the ALL layer); PARM ALL reflects the global layer. PARM HOLD is
+// red while hold/latch mode is on. Only shown in the CTRL tab — other modes'
+// labels keep their normal color.
 function refreshParmMuteUI(){
   const sv=document.getElementById('ctrl-save')?.querySelector('.ctrl-val');
   const rv=document.getElementById('ctrl-reload')?.querySelector('.ctrl-val');
+  const hv=document.getElementById('ctrl-none')?.querySelector('.ctrl-val');
   if(sv) sv.style.color=(currentMode==='ctrl'&&locksMuted(activePart))?'var(--seq-red)':'';
   if(rv) rv.style.color=(currentMode==='ctrl'&&parmMuteAll)?'var(--seq-red)':'';
+  if(hv) hv.style.color=(currentMode==='ctrl'&&parmHold)?'var(--seq-red)':'';
   // Step-grid lock dots for the ACTIVE part go red while its locks are muted
   // (the grid always shows the active part, so one body class covers it).
   document.body.classList.toggle('parm-muted', locksMuted(activePart));
@@ -2902,8 +2935,12 @@ function playSoundLocks(pi, shiftedAbs, fireAt){
     }
   };
   // Params locked on a previous step but NOT on this one → back to global.
-  for(const k in over){
-    if(!locks||locks[k]===undefined){ const v=over[k]; delete over[k]; applyAt(+k, v); }
+  // PARM HOLD skips this snap-back so locks latch until the next lock — but
+  // never while muted: mute means "locks off", so restore always runs then.
+  if(!parmHold||locksMuted(pi)){
+    for(const k in over){
+      if(!locks||locks[k]===undefined){ const v=over[k]; delete over[k]; applyAt(+k, v); }
+    }
   }
   // This step's locks. Capture the exact global value the first time a run of
   // locks starts, so the next unlocked step restores it precisely.
@@ -3643,7 +3680,28 @@ function reanchorPartRange(pi){
   schedGeneration++; // cancel stale delay/visual callbacks from the old range
 }
 
-function getCtx(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();return audioCtx;}
+// ── Low-power audio profile (older / budget Android phones) ─────────
+// Chrome on old Androids glitches with the default 'interactive' latency hint
+// (it requests the smallest possible audio callback buffers) and struggles
+// with the most expensive constant DSP. iOS and desktops handle both fine, so
+// these trade-offs are applied on Android only:
+//   · larger output buffers (latencyHint 0.08s → far more scheduling headroom,
+//     at the cost of slightly higher live-pad latency),
+//   · 2x instead of 4x master-saturator oversampling,
+//   · reverb tail capped at 3s (convolution cost is proportional to IR length
+//     and burns CPU constantly once built, even on silence),
+//   · a slower scheduler tick with a longer lookahead window (fewer main-
+//     thread wakeups, more slack before a deadline is missed).
+const LOW_POWER_AUDIO=/Android/i.test(navigator.userAgent||'');
+function getCtx(){
+  if(!audioCtx){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    try{ audioCtx=LOW_POWER_AUDIO?new AC({latencyHint:0.08}):new AC(); }
+    catch(e){ audioCtx=new AC(); }
+  }
+  if(audioCtx.state==='suspended')audioCtx.resume();
+  return audioCtx;
+}
 // Convert MIDI note number to Hz
 function midiToHz(midi){return 440*Math.pow(2,(midi-69)/12);}
 // ── Cached audio assets ─────────────────────────────────────────────
@@ -4249,7 +4307,7 @@ function buildSteps(){
       if(!hasData&&!isCurrent) padCls+=' inactive';
       const div=document.createElement('div');div.className='step-btn';
       div.innerHTML=`<div class="${padCls}" id="spad-${slot}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
-      div.addEventListener('click',e=>{
+      const patTap=()=>{
         if(saveHeld){
           saveToSlot(patIdx);
           return;
@@ -4261,7 +4319,26 @@ function buildSteps(){
           if(playing){ queuePatternChange(activeBank,patIdx); }
           else { loadPattern(activeBank,patIdx,true); }
         }
-      });
+      };
+      div.addEventListener('click',patTap);
+      // Explicit touch handling: browsers only synthesize a `click` for
+      // SINGLE-finger taps. Tapping a pattern while another finger holds a
+      // LOOP button is a multi-touch gesture and produces no click — so the
+      // tap must be handled on touchend directly (identifier-tracked, and
+      // preventDefault so a single-finger tap can't also fire the click
+      // handler above and double-trigger).
+      let _patTid=null,_patTStart=null;
+      div.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; _patTid=t.identifier; _patTStart={x:t.clientX,y:t.clientY}; },{passive:true});
+      div.addEventListener('touchend',e=>{
+        const t=Array.from(e.changedTouches).find(x=>x.identifier===_patTid);
+        if(_patTid===null||!t) return;
+        _patTid=null; e.preventDefault(); pressOff(div);
+        // Swipe guard: only a tap (finger didn't travel) acts, like the bank pads.
+        if(_patTStart&&(Math.abs(t.clientX-_patTStart.x)>14||Math.abs(t.clientY-_patTStart.y)>14)){ _patTStart=null; return; }
+        _patTStart=null;
+        patTap();
+      },{passive:false});
+      div.addEventListener('touchcancel',()=>{ _patTid=null; _patTStart=null; pressOff(div); });
       div.dataset.pressable='1';
       grid.appendChild(div);
     }
@@ -4802,7 +4879,7 @@ function buildMasterFX(){
   const eqMid=ctx.createBiquadFilter();  eqMid.type='peaking';   eqMid.frequency.value=1000; eqMid.Q.value=0.9;
   const eqHigh=ctx.createBiquadFilter(); eqHigh.type='highshelf';eqHigh.frequency.value=3500;
   const drive=ctx.createGain();
-  const shaper=ctx.createWaveShaper();   shaper.oversample='4x';
+  const shaper=ctx.createWaveShaper();   shaper.oversample=LOW_POWER_AUDIO?'2x':'4x';
   const vol=ctx.createGain();
   // EQ is an internal series block: eqLow → eqMid → eqHigh.
   eqLow.connect(eqMid); eqMid.connect(eqHigh);
@@ -4952,7 +5029,10 @@ const _dlySendGain=Array(8).fill(null);
 // SPRING = dispersive metallic "boing".
 function makeReverbIR(ctx,seconds,algo){
   algo=algo||'HALL';
-  seconds=Math.max(0.1,Math.min(10,seconds));
+  // Convolution cost scales with IR length and runs constantly once the node
+  // is built — cap the tail on the low-power profile (the DECAY knob still
+  // works, longer settings just saturate at the cap there).
+  seconds=Math.max(0.1,Math.min(LOW_POWER_AUDIO?3:10,seconds));
   // ROOM reads as a smaller space → shorter effective tail.
   let secs=(algo==='ROOM')?Math.max(0.2,seconds*0.5):seconds;
   const rate=ctx.sampleRate, len=Math.max(1,Math.floor(rate*secs));
@@ -6026,8 +6106,8 @@ function fireResync(pi){
 }
 
 // Quantized delay times: multiplier of baseSec() (one 16th note)
-const SCHED_INTERVAL=25;   // ms between scheduler runs
-const LOOKAHEAD=0.10;       // seconds to schedule ahead
+const SCHED_INTERVAL=LOW_POWER_AUDIO?40:25;   // ms between scheduler runs
+const LOOKAHEAD=LOW_POWER_AUDIO?0.18:0.10;    // seconds to schedule ahead
 
 let audioStartTime=0; // AudioContext time when transport started
 
@@ -6112,8 +6192,12 @@ function playCtrlLocks(pi, shiftedAbs, fireAt){
     }
   };
   // Params locked on a previous step but NOT on this one → back to global.
-  for(const k in over){
-    if(!locks||locks[k]===undefined){ delete over[k]; sendCC(+k, ctrlCCVals[pi][+k]); }
+  // PARM HOLD skips this snap-back so locks latch until the next lock — but
+  // never while muted: mute means "locks off", so restore always runs then.
+  if(!parmHold||locksMuted(pi)){
+    for(const k in over){
+      if(!locks||locks[k]===undefined){ delete over[k]; sendCC(+k, ctrlCCVals[pi][+k]); }
+    }
   }
   // This step's locks (apply for this step only; global stays untouched).
   if(locks) for(const k in locks){ over[k]=true; sendCC(+k, locks[k]); }
@@ -6645,7 +6729,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='BracketLeft'&&currentMode==='pat'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageLooper(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&ctrlHeld){e.preventDefault();if(!e.repeat){if(!isPatLike())document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketRight'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){toggleAutoSave();flashCtrlBtn('ctrl-none');pressOn(document.getElementById('ctrl-none'));}return;}
-  if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){/* PARM NUDGE: no function */pressOn(document.getElementById('ctrl-none'));}return;}
+  if(e.code==='BracketRight'&&currentMode==='ctrl'&&!ctrlHeld){e.preventDefault();if(!e.repeat){toggleParmHold();pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='step'&&!ctrlHeld){e.preventDefault();if(!e.repeat){pressOn(document.getElementById('ctrl-none'));showRandomParams();randomTrigger='key';setStatus('Random range — release to randomize');}return;}
   if(e.code==='BracketRight'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-none').click();pressOn(document.getElementById('ctrl-none'));}return;}
   if(e.code==='BracketRight'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(0.5);pressOn(document.getElementById('ctrl-none'));}return;}
@@ -7024,7 +7108,7 @@ let randomTrigger=null; // 'mouse' | 'key' | 'touch' — how the panel was opene
 document.getElementById('ctrl-none').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ toggleAutoSave(); flashCtrlBtn('ctrl-none'); return; } // AUTO-SAVE toggle
   if(currentMode==='key') engageRoll(0.5); else if(currentMode==='pat') engageLooper(0.5);
-  else if(currentMode==='ctrl'){ /* PARM NUDGE: no function */ }
+  else if(currentMode==='ctrl'){ toggleParmHold(); }
   else if(currentMode==='step'){ pressOn(document.getElementById('ctrl-none')); showRandomParams(); randomTrigger='mouse'; setStatus('Random range — release to randomize'); }
 });
 document.addEventListener('mouseup',()=>{
@@ -7065,7 +7149,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     // Engage the press behavior for the current mode (mirrors mousedown).
     if(currentMode==='key'){ engageRoll(div); }
     else if(currentMode==='pat'){ engageLooper(div); }
-    else if(currentMode==='ctrl' && id==='ctrl-none'){ /* PARM NUDGE: no function */ }
+    else if(currentMode==='ctrl' && id==='ctrl-none'){ toggleParmHold(); }
     // STEP Save: match desktop. A quick TAP saves the current pattern; a
     // LONG-PRESS opens save-browse so you can tap destination slots (then tap
     // Save again to finish). Defer entering browse via a timer so a quick tap
@@ -8090,6 +8174,9 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   let procNode=null, sinkGain=null, tapNode=null;
   let recL=[], recR=[], recLen=0, recRate=44100;
   let startedAt=0, rafId=0;
+  // Bar-quantized capture window: samples are kept only inside
+  // [recStartAt, recStopAt) so BOUNCE takes are exact whole bars (perfect loops).
+  let recStartAt=null, recStopAt=null;
   let lastBlob=null, lastName='';
 
   const elBar    = document.getElementById('rec-bar');
@@ -8159,8 +8246,21 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   function tick(){
     if(!recording) return;
     const ctx=(typeof audioCtx!=='undefined'&&audioCtx)?audioCtx:null;
-    elTime.textContent=fmtTime(ctx?(ctx.currentTime-startedAt):0);
+    // startedAt is the (possibly future) bar-quantized start — clamp at 0
+    // while armed and waiting for the downbeat.
+    elTime.textContent=fmtTime(ctx?Math.max(0,ctx.currentTime-startedAt):0);
     rafId=requestAnimationFrame(tick);
+  }
+
+  // Next global bar downbeat — the same clock the queued pattern switches use.
+  function nextBarTime(ctx){
+    try{
+      if(typeof playing==='undefined'||!playing) return null;
+      const bar=(typeof barSec==='function')?barSec():0;
+      if(!(bar>0)) return null;
+      const k=Math.ceil((ctx.currentTime-audioStartTime)/bar - 1e-9);
+      return audioStartTime+Math.max(0,k)*bar;
+    }catch(e){ return null; }
   }
 
   function startRec(){
@@ -8182,6 +8282,21 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
 
     recRate=ctx.sampleRate;
     recL=[]; recR=[]; recLen=0;
+    recStartAt=null; recStopAt=null;
+
+    // ── Bar-quantized start ──────────────────────────────────────────
+    // Playing → arm and wait for the next bar downbeat so the take begins
+    // exactly on the loop. Stopped → roll the transport first and capture
+    // from its anchor (audioStartTime), i.e. from the very first step.
+    if(typeof playing!=='undefined' && playing){
+      recStartAt=nextBarTime(ctx);
+    } else {
+      if(typeof startPlay==='function'){ try{ startPlay(); }catch(e){} }
+      if(typeof playing!=='undefined' && playing && typeof audioStartTime==='number' && audioStartTime>ctx.currentTime){
+        recStartAt=audioStartTime;
+      }
+    }
+    if(recStartAt!==null && recStartAt<=ctx.currentTime+0.001) recStartAt=null;
 
     procNode=ctx.createScriptProcessor(4096,2,2);
     procNode.onaudioprocess=function(e){
@@ -8189,14 +8304,37 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
       const ib=e.inputBuffer;
       const l=ib.getChannelData(0);
       const r=ib.numberOfChannels>1?ib.getChannelData(1):l;
-      // copy() — the buffer is reused by the engine each callback
-      recL.push(new Float32Array(l));
-      recR.push(new Float32Array(r));
-      recLen+=l.length;
+      const n=l.length;
+      // Block start time: playbackTime is sample-accurate where supported;
+      // fall back to the (slightly jittery) context clock elsewhere.
+      const bt=(typeof e.playbackTime==='number'&&e.playbackTime>0)?e.playbackTime:ctx.currentTime;
+      // Quantized START — drop whole blocks before the downbeat and trim the
+      // head of the boundary block to the exact sample.
+      let from=0;
+      if(recStartAt!==null){
+        if(bt+n/recRate<=recStartAt) return;
+        from=Math.max(0,Math.min(n,Math.round((recStartAt-bt)*recRate)));
+        recStartAt=null;
+        elStatus.textContent='Recording\u2026';
+      }
+      // Quantized STOP — keep samples up to the bar end, then finalize.
+      let to=n, ending=false;
+      if(recStopAt!==null){
+        if(bt>=recStopAt){ ending=true; to=from; }
+        else if(bt+n/recRate>recStopAt){ ending=true; to=Math.max(from,Math.min(n,Math.round((recStopAt-bt)*recRate))); }
+      }
+      if(to>from){
+        // copy() — the buffer is reused by the engine each callback
+        recL.push(new Float32Array(l.subarray(from,to)));
+        recR.push(new Float32Array(r.subarray(from,to)));
+        recLen+=to-from;
+      }
       // cheap peak meter
       let peak=0;
-      for(let i=0;i<l.length;i+=64){ const a=l[i]<0?-l[i]:l[i]; if(a>peak)peak=a; }
+      for(let i=0;i<n;i+=64){ const a=l[i]<0?-l[i]:l[i]; if(a>peak)peak=a; }
       if(elLevel) elLevel.style.height=Math.min(100,peak*140)+'%';
+      // Finalize OFF the audio callback (WAV encode is heavy).
+      if(ending){ recStopAt=null; setTimeout(stopRecNow,0); }
     };
     // A ScriptProcessor only runs while connected to the destination, so route
     // its output through a silent gain node to avoid doubling the audible mix.
@@ -8207,23 +8345,37 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     sinkGain.connect(ctx.destination);
 
     recording=true;
-    startedAt=ctx.currentTime;
+    startedAt=recStartAt!==null?recStartAt:ctx.currentTime;
     elBar.classList.add('armed');
     elToggle.classList.add('armed');
     elLabel.textContent='STOP';
-    elStatus.textContent='Recording\u2026';
+    elStatus.textContent=recStartAt!==null?'Armed \u2014 recording starts on the bar \u2193\uFE0E':'Recording\u2026';
     elTime.textContent='00:00.0';
     tick();
-    // Pressing BOUNCE also rolls the transport — same as hitting Play at the
-    // same moment. The tap is already connected above, so playback is captured
-    // from its first note. startPlay() no-ops if already playing and resumes
-    // from the current pattern/state, so an in-progress take isn't disturbed.
-    if(typeof startPlay==='function' && !playing) startPlay();
   }
 
   function stopRec(){
     if(!recording) return;
+    // Still armed, downbeat not reached yet → cancel the take outright.
+    if(recStartAt!==null){ recStartAt=null; stopRecNow(); return; }
+    // Playing → the first press schedules the stop at the NEXT bar downbeat,
+    // so the take is an exact whole number of bars (perfect loop). A second
+    // press — or a stopped transport — stops immediately.
+    if(typeof playing!=='undefined' && playing && recStopAt===null){
+      const ctx=(typeof audioCtx!=='undefined'&&audioCtx)?audioCtx:null;
+      const t=ctx?nextBarTime(ctx):null;
+      if(t!==null && t>ctx.currentTime+0.001){
+        recStopAt=t;
+        elStatus.textContent='Stopping at bar end \u2193\uFE0E \u2014 press again to stop now';
+        return;
+      }
+    }
+    stopRecNow();
+  }
+  function stopRecNow(){
+    if(!recording) return;
     recording=false;
+    recStartAt=null; recStopAt=null;
     cancelAnimationFrame(rafId);
     try{ tapNode && tapNode.disconnect(procNode); }catch(e){}
     try{ procNode && procNode.disconnect(); }catch(e){}
