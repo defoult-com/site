@@ -6873,6 +6873,9 @@ function _openExternal(url){ try{ window.open(url,'_blank','noopener,noreferrer'
 {
   const donate=document.getElementById('ctrl-btn');
   if(donate) donate.addEventListener('click',()=>{ if(currentMode==='set') _openExternal('https://buymeacoffee.com/defoult'); });
+  // MANUAL: opens manual.html (same folder as index.html) in a new tab.
+  const manual=document.getElementById('btn-resync');
+  if(manual) manual.addEventListener('click',()=>{ if(currentMode==='set') _openExternal('manual.html'); });
 }
 // Save: hold = browse in PAT mode, each pattern click saves snapshot there.
 // Quick tap (no clicks) = save to current pattern. Playback is never touched.
