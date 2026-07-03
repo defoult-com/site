@@ -1386,6 +1386,7 @@ function setMode(mode){
   // A deliberate tab tap means the step finger is already up, so drop it here.
   if(heldStepAbs!==-1) endHold();
   stepTouchId=null;
+  resetStepSwipe();
   // Leaving the CTRL tab (or switching tabs at all) drops a latched PART SETUP.
   if(_partSetupLatched){ _partSetupLatched=false; heldPartPi=-1; }
   if(currentMode==='key'&&mode!=='key'){ stopArp(); keyHeld.forEach(s=>{const m=keyHeldMidi.get(s);if(m)sendMidiNoteOff(m.ch,m.note);}); keyHeldMidi.clear(); keyHeld.clear(); }
@@ -2340,6 +2341,14 @@ function showStepParams(abs){
 // PROB and RETRIG are left empty for now.
 let heldPartPi=-1;
 let stepTouchId=null;   // touch identifier of the finger holding a step pad
+// Touch invert-paint swipe (STEP mode): once the finger leaves the pad it
+// started on, every pad it crosses is INVERTED (on→off, off→on) exactly once
+// per swipe. A plain tap / tap-and-hold on a single pad behaves as before.
+let stepSwipeActive=false;    // finger has left the starting pad → painting
+let stepSwipeStartAbs=-1;     // DATA index of the pad the touch began on
+let stepSwipeStartWasOn=false;// its on/off state BEFORE the touchstart toggle
+let stepSwipePainted=null;    // Set of DATA indices already inverted this swipe
+function resetStepSwipe(){ stepSwipeActive=false; stepSwipeStartAbs=-1; stepSwipeStartWasOn=false; stepSwipePainted=null; }
 let partTouchId=null;   // touch identifier of the finger holding a part button
 let partHoldTimer=null; // delayed timer that opens the part-defaults popup on a real hold
 let partHoldOpened=false; // true once the hold popup has opened for this touch
@@ -4419,6 +4428,8 @@ function buildSteps(){
         if(shiftHeld){ toggleSkip(da); return; }
         stepTouchId=e.changedTouches[0].identifier;
         const wasOn=parts[activePart].steps[da];
+        resetStepSwipe();
+        stepSwipeStartAbs=da; stepSwipeStartWasOn=wasOn;
         if(!wasOn) toggleStep(da);
         startHold(da,wasOn);
         showStepParams(da);
@@ -4447,20 +4458,30 @@ function buildSteps(){
       const np=parts[activePart];
       if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
       const dataNew=offsetDataAbs(newAbs);
-      if(dataNew===heldStepAbs) return;
-      if(heldStepAbs!==-1){
-        if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
-        endHold();
+      if(!stepSwipeActive){
+        if(dataNew===stepSwipeStartAbs) return; // still on the starting pad → tap/hold
+        // Finger left the first pad → switch to INVERT-PAINT mode. Fix up the
+        // starting pad: touchstart already turned an OFF step ON (inverted);
+        // an ON step was left untouched, so invert it (turn OFF) now.
+        stepSwipeActive=true;
+        stepSwipePainted=new Set([stepSwipeStartAbs]);
+        endHold(); // a swipe is not a hold — no per-step param editing
+        if(stepSwipeStartWasOn) toggleStep(stepSwipeStartAbs);
       }
-      const wasOn=parts[activePart].steps[dataNew];
-      if(!wasOn) toggleStep(dataNew);
-      startHold(dataNew,wasOn);
-      showStepParams(dataNew);
+      if(stepSwipePainted.has(dataNew)) return; // each step inverts once per swipe
+      stepSwipePainted.add(dataNew);
+      toggleStep(dataNew); // invert: active→empty, empty→active
     },{passive:false});
     grid.addEventListener('touchend',e=>{
       if(stepTouchId===null) return;
       if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
       stepTouchId=null;
+      if(stepSwipeActive){ // invert-paint swipe: all toggling already happened
+        resetStepSwipe();
+        restoreSequencerDisplay();
+        return;
+      }
+      resetStepSwipe();
       if(heldStepAbs!==-1){
         if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
         if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
@@ -4471,6 +4492,7 @@ function buildSteps(){
     grid.addEventListener('touchcancel',e=>{
       if(stepTouchId===null) return;
       stepTouchId=null;
+      resetStepSwipe();
       if(heldStepAbs!==-1){ endHold(); restoreSequencerDisplay(); }
     },{passive:false});
   }
