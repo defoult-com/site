@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>defOult</title>
+<title>Step Sequencer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -476,7 +476,7 @@
       </div>
       <div class="panel" id="step-panel">
         <div class="step-panel-header">
-          <div class="step-panel-title" id="step-panel-title">defOult</div>
+          <div class="step-panel-title" id="step-panel-title">Step Sequencer</div>
           <div class="part-indicator" id="part-indicator">Part 1 (16st)</div>
         </div>
         <div class="step-grid" id="step-grid"></div>
@@ -4228,7 +4228,7 @@ function buildSteps(){
   const grid=document.getElementById('step-grid');grid.innerHTML='';
   grid.classList.toggle('ctrl-mode', currentMode==='ctrl');
   const stepTitle=document.getElementById('step-panel-title');
-  if(stepTitle) stepTitle.textContent=saveBrowsing?(browseClear?'Clear \u2715 Pattern':browseLoad?'Load \u2190 Pattern':'Save \u2192 Pattern'):currentMode==='key'?'Keyboard':currentMode==='ctrl'?'defOult':currentMode==='set'?'Settings':isPatLike()?'Pattern':'defOult';
+  if(stepTitle) stepTitle.textContent=saveBrowsing?(browseClear?'Clear \u2715 Pattern':browseLoad?'Load \u2190 Pattern':'Save \u2192 Pattern'):currentMode==='key'?'Keyboard':currentMode==='ctrl'?'Step Sequencer':currentMode==='set'?'Settings':isPatLike()?'Pattern':'Step Sequencer';
 
   if(saveBrowsing){
     for(let slot=0;slot<16;slot++){
@@ -7730,7 +7730,7 @@ function downloadProject(){
   persistNow();
   const json=_memSave||JSON.stringify(serializeAll());
   const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  const fname='defoult-project-'+stamp+'.json';
+  const fname='sequencer-project-'+stamp+'.json';
   const blob=new Blob([json],{type:'application/json'});
 
   // On touch devices (iPhone/iPad), <a download> is ignored by Safari, so use
@@ -8481,7 +8481,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     }
     const dur=recLen/recRate;
     lastBlob=encodeWav(recL,recR,recLen,recRate);
-    lastName='defoult-'+stamp()+'.wav';
+    lastName='stepseq-'+stamp()+'.wav';
     recL=[]; recR=[]; // free the raw PCM chunks
     elSave.classList.remove('disabled');
     elPreview.classList.remove('disabled');
