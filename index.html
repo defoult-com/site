@@ -2207,38 +2207,6 @@ function tryCtrlQuickTapToStep(){
   return true;
 }
 
-// ── Shared step-pad pointer logic ─────────────────────────────────
-// Mouse and touch both call these so touch behaves EXACTLY like a mouse:
-// a press toggles the step under the pointer, a drag/slide across pads makes
-// each pad it enters react (off→on, on→off), and release finalizes the tap.
-// `abs` is the PAD position; offsetDataAbs maps it to the underlying data step.
-function stepPadDown(abs, skip){
-  const da=offsetDataAbs(abs);
-  if(skip){ toggleSkip(da); return; } // Shift = step-skip toggle
-  const wasOn=parts[activePart].steps[da];
-  if(!wasOn) toggleStep(da);
-  startHold(da,wasOn);
-  showStepParams(da);
-}
-function stepPadEnter(abs){ // called as the pointer sweeps onto a new pad
-  const da=offsetDataAbs(abs);
-  if(heldStepAbs===da) return;
-  if(heldStepAbs!==-1){
-    if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
-  }
-  const wasOn=parts[activePart].steps[da];
-  if(!wasOn) toggleStep(da);
-  startHold(da,wasOn);
-  showStepParams(da);
-}
-function stepPadUp(){ // finalize on release (acts on the step under the pointer)
-  if(heldStepAbs<0) return;
-  if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
-  if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
-  endHold();
-  restoreSequencerDisplay();
-}
-
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 // Gate as note length relative to one step. 100% = exactly one step ("1").
 // Below one step shows a fraction (¼, ⅓, ½, ¾…); above shows multiples (2, 3, 4).
@@ -4416,19 +4384,44 @@ function buildSteps(){
     if(!isBelowStart){
       div.addEventListener('mousedown',e=>{
         e.preventDefault();
-        stepPadDown(abs, e.shiftKey||shiftHeld);
+        const da=offsetDataAbs(abs);
+        if(e.shiftKey||shiftHeld){ toggleSkip(da); return; } // Shift = step-skip toggle
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       });
       div.addEventListener('mouseenter',e=>{
         if(e.buttons!==1) return;
         if(e.shiftKey||shiftHeld) return; // don't sweep-skip on shift-drag
-        stepPadEnter(abs);
+        const da=offsetDataAbs(abs);
+        if(heldStepAbs===da) return;
+        if(heldStepAbs!==-1){
+          if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
+        }
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       });
-      div.addEventListener('mouseup',()=>{ stepPadUp(); });
+      div.addEventListener('mouseup',()=>{
+        const da=offsetDataAbs(abs);
+        if(heldStepAbs===da){
+          if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
+          if(shouldToggleOffOnRelease(da)) toggleStep(da);
+          endHold();
+          restoreSequencerDisplay();
+        }
+      });
       div.addEventListener('touchstart',e=>{
         e.preventDefault();
-        if(shiftHeld){ toggleSkip(offsetDataAbs(abs)); return; } // shift-skip: no drag
+        const da=offsetDataAbs(abs);
+        if(shiftHeld){ toggleSkip(da); return; }
         stepTouchId=e.changedTouches[0].identifier;
-        stepPadDown(abs, false);
+        const wasOn=parts[activePart].steps[da];
+        if(!wasOn) toggleStep(da);
+        startHold(da,wasOn);
+        showStepParams(da);
       },{passive:false});
     }
     grid.appendChild(div); // always render the pad (below-start steps show grayed)
@@ -4453,14 +4446,27 @@ function buildSteps(){
       if(currentMode!=='step') return; // sweep only paints in STEP mode
       const np=parts[activePart];
       if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
-      if(shiftHeld) return; // match mouse: no sweep-skip on shift-drag
-      stepPadEnter(newAbs);
+      const dataNew=offsetDataAbs(newAbs);
+      if(dataNew===heldStepAbs) return;
+      if(heldStepAbs!==-1){
+        if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
+        endHold();
+      }
+      const wasOn=parts[activePart].steps[dataNew];
+      if(!wasOn) toggleStep(dataNew);
+      startHold(dataNew,wasOn);
+      showStepParams(dataNew);
     },{passive:false});
     grid.addEventListener('touchend',e=>{
       if(stepTouchId===null) return;
       if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
       stepTouchId=null;
-      stepPadUp();
+      if(heldStepAbs!==-1){
+        if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
+        if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
+        endHold();
+        restoreSequencerDisplay();
+      }
     },{passive:false});
     grid.addEventListener('touchcancel',e=>{
       if(stepTouchId===null) return;
