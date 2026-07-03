@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Step Sequencer</title>
+<title>defOult</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -476,7 +476,7 @@
       </div>
       <div class="panel" id="step-panel">
         <div class="step-panel-header">
-          <div class="step-panel-title" id="step-panel-title">Step Sequencer</div>
+          <div class="step-panel-title" id="step-panel-title">defOult</div>
           <div class="part-indicator" id="part-indicator">Part 1 (16st)</div>
         </div>
         <div class="step-grid" id="step-grid"></div>
@@ -4228,7 +4228,7 @@ function buildSteps(){
   const grid=document.getElementById('step-grid');grid.innerHTML='';
   grid.classList.toggle('ctrl-mode', currentMode==='ctrl');
   const stepTitle=document.getElementById('step-panel-title');
-  if(stepTitle) stepTitle.textContent=saveBrowsing?(browseLoad?'Load \u2190 Pattern':'Save \u2192 Pattern'):currentMode==='key'?'Keyboard':currentMode==='ctrl'?'Step Sequencer':currentMode==='set'?'Settings':isPatLike()?'Pattern':'Step Sequencer';
+  if(stepTitle) stepTitle.textContent=saveBrowsing?(browseClear?'Clear \u2715 Pattern':browseLoad?'Load \u2190 Pattern':'Save \u2192 Pattern'):currentMode==='key'?'Keyboard':currentMode==='ctrl'?'defOult':currentMode==='set'?'Settings':isPatLike()?'Pattern':'defOult';
 
   if(saveBrowsing){
     for(let slot=0;slot<16;slot++){
@@ -4240,8 +4240,8 @@ function buildSteps(){
       const div=document.createElement('div');div.className='step-btn';
       div.innerHTML=`<div class="${padCls}" id="spad-${slot}">${patIdx+1}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
       div.dataset.pressable='1';
-      div.addEventListener('click',e=>{ if(e.detail===0) return; if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); });
-      div.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(div); if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); },{passive:false});
+      div.addEventListener('click',e=>{ if(e.detail===0) return; if(browseClear) clearSlotFromBrowse(patIdx); else if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); });
+      div.addEventListener('touchend',e=>{ e.preventDefault(); pressOff(div); if(browseClear) clearSlotFromBrowse(patIdx); else if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx); },{passive:false});
       grid.appendChild(div);
     }
     return;
@@ -6619,7 +6619,7 @@ document.addEventListener('keydown',e=>{
         const patIdx=patternPage*16+slot;
         const grid=document.getElementById('step-grid');
         if(grid&&grid.children[slot]) pressOn(grid.children[slot]); // feedback while grid still shows patterns
-        if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx);
+        if(browseClear) clearSlotFromBrowse(patIdx); else if(browseLoad) loadFromSlot(patIdx); else saveToSlot(patIdx);
       }
       return;
     }
@@ -6724,6 +6724,10 @@ document.addEventListener('keydown',e=>{
   if(e.code==='KeyO'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){downloadProject();}else if(currentMode==='key'){engageRoll(4);}else if(currentMode==='ctrl'){toggleParmMute();}else if(currentMode==='pat'){engageLooper(4);}else{beginSaveHold();}pressOn(document.getElementById('ctrl-save'));}return;}
   if(e.code==='KeyP'&&!shiftHeld&&!ctrlHeld&&!altHeld){e.preventDefault();if(!e.repeat){if(currentMode==='set'){openProjectPicker();}else if(currentMode==='key'){engageRoll(2);}else if(currentMode==='pat'){engageLooper(2);}else if(currentMode==='ctrl'){toggleParmMuteAll();}else{beginLoadHold();}pressOn(document.getElementById('ctrl-reload'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='set'&&!ctrlHeld){e.preventDefault();if(!e.repeat){newProject();pressOn(document.getElementById('ctrl-clear'));}return;}
+  // STEP mode '[' matches the O/P keys: keydown opens clear-browse (tap slots
+  // to empty them), keyup finishes — a quick press+release with no slot chosen
+  // performs the classic quick action (clear the active part's sequence).
+  if(e.code==='BracketLeft'&&currentMode==='step'&&!ctrlHeld){e.preventDefault();if(!e.repeat){if(!clearHeld){_clearKeyDownT=performance.now();beginClearHold();}pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&!isPatLike()&&!ctrlHeld){e.preventDefault();if(!e.repeat){document.getElementById('ctrl-clear').click();pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='key'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageRoll(1);pressOn(document.getElementById('ctrl-clear'));}return;}
   if(e.code==='BracketLeft'&&currentMode==='pat'&&!ctrlHeld){e.preventDefault();if(!e.repeat){engageLooper(1);pressOn(document.getElementById('ctrl-clear'));}return;}
@@ -6758,7 +6762,7 @@ document.addEventListener('keyup',e=>{
     else if(currentMode!=='ctrl') endSaveHold();
   }
   if(e.code==='KeyP'){pressOff(document.getElementById('ctrl-reload'));if(currentMode==='key')releaseRoll(2);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(2);else if(loadHeld)reloadFromLoadHold();}
-  if(e.code==='BracketLeft'){pressOff(document.getElementById('ctrl-clear'));if(currentMode==='key')releaseRoll(1);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(1);}
+  if(e.code==='BracketLeft'){pressOff(document.getElementById('ctrl-clear'));if(currentMode==='key')releaseRoll(1);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(1);else if(currentMode==='step'&&clearHeld){const quick=clearClickCount===0&&(performance.now()-_clearKeyDownT)<300;endClearHold();if(quick)clearActivePartSteps();}}
   if(e.code==='BracketRight'){pressOff(document.getElementById('ctrl-none'));if(ctrlAllHeld)ctrlAllHeld=false;if(currentMode==='key')releaseRoll(0.5);else if(looperActive&&(currentMode==='pat'||currentMode==='set'))releaseLooper(0.5);else if(currentMode==='step'&&isRandomPanelOpen()){closeRandomParams();randomFillPart();restoreSequencerDisplay();}}
   if(e.code in CODE_TO_PAGE){const _rbs=document.querySelectorAll('.range-btn');Object.values(CODE_TO_PAGE).forEach(i=>{if(_rbs[i])pressOff(_rbs[i]);});}
   if(e.code in CODE_TO_PART){
@@ -6886,6 +6890,7 @@ let loadHeld=false, browseLoad=false;
 let _loadHoldTimer=null, _loadHoldFired=false;
 
 function beginSaveHold(){
+  if(typeof clearHeld!=='undefined'&&clearHeld) endClearHold(); // never overlap browse modes
   saveHeld=true;
   saveReturnMode=currentMode;
   saveOrigBank=activeBank; saveOrigPattern=activePattern;
@@ -6942,6 +6947,7 @@ function endSaveHold(){
 // navigation) in LOAD mode. Tapping any slot loads that pattern.
 function beginLoadHold(){
   if(saveHeld) endSaveHold();   // never overlap save- and load-browse
+  if(typeof clearHeld!=='undefined'&&clearHeld) endClearHold();
   loadHeld=true; browseLoad=true;
   saveReturnMode=currentMode;
   saveOrigBank=activeBank; saveOrigPattern=activePattern;
@@ -6981,6 +6987,63 @@ function loadFromSlot(patIdx){ // load the chosen pattern (any bank/page) and ex
   else { loadPattern(activeBank,patIdx,true); setStatus('Loaded \u2192 Bank '+(activeBank+1)+' Pat '+(patIdx+1)); }
   buildSteps();buildRangeBar();buildParts();updatePartIndicator();
 }
+// ── STEP-mode PTRN CLEAR: tap vs hold ────────────────────────────────
+// Quick tap = clear the ACTIVE PART's sequence (unchanged behavior). HOLD
+// opens the same pattern-browse view as PTRN COPY / PTRN LOAD, but tapping a
+// slot EMPTIES that pattern. Multiple slots can be cleared in one browse;
+// tap CLEAR again to finish. The button face goes red while browsing —
+// clearing is destructive.
+let clearHeld=false, browseClear=false, clearClickCount=0;
+let _clearHoldTimer=null, _clearHoldFired=false, _clearKeyDownT=0;
+function beginClearHold(){
+  if(saveHeld) endSaveHold();   // never overlap the three browse modes
+  if(loadHeld) endLoadHold();
+  clearHeld=true; browseClear=true; clearClickCount=0;
+  saveReturnMode=currentMode;
+  saveOrigBank=activeBank; saveOrigPattern=activePattern;
+  saveBrowsing=true;            // reuse the pattern-grid browse view + navigation
+  if(playhead>=0&&isStepLike()){const pv=document.getElementById('spad-'+playhead);if(pv)pv.classList.remove('playhead');}
+  buildSteps();buildRangeBar();buildParts();
+  setStatus('Tap pattern(s) to CLEAR them \u2014 tap CLEAR again to finish');
+  const cv=document.getElementById('ctrl-clear')?.querySelector('.ctrl-val');
+  if(cv){cv.style.borderColor='var(--seq-red)';cv.style.color='var(--seq-red)';}
+}
+function clearSlotFromBrowse(patIdx){
+  if(!patternStore[activeBank][patIdx]){
+    setStatus('Bank '+(activeBank+1)+' Pat '+(patIdx+1)+' is already empty');
+    return;
+  }
+  patternStore[activeBank][patIdx]=null;
+  clearClickCount++;
+  // Clearing the slot the LIVE pattern belongs to must also empty the LIVE
+  // parts — otherwise the live copy keeps playing and (with AUTO-SAVE on)
+  // gets committed straight back into the slot, silently undoing the clear.
+  // Loading the now-empty slot runs the standard empty-pattern reset (steps,
+  // per-step params, locks, part settings) and leaves patternDirty=false so
+  // nothing re-saves into it.
+  if(activeBank===loadedBank&&patIdx===loadedPattern) loadPattern(activeBank,patIdx,true);
+  buildSteps();buildPatternGrids();
+  if(typeof markSaveDirty==='function') markSaveDirty();
+  setStatus('Cleared \u2715 Bank '+(activeBank+1)+' Pat '+(patIdx+1));
+}
+function endClearHold(){
+  if(!clearHeld) return;
+  clearHeld=false; browseClear=false; saveBrowsing=false;
+  const cv=document.getElementById('ctrl-clear')?.querySelector('.ctrl-val');
+  if(cv){cv.style.borderColor='';cv.style.color='';}
+  activeBank=saveOrigBank; activePattern=saveOrigPattern;
+  buildSteps();buildRangeBar();buildParts();buildPatternGrids();updatePartIndicator();
+  setStatus(clearClickCount>0?('Cleared '+clearClickCount+' pattern slot'+(clearClickCount>1?'s':'')):'Clear-browse closed');
+}
+// The quick-tap action, extracted so click / keyboard / touch share one path.
+function clearActivePartSteps(){
+  parts[activePart].steps=Array(64).fill(false);
+  parts[activePart].stepParams=Array.from({length:64},()=>defaultStepParams());
+  parts[activePart].stepSeen=Array(64).fill(false);
+  patternDirty=true;
+  buildSteps();buildRangeBar();buildParts();
+  setStatus('Part '+(activePart+1)+' steps cleared');
+}
 document.getElementById('ctrl-save').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ downloadProject(); flashCtrlBtn('ctrl-save'); return; } // SAVE
   if(currentMode==='key') engageRoll(4);
@@ -7009,6 +7072,12 @@ document.getElementById('ctrl-reload').addEventListener('mousedown',()=>{
 document.getElementById('ctrl-clear').addEventListener('mousedown',()=>{
   if(currentMode==='set'){ newProject(); flashCtrlBtn('ctrl-clear'); return; } // NEW
   if(currentMode==='key') engageRoll(1); else if(currentMode==='pat') engageLooper(1);
+  else if(currentMode==='step' && !clearHeld){
+    // Hold opens clear-browse; a quick release (handled in the click handler)
+    // clears the active part's sequence as before.
+    _clearHoldFired=false;
+    _clearHoldTimer=setTimeout(()=>{ _clearHoldTimer=null; _clearHoldFired=true; beginClearHold(); },300);
+  }
 });
 // ── Random fill (STEP mode) ──────────────────────────────────────────
 // Replace the active part's sequence across its active range (seqStart..seqEnd)
@@ -7164,6 +7233,12 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       if(loadHeld){ endLoadHold(); }            // tap again while browsing → cancel
       else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!loadHeld) beginLoadHold(); },300); }
     }
+    // STEP Clear: quick TAP clears the active part; LONG-PRESS opens
+    // clear-browse so pattern slots can be tapped to EMPTY them.
+    else if(currentMode==='step' && id==='ctrl-clear'){
+      if(clearHeld){ endClearHold(); }          // tap again while browsing → finish
+      else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!clearHeld) beginClearHold(); },300); }
+    }
     // STEP Random: show the random-range params while held; randomize on release.
     else if(currentMode==='step' && id==='ctrl-none'){
       showRandomParams(); randomTrigger='touch'; setStatus('Random range — release to randomize');
@@ -7207,6 +7282,19 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       }
       // Hold opened load-browse: stay LATCHED so the user can tap any pattern
       // slot to load it (the slot tap loads and exits). Tap LOAD again to cancel.
+      return;
+    }
+    const isStepClearHold=(currentMode==='step' && id==='ctrl-clear');
+    if(isStepClearHold){
+      if(holdTimer){
+        // Released before the hold threshold → quick TAP. Clear the active
+        // part's sequence (existing behavior) via the button's click handler.
+        clearTimeout(holdTimer); holdTimer=null;
+        if(!clearHeld) el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+        return;
+      }
+      // Hold opened clear-browse: stay LATCHED so slots can be tapped to
+      // empty them. Tap CLEAR again to finish.
       return;
     }
     // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
@@ -7273,20 +7361,19 @@ document.getElementById('ctrl-reload').addEventListener('click',()=>{
   setStatus('Reloaded Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
 });
 document.getElementById('ctrl-clear').addEventListener('click',()=>{
+  // STEP-mode hold bookkeeping: a quick release cancels the pending hold and
+  // falls through to the classic part-clear; a completed hold opened clear-
+  // browse (don't also clear); a tap while browsing finishes the browse.
+  if(_clearHoldTimer){ clearTimeout(_clearHoldTimer); _clearHoldTimer=null; }
+  if(_clearHoldFired){ _clearHoldFired=false; return; }
+  if(currentMode==='step' && clearHeld){ endClearHold(); return; }
   if(isPatLike()) return; // looper owns this button in PAT mode
   if(currentMode==='ctrl'){
     const ps=ctrlTargetParts(); ps.forEach(clearCtrlPart); showCtrlPanel(); buildSteps();
     setStatus(ctrlAllHeld?'CTRL cleared — All parts':'CTRL cleared — Part '+(activePart+1)); flashCtrlBtn('ctrl-clear');
     return;
   }
-  {
-    parts[activePart].steps=Array(64).fill(false);
-    parts[activePart].stepParams=Array.from({length:64},()=>defaultStepParams());
-    parts[activePart].stepSeen=Array(64).fill(false);
-    patternDirty=true;
-    buildSteps();buildRangeBar();buildParts();
-    setStatus('Part '+(activePart+1)+' steps cleared');
-  }
+  clearActivePartSteps();
 });
 document.getElementById('ctrl-none').addEventListener('click',()=>{
   if(isPatLike()) return;
@@ -7643,7 +7730,7 @@ function downloadProject(){
   persistNow();
   const json=_memSave||JSON.stringify(serializeAll());
   const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  const fname='sequencer-project-'+stamp+'.json';
+  const fname='defoult-project-'+stamp+'.json';
   const blob=new Blob([json],{type:'application/json'});
 
   // On touch devices (iPhone/iPad), <a download> is ignored by Safari, so use
@@ -8394,7 +8481,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     }
     const dur=recLen/recRate;
     lastBlob=encodeWav(recL,recR,recLen,recRate);
-    lastName='stepseq-'+stamp()+'.wav';
+    lastName='defoult-'+stamp()+'.wav';
     recL=[]; recR=[]; // free the raw PCM chunks
     elSave.classList.remove('disabled');
     elPreview.classList.remove('disabled');
