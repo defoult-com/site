@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual</title>
+<style>
+  :root{--bg:#1a1a14;--panel:#2a2a1e;--border:#3a3a28;--yellow:#f0c030;--yellow-dark:#c09010;--yellow-bg:#3a2e00;--text:#e8e0c0;--dim:#888870;--btn:#222218;--red:#e05040;
+    --font:'Helvetica Neue Condensed','HelveticaNeue-CondensedBold','Helvetica Neue','Archivo Narrow','Roboto Condensed','Arial Narrow',Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0;font-stretch:condensed;}
+  html,body{background:#111;color:var(--text);font-family:var(--font);}
+  body{display:flex;justify-content:center;padding:8px;}
+  .wrap{max-width:760px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px;}
+  header{background:var(--yellow-bg);border:1px solid var(--yellow-dark);border-radius:3px;padding:10px 12px;}
+  header h1{color:var(--yellow);font-size:20px;letter-spacing:2px;text-transform:uppercase;}
+  header p{color:var(--text);font-size:12px;margin-top:4px;}
+  section{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:8px 10px;}
+  h2{color:var(--yellow);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:7px;}
+  h3{color:var(--yellow-dark);font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:8px 0 3px;}
+  p,li{font-size:12.5px;line-height:1.45;color:var(--text);}
+  ul{list-style:none;}
+  li{padding:2px 0 2px 12px;position:relative;}
+  li::before{content:'';position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:50%;background:var(--yellow-dark);}
+  b{color:var(--yellow);font-weight:700;}
+  .dim{color:var(--dim);}
+  .red{color:var(--red);font-weight:700;}
+  kbd{display:inline-block;background:var(--btn);border:1px solid var(--border);border-radius:3px;padding:0 5px;font-family:var(--font);font-size:11px;color:var(--dim);line-height:16px;vertical-align:1px;}
+  .btnface{display:inline-block;background:var(--btn);border:1px solid var(--yellow-dark);border-radius:3px;color:var(--yellow);font-size:10.5px;font-weight:700;letter-spacing:.5px;padding:2px 6px;text-transform:uppercase;}
+  table{width:100%;border-collapse:collapse;margin-top:4px;}
+  td,th{border:1px solid var(--border);padding:4px 7px;font-size:12px;text-align:left;vertical-align:top;}
+  th{color:var(--yellow-dark);text-transform:uppercase;font-size:10.5px;letter-spacing:1px;background:var(--btn);}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:0;}
+  .dot.w{background:#fff;box-shadow:0 0 3px #fff;}
+  .dot.r{background:var(--red);box-shadow:0 0 3px var(--red);}
+  footer{color:var(--dim);font-size:10.5px;text-align:center;padding:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Manual</h1>
+  <p>An 8-part performance step sequencer with a built-in drum machine, MIDI output, pattern banks, step locks, live looping and audio bounce. Everything is playable by touch, mouse or keyboard.</p>
+</header>
+
+<section>
+  <h2>1 · Layout</h2>
+  <ul>
+    <li><b>Top bar</b> — transport (play / stop / record / settings), tempo &amp; metronome, and the four mode tabs: <span class="btnface">PTRN</span> <span class="btnface">STEP</span> <span class="btnface">KEYB</span> <span class="btnface">CTRL</span>.</li>
+    <li><b>Parts row</b> — 8 parts. Tap to select the active part; the grid, display and CTRL panel always show the active part.</li>
+    <li><b>Hold buttons</b> — <span class="btnface">MUTE</span> / <span class="btnface">SOLO</span>: hold and tap parts to mute or solo them. <span class="btnface">ALIGN</span> re-syncs parts to the bar. <span class="btnface">SELECT</span> is a modifier used in the PTRN tab.</li>
+    <li><b>Step grid</b> — 16 pads per page, up to 64 steps. Its meaning changes per tab (steps, pattern slots, keyboard).</li>
+    <li><b>Virtual display</b> — shows the playing <b>Bank · Pattern</b> and a grid of value cells. Adjust any cell by <b>dragging</b> or the <b>scroll wheel</b>; <b>double-click / double-tap resets</b> it. Cells can also be driven by incoming MIDI CC.</li>
+    <li><b>Action buttons</b> — the four buttons above the grid change function per tab (described in each section).</li>
+    <li><b>Status bar</b> — every action is confirmed here. Read it when unsure.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2 · Transport, Tempo &amp; Recording Arm</h2>
+  <ul>
+    <li><b>Play / Stop</b> (<kbd>Space</kbd>) starts and stops the sequencer. Queued events (pattern changes) land on bar downbeats.</li>
+    <li><b>REC</b> arms live recording: notes played in KEYB mode and knob moves in CTRL mode are written into the running sequence as steps and step locks.</li>
+    <li><b>Tempo</b> — drag the tempo readout (or scroll) to change BPM. The metronome button toggles a click with a bar accent.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>3 · STEP tab</h2>
+  <ul>
+    <li><b>Tap a pad</b> to place or remove a step. <kbd>Q</kbd>–<kbd>I</kbd> and <kbd>A</kbd>–<kbd>K</kbd> mirror the 16 pads.</li>
+    <li><b>Hold a pad</b> — the display switches to that step's own page (<span class="dim">STEP n — PART n</span>): <b>NOTE · ACCENT · GATE · PROB · OCT · VELOCITY · TIME OFST · RETRIG</b>. Drag the cells to shape just that step (probability, micro-timing, ratchets…). A removed step remembers its settings and restores them when re-placed.</li>
+    <li>A <span class="dot w"></span> dot on a pad means the step carries <b>step locks</b> (see CTRL). A <span class="dot r"></span> red dot means those locks are currently muted.</li>
+  </ul>
+  <h3>On the display — SEQUENCER PART</h3>
+  <p>The display shows <b>SEQUENCER PART N</b>: eight cells shaping the active part’s timing. All of them are draggable / scrollable here:</p>
+  <ul>
+    <li><b>SEQ STRT / SEQ END</b> — the part’s loop window (1–64 steps; also draggable on the range bar). They dim when step-skips override them.</li>
+    <li><b>SEQ DIR</b> — playback direction. <b>SPEED</b> — per-part speed multiplier (polyrhythms).</li>
+    <li><b>OFFSET</b> — rotates the sequence; the grid shows the shifted result. <b>SWING</b> — off-beat shuffle.</li>
+    <li><b>MIDI DLY</b> — note-echo amount; hold <span class="btnface">MUTE</span> to reach <b>DLY TIME</b> (echo division) on the same cell.</li>
+    <li><b>DLY FB</b> — echo feedback; hold <span class="btnface">MUTE</span> to reach <b>PITCH FB</b> (±12 st per echo — pitched delays).</li>
+  </ul>
+  <p class="dim">The MUTE-shifted alternates apply to drag, wheel and incoming CC alike. <b>Holding a step pad</b> switches the display to that step’s own parameters; <b>holding a part button</b> shows the part’s note defaults.</p>
+
+  <h3>Action buttons</h3>
+  <table>
+    <tr><th>Button</th><th>Quick tap</th><th>Hold</th></tr>
+    <tr><td><span class="btnface">PTRN COPY</span> <kbd>O</kbd></td><td>Save the current pattern into its slot</td><td>Browse: tap slot(s) to save a copy there, tap again to finish</td></tr>
+    <tr><td><span class="btnface">PTRN LOAD</span> <kbd>P</kbd></td><td>Reload the current pattern (revert edits)</td><td>Browse: tap any slot to load it</td></tr>
+    <tr><td><span class="btnface">PTRN CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's steps</td><td>Browse: tap slot(s) to <span class="red">empty</span> them — including the loaded one</td></tr>
+    <tr><td><span class="btnface">PTRN RAND</span> <kbd>]</kbd></td><td colspan="2">Hold to see the random ranges (scale, root, octave, velocity, gate) — release to fill the part randomly</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>4 · PTRN tab — banks, patterns &amp; looper</h2>
+  <ul>
+    <li><b>8 banks × 64 patterns.</b> The parts row becomes the bank picker; the grid shows that bank's pattern slots (lit = has data).</li>
+    <li><b>Tap a slot</b> — stopped: loads immediately. Playing: <b>queues</b> the change for the next bar downbeat (slot blinks, status confirms). The display always shows what is actually <b>playing</b>, while you browse freely.</li>
+    <li>Hold <span class="btnface">SELECT</span> and tap a slot to select it without loading.</li>
+    <li><b>Virtual display — VELOCITY MIXER:</b> eight faders scaling each part's velocity (0–100). With the drum machine active each fader is labeled with that part's instrument. Drag them for quick live mixing, or drive them with incoming CC.</li>
+    <li><b>LOOP 1/4 · 1/8 · 1/16 · 1/32</b> — hold an action button to loop the playing material at that length; release to resume exactly where playback would have been. Loops can be layered.</li>
+    <li>A pattern change made <b>while looping</b> waits in the background — the loop is untouched; on release the new pattern enters on the next bar.</li>
+  </ul>
+  <h3>On the display — VELOCITY MIXER</h3>
+  <ul>
+    <li>The display becomes a <b>velocity mixer</b>: one cell per part (0–100%) scaling that part’s output level/velocity — a quick performance mixer while switching patterns. Drag, scroll or drive it with incoming CC.</li>
+    <li>The header always shows the <b>Bank · Pattern that is playing</b>, independent of what you are browsing.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>5 · KEYB tab</h2>
+  <ul>
+    <li>The grid becomes a <b>playable keyboard</b> for the active part; the range bar sets the octave.</li>
+    <li><b>Virtual display — KEYBOARD:</b> <b>VELOCITY · SCALE · ROOT · OCTAVE · ARP · RATE · RANGE · GATE</b>. Scale and root lock the keys to a scale; the ARP cells configure the arpeggiator (mode, rate, octave range, gate). Each cell has its own assignable input-CC number.</li>
+    <li><b>ROLL 1/4 · 1/8 · 1/16 · 1/32</b> — hold an action button while holding notes to repeat them at that division.</li>
+    <li>With <b>REC</b> armed and the transport running, played notes are written into the sequence at the current position.</li>
+  </ul>
+  <h3>On the display — key &amp; arp settings</h3>
+  <ul>
+    <li><b>VELOCITY</b> — how hard played notes hit. <b>SCALE</b> and <b>ROOT</b> — reshape the keyboard to a scale so every pad is in key. <b>OCTAVE</b> — base octave.</li>
+    <li><b>ARP</b>, <b>RATE</b>, <b>RANGE</b> — the arpeggiator: mode, speed division and octave span; hold notes and it plays them (RATE/RANGE dim while ARP is off).</li>
+    <li>Every cell here carries an editable <b>CC number</b>, so an external controller can play the whole panel.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>6 · CTRL tab — parameters &amp; locks</h2>
+  <ul>
+    <li><b>On the display:</b> <b>SOUND CTRL</b> — 8 parameter cells for the active part. With the internal drum machine they are its <b>sound parameters</b> (the set depends on the sound type); in MIDI mode they are <b>8 assignable CCs</b> (drag the CC number to reassign) sent to the part's output.</li>
+    <li>Each cell has a <b>global value</b> — drag it any time; this is the value that plays wherever no lock exists.</li>
+    <li><b>Step lock:</b> hold a step pad — the display retitles to <b>LOCK — STEP N</b> and the cells now show that step's values — then drag a cell: that value plays <b>only on that step</b>; the next unlocked step snaps back to the global value. Locked cells are highlighted; double-click a held cell to remove its lock.</li>
+    <li>With <b>REC</b> armed, turning cells while playing records locks as automation.</li>
+  </ul>
+  <h3>Sound types (drum machine)</h3>
+  <ul>
+    <li><b>Hold a part button</b> (with the drum machine active) to open its <b>PART SETUP</b> panel: scrub <b>TYPE</b> through the nine engine voices and set <b>VOICE</b> to MONO or POLY.</li>
+    <li>The types: <b>KICK · SNARE · TOM · RIM · CLAP · HIHAT</b> (classic analog-style drum voices with pitch, decay and tone), <b>FM</b> (FM percussion/melodic voice), <b>CHRD</b> (a 3-oscillator chord voice with detune spread) and <b>SAMPLE</b> (load your own audio, with crush/rate reduction).</li>
+    <li>Each type brings its <b>own parameter set</b> to the CTRL cells — so what you lock per step depends on the sound type.</li>
+  </ul>
+  <h3>FX hold panels</h3>
+  <ul>
+    <li>Hold <span class="btnface">MUTE</span> in the CTRL tab → the display switches to the <b>master DIST + EQ</b> (distortion on/off and drive, EQ off / pre-drive / post-drive with its bands).</li>
+    <li>Hold <span class="btnface">SOLO</span> → the <b>send REVERB + DELAY</b> parameters.</li>
+    <li>These hold panels behave like every other cell: drag, scroll-wheel, double-click to reset — and incoming MIDI CC edits them too while the panel is held open.</li>
+  </ul>
+  <h3>Action buttons</h3>
+  <table>
+    <tr><th>Button</th><th>Function</th></tr>
+    <tr><td><span class="btnface">PARM M</span> <kbd>O</kbd></td><td>Mute the active part's locks (kept, not played). Label and step dots turn <span class="red">red</span>.</td></tr>
+    <tr><td><span class="btnface">PARM M ALL</span> <kbd>P</kbd></td><td>Mute locks on <b>all</b> parts. Switching it off also resets every per-part mute.</td></tr>
+    <tr><td><span class="btnface">PARM CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's CTRL setup and locks.</td></tr>
+    <tr><td><span class="btnface">PARM HOLD</span> <kbd>]</kbd></td><td>Latch mode: a lock's value <b>holds until the next lock</b> instead of snapping back. <span class="red">Red</span> while on. Mute always wins over hold.</td></tr>
+  </table>
+  <p class="dim">Lock mutes and hold are live performance states — they are never saved with patterns.</p>
+</section>
+
+<section>
+  <h2>7 · Sound engine &amp; FX</h2>
+  <ul>
+    <li>In Settings, <b>DRUM MACHINE</b> switches the parts between the internal sound engine and external MIDI.</li>
+    <li>Each internal part has a <b>sound editor</b> (voice parameters, sample loading, pan, effect sends). Its type and mono/poly voice are set in the <b>PART SETUP</b> panel (hold a part button in CTRL).</li>
+    <li><b>Master FX</b> — drive/distortion with EQ, a send <b>reverb</b> (decay, damping, algorithm) and a tempo-synced <b>delay</b>. All of them are hands-on from the CTRL tab via the <span class="btnface">MUTE</span> / <span class="btnface">SOLO</span> hold panels. Combined with PITCH FB, delays can spiral up or down in pitch.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>8 · MIDI</h2>
+  <ul>
+    <li>Per part: output port and channel (Settings). Notes, echoes and CTRL CCs are sent per part.</li>
+    <li><b>Incoming CC</b> is mapped to whatever the display currently shows — sequencer cells in STEP (including the MUTE-shifted alternates), CTRL cells in CTRL, and the velocity mixer in PTRN.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>9 · Audio bounce</h2>
+  <ul>
+    <li>The recorder bar captures the master output. <span class="btnface">BOUNCE</span> while playing <b>arms</b> and starts on the next bar; pressing <span class="btnface">STOP</span> lets the bar finish first — takes are exact whole bars, ready to loop. Press stop twice to cut immediately.</li>
+    <li>From a stopped transport, BOUNCE starts playback and captures from the very first step.</li>
+    <li><span class="btnface">SAVE WAV</span> exports the take; the preview button auditions it first.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>10 · Projects &amp; saving</h2>
+  <ul>
+    <li>Settings row: <span class="btnface">FILE SAVE</span> exports the whole project (all banks, patterns, sounds, settings) as a file; <span class="btnface">FILE LOAD</span> imports one; <span class="btnface">NEW</span> resets everything.</li>
+    <li><span class="btnface">AUTO-SAVE</span> keeps the project persisted in the browser and commits pattern edits back to their slot automatically.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>11 · Keyboard quick reference</h2>
+  <table>
+    <tr><th>Keys</th><th>Action</th></tr>
+    <tr><td><kbd>Space</kbd></td><td>Play / stop</td></tr>
+    <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Select part (with <span class="btnface">MUTE</span>/<span class="btnface">SOLO</span> held: mute / solo it)</td></tr>
+    <tr><td><kbd>Q</kbd>–<kbd>I</kbd> <kbd>A</kbd>–<kbd>K</kbd></td><td>The 16 grid pads (steps, pattern slots, keys — per tab)</td></tr>
+    <tr><td><kbd>O</kbd> <kbd>P</kbd> <kbd>[</kbd> <kbd>]</kbd></td><td>The four action buttons of the current tab (hold-capable where noted)</td></tr>
+  </table>
+  <p class="dim">On desktop, the small key hints under each button always show the current mapping.</p>
+</section>
+
+<footer>Quick-tap acts · hold browses or loops · the status bar always tells you what just happened.</footer>
+
+</div>
+</body>
+</html>
