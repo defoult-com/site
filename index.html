@@ -305,7 +305,10 @@
   body.portrait #scale-wrap{width:100%;justify-content:center;align-items:flex-start;}
   body.portrait #seq-root{width:100%!important;max-width:560px;padding:6px;transform-origin:top center;}
   #view-toggle{display:none;position:fixed;bottom:8px;right:8px;z-index:1000;background:var(--seq-yellow);color:#111;border:none;border-radius:4px;font-family:var(--seq-font);font-size:11px;font-weight:bold;padding:6px 11px;cursor:pointer;opacity:.9;box-shadow:0 2px 6px rgba(0,0,0,.5);}
-  body.mobile-mode #view-toggle,body.touch-capable #view-toggle{display:block;}
+  /* The portrait/wide toggle is intentionally hidden — layout auto-selects
+     portrait vs wide from the screen, so no manual button is shown (kept in the
+     DOM so the layout JS's null-guarded references stay valid). */
+  #view-toggle{display:none!important;}
   body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
   /* Flatten the left/right wrappers so all four panels become direct flex items
      of seq-main, then reorder: Display → Parts → Step → Status. */
