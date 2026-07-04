@@ -196,12 +196,12 @@
   .tempo-kbdkey{background:var(--seq-yellow);color:#111;border-radius:2px;font-size:10px;font-weight:bold;padding:2px 6px;margin-left:auto;}
   .tempo-slider{flex:1;margin-left:4px;}
   .ctrl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:6px;}
-  .ctrl-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
+  .ctrl-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;min-width:0;}
   /* AUTO-SAVE active: solid yellow value cell (like an active part/step) */
   .ctrl-btn.autosave-on .ctrl-val{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
   .ctrl-val:hover{border-color:var(--seq-yellow);}
   .ctrl-label{font-size:9px;color:var(--seq-text-dim);text-align:center;}
-  .ctrl-val{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:10px;font-weight:bold;color:var(--seq-text);text-align:center;padding:5px 2px;letter-spacing:.04em;}
+  .ctrl-val{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:10px;font-weight:bold;color:var(--seq-text);text-align:center;padding:5px 2px;letter-spacing:.04em;white-space:nowrap;}
   .ctrl-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
   /* Settings-mode toggle (replaces the Select button while in SETTINGS) */
   .ctrl-btn.set-toggle .ctrl-val{font-size:8.5px;line-height:1.05;padding:4px 2px;flex:1;display:flex;align-items:center;justify-content:center;white-space:normal;letter-spacing:.02em;}
@@ -426,7 +426,7 @@
   .rec-save:active{transform:translateY(1px);}
   .rec-save.disabled{opacity:.4;pointer-events:none;background:var(--seq-btn-bg);
     border-color:var(--seq-border);color:var(--seq-text-dim);}
-  /* Compact PREVIEW (play/stop) for the last take — sits beside SAVE WAV and
+  /* Compact PREVIEW toggle for the last take — sits beside SAVE WAV and
      plays lastBlob directly, no file save needed. Neutral so it doesn't clash
      with the yellow SAVE WAV or the red armed BOUNCE; yellow accent while it
      plays. */
@@ -438,9 +438,8 @@
   .rec-prev:active{transform:translateY(1px);}
   .rec-prev.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
   .rec-prev.disabled{opacity:.4;pointer-events:none;}
-  /* Keep the button a constant size across the PREVIEW ⇄ STOP swap: reserve a
-     fixed slot for the icon and for the (wider) label so "STOP" doesn't shrink it. */
-  #rec-preview-icon{display:inline-block;width:12px;text-align:center;}
+  /* Keep the button a constant size across the PREVIEW ⇄ STOP swap by
+     reserving a fixed slot for the (wider) label so "STOP" doesn't shrink it. */
   #rec-preview-label{display:inline-block;min-width:58px;text-align:center;}
   @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;}
     .rec-prev{padding:6px 10px;} .rec-save{padding:6px 10px;} }
@@ -465,10 +464,10 @@
       <span class="rec-status" id="rec-status">Ready — captures the output, click excluded</span>
     </div>
     <div class="rec-prev disabled" id="rec-preview" title="Preview the last take (no save needed)">
-      <span id="rec-preview-icon" style="font-size:11px;line-height:1;">&#9654;</span><span id="rec-preview-label">PREVIEW</span>
+      <span id="rec-preview-label">PREVIEW</span>
     </div>
     <div class="rec-save disabled" id="rec-save" title="Save the last take as a WAV file">
-      <span style="font-size:14px;line-height:1;">&#x2913;</span><span>SAVE WAV</span>
+      <span>SAVE WAV</span>
     </div>
   </div>
 
@@ -737,10 +736,10 @@ const RANGE_LABELS=['1–16','17–32','33–48','49–64'];
 const RANGE_KEYS=['Z','X','C','V'];
 const PAGE_OFFSET=[0,16,32,48];
 const DRUM_TYPES=['kick','snare','tom','rim','clap','hihat','fm','chrd','sample'];
-const DRUM_NAMES=['Kick','Snare','Tom','Perc','Clap','Cymbal','FM','Chord','Sample'];
+const DRUM_NAMES=['Kick','Snare','Tom','Perc','Clap','Hi-Hat','FM','Chord','Sample'];
 // Compact names for the small part-label under each part number (button sizes
 // unchanged). DRUM_NAMES above is still used for the sound-editor buttons/title.
-const DRUM_NAMES_SHORT=['Kick','Snare','Tom','PERC','Clap','CYM','FM','CHRD','Smpl'];
+const DRUM_NAMES_SHORT=['Kick','Snare','Tom','PERC','Clap','HH','FM','CHRD','Smpl'];
 const SNAP_POINTS_END=[16,32,48,64]; const MIN_GAP=15;
 // Bar-start snap points: the four bar starts that stay below seqEnd.
 function snapPointsForStart(seqEnd){return [1,17,33,49].filter(p=>p<=seqEnd);}
@@ -774,7 +773,7 @@ const DEFAULTS=[
   {type:'tom',vol:0.8,freq:90,attack:0,decay:0.3,tone:0.4},
   {type:'rim',vol:0.7,freq:400,attack:0,decay:0.08,tone:0.5},
   {type:'clap',vol:0.75,freq:300,attack:0,decay:0.15,tone:0.7},
-  {type:'hihat',vol:0.6,freq:800,attack:0,decay:0.06,tone:0.8},
+  {type:'hihat',vol:0.6,freq:800,attack:0,decay:0.30,tone:0.8},
   {type:'fm',vol:0.7,freq:220,attack:0,decay:0.3,tone:0.5},
   {type:'chrd',vol:0.5,freq:220,attack:0.005,decay:0.6,tone:0.7,detune2:0,detune3:0},
 ];
@@ -1486,7 +1485,7 @@ function refreshActionBtnLabels(mode){
     :mode==='pat'?['LOOP 1/4','LOOP 1/8','LOOP 1/16','LOOP 1/32']
     :mode==='key'?['ROLL 1/4','ROLL 1/8','ROLL 1/16','ROLL 1/32']
     :mode==='step'?['PTRN COPY','PTRN LOAD','PTRN CLEAR','PTRN RAND']
-    :mode==='ctrl'?['PARM M','PARM M ALL','PARM CLEAR','PARM HOLD']
+    :mode==='ctrl'?['PARM MUTE','PARM M ALL','PARM CLEAR','PARM HOLD']
     :['Save','Reload','Clear','Random'];
   ['ctrl-save','ctrl-reload','ctrl-clear','ctrl-none'].forEach((id,i)=>{
     const v=document.getElementById(id)?.querySelector('.ctrl-val');
@@ -1537,7 +1536,7 @@ function setMode(mode){
   renderSettingsLinkButtons();
   if(typeof renderTriggerButton==='function') renderTriggerButton();
 }
-// ABOUT / DONATE / MANUAL placeholders (no action yet — for external links later).
+// ABOUT / DONATE / MANUAL link buttons (wired below to open external pages).
 const SETTINGS_LINK_BTNS=[['shift-btn','ABOUT','MUTE'],['ctrl-btn','DONATE','SOLO'],['btn-resync','MANUAL','ALIGN']];
 function renderSettingsLinkButtons(){
   const inSet=(currentMode==='set');
@@ -1550,6 +1549,9 @@ function renderSettingsLinkButtons(){
     if(val){ val.textContent=inSet?setLabel:normLabel; if(inSet){ val.style.borderColor=''; val.style.color=''; } }
     if(kbd) kbd.style.display=inSet?'none':'';
   });
+  // Keep the ALIGN/SELECT → CLEAR hints correct if a modifier is still held
+  // across a mode switch (this ran after the base labels were set).
+  if(typeof refreshModifierHintLabels==='function') refreshModifierHintLabels();
 }
 let playInterval=null,tempo=120,audioCtx=null,seOpen=false;
 /* ════════════════════════════════════════════════════════════════════
@@ -2942,7 +2944,7 @@ const TYPE_DEFAULTS={
   tom:{vol:0.8,freq:90,attack:0,decay:0.3,tone:0.4},
   rim:{vol:0.7,freq:400,attack:0,decay:0.08,tone:0.5},
   clap:{vol:0.75,freq:300,attack:0,decay:0.15,tone:0.7},
-  hihat:{vol:0.6,freq:800,attack:0,decay:0.06,tone:0.8},
+  hihat:{vol:0.6,freq:800,attack:0,decay:0.30,tone:0.8},
   fm:{vol:0.7,freq:220,attack:0,decay:0.3,tone:0.5},
   chrd:{vol:0.5,freq:220,attack:0.005,decay:0.6,tone:0.7,detune2:0,detune3:0},
   sample:{vol:0.8,freq:600,attack:0,decay:0.3,tone:0.5},
@@ -3360,11 +3362,29 @@ function showSendFXPanel(){
   });
 }
 
+// Purely visual modifier hints on the ALIGN and SELECT buttons:
+//   MUTE (Shift) held → ALIGN reads "CLEAR MUTE",  SELECT reads "CLEAR SKIP"
+//   SOLO (Ctrl)  held → ALIGN reads "CLEAR SOLO"   (SELECT unchanged — no combo)
+//   nothing held      → ALIGN reads "ALIGN",       SELECT reads "SELECT"
+// These hint at the combos: ALIGN+Mute / ALIGN+Solo clear all mutes/solos, and
+// SELECT+Mute clears the active part's step skips. Skipped in SETTINGS mode,
+// where those two slots are repurposed (MANUAL, and the DRUM/MIDI toggle).
+// renderSettingsLinkButtons / renderTriggerButton own the base labels; this
+// only overrides them while a modifier is held.
+function refreshModifierHintLabels(){
+  if(currentMode==='set') return;                        // slots repurposed here
+  const alignVal=document.getElementById('btn-resync')?.querySelector('.ctrl-val');
+  if(alignVal) alignVal.textContent = shiftHeld ? 'CLEAR MUTE' : (ctrlHeld ? 'CLEAR SOLO' : 'ALIGN');
+  const selVal=document.getElementById('btn-trigger-val');
+  if(selVal) selVal.textContent = shiftHeld ? 'CLEAR SKIP' : 'SELECT';
+}
+
 // Show/hide a CTRL-mode hold panel based on the current modifier state.
 //   Mute (Shift) → master DIST + EQ        Solo (Ctrl) → send REVERB + DELAY
 // Called whenever the Mute/Solo modifier engages or releases.
 let _holdPanel=null; // 'mfx' | 'sfx' | null
 function syncCtrlHoldDisplay(){
+  refreshModifierHintLabels();   // visual ALIGN/SELECT → CLEAR hints (runs in every mode)
   const base = currentMode==='ctrl' && isDrumMachine() && heldStepAbs===-1;
   const want = base ? (shiftHeld?'mfx':(ctrlHeld?'sfx':null)) : null;
   if(want===_holdPanel) return;
@@ -7119,6 +7139,9 @@ document.addEventListener('mouseup',()=>{
 // press handlers bail out early in 'set' mode, so a normal tap/click reaches here.
 function _openExternal(url){ try{ window.open(url,'_blank','noopener,noreferrer'); }catch(_){ location.href=url; } }
 {
+  const about=document.getElementById('shift-btn');
+  // ABOUT: opens about.html (same folder as index.html) in a new tab.
+  if(about) about.addEventListener('click',()=>{ if(currentMode==='set') _openExternal('about.html'); });
   const donate=document.getElementById('ctrl-btn');
   if(donate) donate.addEventListener('click',()=>{ if(currentMode==='set') _openExternal('https://buymeacoffee.com/defoult'); });
   // MANUAL: opens manual.html (same folder as index.html) in a new tab.
@@ -8429,6 +8452,9 @@ function renderTriggerButton(){
     if(kbd) kbd.style.display='';
     if(tog) tog.style.display='none';
   }
+  // If MUTE is held across a mode switch, re-apply the SELECT → CLEAR SKIP hint
+  // (and the ALIGN hint) now that the base "SELECT" label has been restored.
+  if(typeof refreshModifierHintLabels==='function') refreshModifierHintLabels();
 }
 // Apply the DRUM MACHINE / MIDI CONTROLLER behavior across the UI.
 // DRUM MACHINE: sound engine active, sound editor interactive, drum part names.
@@ -8582,7 +8608,6 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   const elSave   = document.getElementById('rec-save');
   const elLevel  = document.getElementById('rec-level-fill');
   const elPreview   = document.getElementById('rec-preview');
-  const elPrevIcon  = document.getElementById('rec-preview-icon');
   const elPrevLabel = document.getElementById('rec-preview-label');
   if(!elBar||!elToggle) return; // bar not present — nothing to wire
 
@@ -8598,7 +8623,6 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   function stopPreview(){
     if(previewSrc){ try{ previewSrc.onended=null; previewSrc.stop(); }catch(e){} try{ previewSrc.disconnect(); }catch(e){} previewSrc=null; }
     if(elPreview) elPreview.classList.remove('playing');
-    if(elPrevIcon) elPrevIcon.innerHTML='&#9654;';   // ► play
     if(elPrevLabel) elPrevLabel.textContent='PREVIEW';
   }
   function togglePreview(){
@@ -8615,7 +8639,6 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
         src.start();
         previewSrc=src;
         elPreview.classList.add('playing');
-        elPrevIcon.innerHTML='&#9632;';               // ■ stop
         elPrevLabel.textContent='STOP';
       }catch(e){ stopPreview(); }
     };
@@ -8702,6 +8725,11 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
       const n=l.length;
       // Block start time: playbackTime is sample-accurate where supported;
       // fall back to the (slightly jittery) context clock elsewhere.
+      // Block start time. e.playbackTime is stable and sample-accurate where
+      // supported (the ScriptProcessor input is time-aligned to it); fall back
+      // to the (slightly jittery) context clock elsewhere. Leading-edge
+      // alignment to the first transient is handled after capture in stopRecNow
+      // (cyclic rotation), which is robust to any small residual latency.
       const bt=(typeof e.playbackTime==='number'&&e.playbackTime>0)?e.playbackTime:ctx.currentTime;
       // Quantized START — drop whole blocks before the downbeat and trim the
       // head of the boundary block to the exact sample.
@@ -8788,9 +8816,19 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
       return;
     }
     const dur=recLen/recRate;
-    lastBlob=encodeWav(recL,recR,recLen,recRate);
-    lastName='stepseq-'+stamp()+'.wav';
+    // Start the file on the first transient. Flatten the captured chunks, find
+    // where sound actually begins, and CYCLICALLY rotate the take so that point
+    // is sample 0. Rotation keeps the length an exact whole number of bars (so
+    // it still loops perfectly) and stays seamless. If sound is already present
+    // at the very start (a hit or an audible tail on the downbeat), nothing is
+    // moved — so grid-aligned takes are left untouched; only genuine leading
+    // silence before the first hit is removed.
+    let L=flattenChunks(recL,recLen), R=flattenChunks(recR,recLen);
     recL=[]; recR=[]; // free the raw PCM chunks
+    const onset=firstTransientIndex(L,R);
+    if(onset>0){ L=rotateInPlace(L,onset); R=rotateInPlace(R,onset); }
+    lastBlob=encodeWav([L],[R],recLen,recRate);
+    lastName='stepseq-'+stamp()+'.wav';
     elSave.classList.remove('disabled');
     elPreview.classList.remove('disabled');
     elTime.textContent=fmtTime(dur);
@@ -8800,6 +8838,52 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   function stamp(){
     const d=new Date(), p=n=>String(n).padStart(2,'0');
     return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());
+  }
+
+  // Concatenate the per-callback Float32 chunks into one flat channel buffer.
+  function flattenChunks(chunks,len){
+    const out=new Float32Array(len);
+    let o=0;
+    for(const c of chunks){
+      if(o>=len) break;
+      const take=Math.min(c.length,len-o);
+      out.set(take===c.length?c:c.subarray(0,take), o);
+      o+=take;
+    }
+    return out;
+  }
+  // Index of the first sample where sound begins, i.e. the first transient. The
+  // threshold is relative to the take's peak (with a small absolute floor) so it
+  // works at any level. Capped at half the take so a near-silent recording can't
+  // rotate wildly. Returns 0 when sound is already present at the start (nothing
+  // to trim) or the take is essentially silent.
+  function firstTransientIndex(L,R){
+    const n=Math.min(L.length,R.length);
+    if(n<2) return 0;
+    let peak=0;
+    for(let i=0;i<n;i++){
+      const a=L[i]<0?-L[i]:L[i], b=R[i]<0?-R[i]:R[i];
+      const m=a>b?a:b; if(m>peak)peak=m;
+    }
+    if(peak<=0) return 0;                       // pure silence — leave as-is
+    const thr=Math.max(0.004, peak*0.02);        // ~ -48 dBFS or 2% of peak
+    const limit=n>>1;                            // never rotate more than half
+    for(let i=0;i<limit;i++){
+      const a=L[i]<0?-L[i]:L[i], b=R[i]<0?-R[i]:R[i];
+      if(a>=thr||b>=thr) return i;
+    }
+    return 0;
+  }
+  // Cyclic left-rotate by k samples. Length is preserved exactly, so the take
+  // stays a whole number of bars and loops seamlessly; the leading silence that
+  // was trimmed off the front is wrapped onto the end.
+  function rotateInPlace(a,k){
+    const n=a.length;
+    if(k<=0||k>=n) return a;
+    const out=new Float32Array(n);
+    out.set(a.subarray(k), 0);
+    out.set(a.subarray(0,k), n-k);
+    return out;
   }
 
   // Interleave the stereo Float32 chunks and write a 16-bit PCM WAV blob.
