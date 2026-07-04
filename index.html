@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Step Sequencer</title>
+<title>defOult</title>
 <!-- ════════════════════════════════════════════════════════════════════
   HOW TO NAVIGATE THIS FILE
   One file, three layers:
@@ -48,7 +48,7 @@
   .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
   .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
   .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;flex:1;}
-  .tport-top-pad{height:100%;width:100%;min-width:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--seq-text-dim);padding:0 6px;transition:all .1s;box-sizing:border-box;}
+  .tport-top-pad{height:100%;width:100%;min-width:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--seq-text-dim);padding:0 6px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;box-sizing:border-box;}
   .tport-top-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
   .tport-top-kbd{font-size:9px;font-weight:bold;color:#111;background:var(--seq-yellow);border-radius:2px;padding:1px 4px 0;width:100%;box-sizing:border-box;min-height:14px;display:flex;align-items:center;justify-content:center;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:clip;letter-spacing:0;}
   .mode-tab{display:flex;align-items:center;justify-content:center;gap:6px;padding:5px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;cursor:pointer;font-family:var(--seq-font);font-size:13px;font-weight:bold;color:var(--seq-text-dim);flex:1;}
@@ -64,7 +64,7 @@
   .mode-tabs-group .mode-tab{flex:1 1 0;min-width:0;}
   .seq-left,.seq-right{display:flex;flex-direction:column;gap:6px;}
   .pat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
-  .pat-num{width:100%;padding:6px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:var(--seq-text);cursor:pointer;position:relative;transition:all .08s;}
+  .pat-num{width:100%;padding:6px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:var(--seq-text);cursor:pointer;position:relative;transition:background .08s,border-color .08s,color .08s,box-shadow .08s;}
   .pat-num.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
   .pat-num.pending{outline:2px solid #ff9900;outline-offset:-2px;}
   .pat-num.has-data::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
@@ -88,7 +88,7 @@
      panel's 8px padding reads the same on all four sides. */
   .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;}
   .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
-  .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:all .08s;position:relative;padding:2px 0;}
+  .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:background .08s,border-color .08s,color .08s,box-shadow .08s;position:relative;padding:2px 0;}
   .pnum-n{font-size:11px;line-height:1;}
   .pnum-name{font-size:8px;font-weight:bold;color:var(--seq-text-dim);text-transform:uppercase;letter-spacing:.03em;line-height:1;white-space:nowrap;overflow:hidden;max-width:100%;text-overflow:ellipsis;}
   .part-num.active .pnum-name{color:inherit;}
@@ -111,7 +111,7 @@
   .part-len{font-size:7px;color:var(--seq-yellow-dark);text-align:center;letter-spacing:.02em;}
   .parts-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px;}
   .action-label{font-size:11px;color:var(--seq-text-dim);text-align:center;}
-  .action-key{border-radius:2px;font-size:11px;font-weight:bold;padding:3px 10px;text-align:center;cursor:pointer;border:1px solid transparent;transition:all .1s;}
+  .action-key{border-radius:2px;font-size:11px;font-weight:bold;padding:3px 10px;text-align:center;cursor:pointer;border:1px solid transparent;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;}
   .action-key.shift-key{background:var(--seq-yellow);color:#111;}
   .action-key.ctrl-key{background:var(--seq-btn-bg);border-color:#60d0d0;color:#60d0d0;}
   .action-key.shift-key.held{background:#fff;color:#000;box-shadow:0 0 0 2px var(--seq-yellow);}
@@ -173,7 +173,7 @@
   .step-pad.skipped.on{background:#4a4a45!important;color:#999!important;}
   .step-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#111;padding:2px 0;}
   .step-range-bar{display:flex;gap:3px;margin-top:5px;}
-  .range-btn{flex:1;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:4px;font-size:10px;color:var(--seq-text-dim);display:flex;align-items:center;justify-content:space-between;gap:4px;cursor:pointer;transition:all .08s;position:relative;line-height:1;}
+  .range-btn{flex:1;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:4px;font-size:10px;color:var(--seq-text-dim);display:flex;align-items:center;justify-content:space-between;gap:4px;cursor:pointer;transition:background .08s,border-color .08s,color .08s,box-shadow .08s;position:relative;line-height:1;}
   .range-btn span:first-child{flex:1;text-align:center;line-height:1.2;}
   .range-btn span{display:inline-flex;align-items:center;justify-content:center;}
   .range-btn.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
@@ -286,7 +286,7 @@
   .status-msg{font-size:10px;color:var(--seq-text-dim);}
   .transport-row{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
   .tport-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
-  .tport-pad{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:6px 2px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--seq-text-dim);transition:all .1s;}
+  .tport-pad{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:6px 2px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--seq-text-dim);transition:background .1s,border-color .1s,color .1s,box-shadow .1s;}
   .tport-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
   .tport-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
   /* Mobile/touch: the yellow keyboard-shortcut hints are useless on a touchscreen — hide them all. */
@@ -408,7 +408,7 @@
   .rec-btn{display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;
     background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
     font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
-    color:var(--seq-text);padding:6px 14px;transition:all .1s;white-space:nowrap;min-width:96px;}
+    color:var(--seq-text);padding:6px 14px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;min-width:96px;}
   .rec-btn:hover{border-color:var(--seq-yellow);}
   .rec-btn:active{transform:translateY(1px);}
   .rec-btn.armed{border-color:var(--seq-red);color:#fff;background:#2a1410;}
@@ -425,7 +425,7 @@
   .rec-save{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
     background:var(--seq-yellow);border:1px solid var(--seq-yellow-dark);border-radius:3px;
     font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
-    color:#111;padding:6px 14px;transition:all .1s;white-space:nowrap;}
+    color:#111;padding:6px 14px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;}
   .rec-save:active{transform:translateY(1px);}
   .rec-save.disabled{opacity:.4;pointer-events:none;background:var(--seq-btn-bg);
     border-color:var(--seq-border);color:var(--seq-text-dim);}
@@ -436,7 +436,7 @@
   .rec-prev{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
     background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
     font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
-    color:var(--seq-text);padding:6px 12px;transition:all .1s;white-space:nowrap;}
+    color:var(--seq-text);padding:6px 12px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;}
   .rec-prev:hover{border-color:var(--seq-yellow);}
   .rec-prev:active{transform:translateY(1px);}
   .rec-prev.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
@@ -1601,6 +1601,9 @@ function stopSchedClock(){
   schedTickFn=null;
   if(schedWorker){ try{ schedWorker.postMessage({cmd:'stop'}); }catch(e){} }
   if(playInterval){ clearInterval(playInterval); playInterval=null; }
+  // The pump stops with the clock — clear pending visuals (run the class-off
+  // removals, drop the rest) so no pad/dot is left stuck lit after stop/pause.
+  if(typeof flushVisuals==='function') flushVisuals();
 }
 let shiftHeld=false,ctrlHeld=false,altHeld=false,triggerHeld=false;
 
@@ -3082,7 +3085,6 @@ function playSoundLocks(pi, shiftedAbs, fireAt){
   let hasOver=false; for(const k in over){ hasOver=true; break; }
   if(!locks&&!hasOver) return;
   const defs=sndDefs(pi);
-  const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
   const applyAt=(idx,v)=>{
     const def=defs[idx]; if(!def) return;
     // FX params (pan/rev/dly) use SHARED per-part nodes, so schedule them at the
@@ -3090,7 +3092,7 @@ function playSoundLocks(pi, shiftedAbs, fireAt){
     // are baked into each voice at fireNote, so a plain field set is correct.
     if(def.schedule) def.schedule(pi, v, fireAt); else def.set(pi, v);
     if(pi===activePart && currentMode==='ctrl' && isDrumMachine() && heldStepAbs===-1){
-      setTimeout(()=>{ const e2=document.getElementById('sndctrl-'+idx+'-val'); if(e2) e2.textContent=def.fmt(v); }, delayMs);
+      queueVisual(fireAt,()=>{ const e2=document.getElementById('sndctrl-'+idx+'-val'); if(e2) e2.textContent=def.fmt(v); });
     }
   };
   // Params locked on a previous step but NOT on this one → back to global.
@@ -6127,15 +6129,18 @@ function scheduleMetronome(until){
     const beatsSinceStart=Math.round((metroNextTime-audioStartTime)/beatSec);
     const accent=beatsSinceStart%4===0;
     metroClick(metroNextTime, accent); // accent every 4th (bar)
-    // Visual: flash the metro button white exactly at the beat time
-    const delayMs=Math.max(0,(metroNextTime-audioCtx.currentTime)*1000);
-    setTimeout(()=>{
+    // Visual: flash the metro button white at the beat time (via the pump)
+    const offSec=(accent?90:60)/1000;
+    queueVisual(metroNextTime,()=>{
       if(!metroOn) return;
       const pad=document.getElementById('pad-metro');
       if(!pad) return;
       pad.classList.add('metro-flash');
-      setTimeout(()=>pad.classList.remove('metro-flash'), accent?90:60);
-    }, delayMs);
+      queueVisual(audioCtx.currentTime+offSec,()=>{
+        const p2=document.getElementById('pad-metro');
+        if(p2) p2.classList.remove('metro-flash');
+      },true);
+    });
     metroNextTime+=beatSec;
   }
 }
@@ -6377,27 +6382,32 @@ function barSec(){ return baseSec()*16; }
 
 function flashPartDot(pi, when){
   if((currentMode==='pat'||currentMode==='set')&&!shiftHeld&&!ctrlHeld) return; // KEY mode shows parts, so dots flash there
-  const delayMs=Math.max(0,(when-audioCtx.currentTime)*1000);
-  setTimeout(()=>{
+  queueVisual(when,()=>{
     const el=document.getElementById('pnum-'+pi);
     if(!el) return;
     el.classList.add('dot-flash');
-    setTimeout(()=>el.classList.remove('dot-flash'),80);
-  },delayMs);
+    queueVisual(audioCtx.currentTime+0.08,()=>{
+      const e2=document.getElementById('pnum-'+pi);
+      if(e2) e2.classList.remove('dot-flash');
+    },true);
+  });
 }
 
 // In PAT mode: flash the playing pattern's slot dot on any active step from any part
 function flashPatternDot(when){
   if(currentMode!=='pat') return;
   if(Math.floor(activePattern/16)!==patternPage) return; // slot not on visible page
-  const delayMs=Math.max(0,(when-audioCtx.currentTime)*1000);
-  setTimeout(()=>{
+  queueVisual(when,()=>{
     if(currentMode!=='pat') return;
-    const el=document.getElementById('spad-'+(activePattern%16));
+    const id='spad-'+(activePattern%16); // capture NOW so the off targets this pad
+    const el=document.getElementById(id);
     if(!el) return;
     el.classList.add('dot-flash');
-    setTimeout(()=>el.classList.remove('dot-flash'),80);
-  },delayMs);
+    queueVisual(audioCtx.currentTime+0.08,()=>{
+      const e2=document.getElementById(id);
+      if(e2) e2.classList.remove('dot-flash');
+    },true);
+  });
 }
 
 // Flash the step pad at GRID position `gridAbs`. The step grid renders the
@@ -6408,25 +6418,67 @@ function flashPatternDot(when){
 function fireVisual(pi,gridAbs,when,retrigIntervalSec){
   if(isPatLike()||saveBrowsing) return;
   if(pi!==activePart) return;
-  const delayMs=Math.max(0,(when-audioCtx.currentTime)*1000);
-  const capturedAbs=gridAbs;
   const capturedMode=currentMode;
-  setTimeout(()=>{
+  const offSec=Math.min(60,retrigIntervalSec*1000*0.4)/1000;
+  queueVisual(when,()=>{
     if(!playing||currentMode!==capturedMode||saveBrowsing) return;
-    const pad=document.getElementById('spad-'+capturedAbs);
-    if(pad){pad.classList.add('trigger');setTimeout(()=>pad.classList.remove('trigger'),Math.min(60,retrigIntervalSec*1000*0.4));}
-  },delayMs);
+    const pad=document.getElementById('spad-'+gridAbs);
+    if(!pad) return;
+    pad.classList.add('trigger');
+    queueVisual(audioCtx.currentTime+offSec,()=>{
+      const p2=document.getElementById('spad-'+gridAbs);
+      if(p2) p2.classList.remove('trigger');
+    },true);
+  });
+}
+
+// ── Visual event pump ────────────────────────────────────────────────
+// Playback visuals (playhead moves, step-trigger flashes, part/pattern dot
+// blinks, lock-value display updates) used to create 4-6 individual setTimeout
+// timers PER STEP PER PART — several hundred timer wakeups a second at high
+// tempos. On older phones that constant main-thread churn starves the audio
+// scheduler (crackle) and the compositor (janky UI). All of these are now
+// pushed into one queue and drained by the ALREADY-RUNNING scheduler tick
+// (every 25/40 ms — the same real-world slop a setTimeout had), which clusters
+// the DOM writes and creates ZERO additional timers. Behaviour is preserved:
+// each event body re-checks the same live guards the old timer callbacks did.
+const _visQ=[];
+// pri orders same-instant events: playhead updates (pri 0) run BEFORE flash
+// adds (pri 1), because updatePlayhead rewrites the pad's className and would
+// wipe a just-added trigger flash. The old per-timer version left this to
+// sub-millisecond timer jitter; here it is deterministic.
+function queueVisual(at,fn,isOff,pri){
+  _visQ.push({at,fn,off:!!isOff,pri:pri===undefined?1:pri});
+  if(_visQ.length>600) _visQ.splice(0,_visQ.length-600); // safety valve, never expected
+}
+function pumpVisuals(){
+  if(!_visQ.length||!audioCtx) return;
+  const now=audioCtx.currentTime;
+  let due=null;
+  for(let i=0;i<_visQ.length;i++){
+    if(_visQ[i].at<=now){ (due||(due=[])).push(_visQ[i]); _visQ.splice(i,1); i--; }
+  }
+  if(!due) return;
+  due.sort((a,b)=>(a.at-b.at)||(a.pri-b.pri)); // time order, playhead before flashes
+  for(const ev of due){ try{ ev.fn(); }catch(_){} }
+}
+// The clock stops ticking on stop/pause, so pending "off" events (class
+// removals — unconditional, exactly like the old timers that still fired after
+// stop) are executed immediately and pending "on" events are dropped; nothing
+// is ever left stuck lit and the queue never carries stale work into the next
+// transport start.
+function flushVisuals(){
+  const evs=_visQ.splice(0,_visQ.length).sort((a,b)=>a.at-b.at);
+  for(const ev of evs){ if(ev.off){ try{ ev.fn(); }catch(_){} } }
 }
 
 function schedulePlayhead(pi,abs,stepAt){
   if(pi!==activePart) return;
-  const delayMs=Math.max(0,(stepAt-audioCtx.currentTime)*1000);
-  const capturedAbs=abs;
-  setTimeout(()=>{
+  queueVisual(stepAt,()=>{
     if(!playing) return;
-    if(isStepLike()&&!saveBrowsing) updatePlayhead(capturedAbs);
-    else playhead=capturedAbs; // keep the audible tracker live for recording in KEY mode
-  },delayMs);
+    if(isStepLike()&&!saveBrowsing) updatePlayhead(abs);
+    else playhead=abs; // keep the audible tracker live for recording in KEY mode
+  },false,0); // pri 0: run before same-instant trigger flashes (see queueVisual)
 }
 
 // Send a step's CTRL parameter locks as CC (automation), at the step time.
@@ -6443,11 +6495,10 @@ function playCtrlLocks(pi, shiftedAbs, fireAt){
   if(!locks&&!hasOver) return;
   const port=resolveOutPort(pi), outCh=resolveOutCh(pi);
   const tMs=performance.now()+Math.max(0,(fireAt-audioCtx.currentTime)*1000);
-  const delayMs=Math.max(0,(fireAt-audioCtx.currentTime)*1000);
   const sendCC=(ci,val)=>{
     if(port){ try{ port.send([0xB0|outCh, ctrlCCNums[pi][ci], val], tMs); }catch(e){} }
     if(pi===activePart&&currentMode==='ctrl'&&heldStepAbs===-1){
-      setTimeout(()=>{const e2=document.getElementById('cctrl-'+ci+'-val'); if(e2)e2.textContent=val;}, delayMs);
+      queueVisual(fireAt,()=>{const e2=document.getElementById('cctrl-'+ci+'-val'); if(e2)e2.textContent=val;});
     }
   };
   // Params locked on a previous step but NOT on this one → back to global.
@@ -6563,6 +6614,7 @@ function schedulePlay(resetAccs=true){
     }
   }
   startSchedClock(SCHED_INTERVAL, ()=>{
+    pumpVisuals(); // drain due playback visuals — no per-event timers needed
     if(!audioCtx||!playing) return;
     const now=audioCtx.currentTime;
     const until=now+LOOKAHEAD;
@@ -8648,10 +8700,14 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     if(previewBufFor===lastBlob && previewBuf){ playBuf(previewBuf); return; } // decoded already
     const decode=(arr)=>{
       // Support both the modern promise form and old Safari's callback form.
-      const ok=(buf)=>{ previewBuf=buf; previewBufFor=lastBlob; playBuf(buf); };
-      const fail=()=>stopPreview();
+      // Modern browsers run BOTH the callback and the promise resolution, so a
+      // done-flag ensures the take is decoded and started exactly once —
+      // without it the preview played doubled (two overlapping sources).
+      let done=false;
+      const ok=(buf)=>{ if(done) return; done=true; previewBuf=buf; previewBufFor=lastBlob; playBuf(buf); };
+      const fail=()=>{ if(done) return; done=true; stopPreview(); };
       try{ const r=ctx.decodeAudioData(arr, ok, fail); if(r&&r.then) r.then(ok,fail); }
-      catch(e){ stopPreview(); }
+      catch(e){ fail(); }
     };
     if(lastBlob.arrayBuffer){ lastBlob.arrayBuffer().then(decode, ()=>stopPreview()); }
     else { const fr=new FileReader(); fr.onload=()=>decode(fr.result); fr.onerror=()=>stopPreview(); fr.readAsArrayBuffer(lastBlob); }
