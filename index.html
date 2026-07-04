@@ -4,10 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Step Sequencer</title>
+<!-- ════════════════════════════════════════════════════════════════════
+  HOW TO NAVIGATE THIS FILE
+  One file, three layers:
+    1. the style block  — CSS, grouped under "CSS §N · …" banners
+    2. the body markup  — one comment per major block
+    3. the script block — the app, split into numbered sections ("§07 · …")
+  The script opens with an ARCHITECTURE OVERVIEW and a full TABLE OF
+  CONTENTS. Ctrl+F any §-number (e.g. "§40") to jump straight to it.
+  The SOUND ENGINE block is fenced (╔═╗ box) — do not edit inside it.
+  ════════════════════════════════════════════════════════════════════ -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* ──────────────────────────────────────────────────────────────
+     CSS §1 · GLOBAL RESETS, THEME VARIABLES & PAGE FRAME
+     ────────────────────────────────────────────────────────────── */
   html,body{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
   .step-grid,.parts-grid,.smd-grid,.step-range-bar,.tport-top-btn,.ctrl-btn,.mode-tab{touch-action:none;}
   :root{--seq-bg:#1a1a14;--seq-panel:#2a2a1e;--seq-border:#3a3a28;--seq-yellow:#f0c030;--seq-yellow-dark:#c09010;--seq-yellow-bg:#3a2e00;--seq-text:#e8e0c0;--seq-text-dim:#888870;--seq-btn-bg:#222218;--seq-red:#e05040;
@@ -29,8 +42,10 @@
   @media (max-width:680px){ html,body{padding:4px;} }
   #scale-wrap{display:flex;justify-content:center;align-items:flex-start;}
   #seq-root{background:var(--seq-bg);font-family:var(--seq-font);color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:top center;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §2 · TOP BAR — transport pads, mode tabs, keyboard-hint chips
+     ────────────────────────────────────────────────────────────── */
   .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
-  .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
   .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
   .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;flex:1;}
   .tport-top-pad{height:100%;width:100%;min-width:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--seq-text-dim);padding:0 6px;transition:all .1s;box-sizing:border-box;}
@@ -41,6 +56,9 @@
   .mode-tab.active .kbdkey{background:#111;color:var(--seq-yellow);}
   .kbdkey{border-radius:2px;font-size:10px;font-weight:bold;padding:1px 5px;min-width:20px;text-align:center;background:var(--seq-yellow);color:#111;}
   .mode-tab:not(.active) .kbdkey{background:var(--seq-text-dim);color:#222;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §3 · MAIN 2-COLUMN LAYOUT + PATTERN GRID (PAT mode)
+     ────────────────────────────────────────────────────────────── */
   .seq-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:stretch;}
   .mode-tabs-group{flex:1 1 0;display:flex;gap:2px;align-items:stretch;}
   .mode-tabs-group .mode-tab{flex:1 1 0;min-width:0;}
@@ -56,6 +74,9 @@
   .pat-actions{display:flex;gap:4px;margin-top:4px;}
   .pat-action-btn{padding:4px 10px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-family:var(--seq-font);font-size:10px;font-weight:bold;color:var(--seq-text-dim);cursor:pointer;}
   .pat-action-btn:hover{border-color:var(--seq-yellow);color:var(--seq-text);}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §4 · PANELS + PARTS GRID (part buttons, mute/solo/sync states)
+     ────────────────────────────────────────────────────────────── */
   .panel{background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:3px;padding:8px;}
   /* In the two-column (landscape) layout, let the Step panel grow to fill the
      remaining left-column height so its bottom edge lines up with the Status
@@ -95,6 +116,9 @@
   .action-key.ctrl-key{background:var(--seq-btn-bg);border-color:#60d0d0;color:#60d0d0;}
   .action-key.shift-key.held{background:#fff;color:#000;box-shadow:0 0 0 2px var(--seq-yellow);}
   .action-key.ctrl-key.held{background:#003838;box-shadow:0 0 0 2px #60d0d0;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §5 · STEP PANEL — step pads, playhead/skip states, range bar
+     ────────────────────────────────────────────────────────────── */
   .step-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;min-height:16px;}
   .step-panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;line-height:16px;}
   .part-indicator{font-size:11px;color:var(--seq-yellow);font-weight:bold;line-height:16px;height:16px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;}
@@ -158,6 +182,9 @@
   .range-btn.active.has-content{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
   .rkbd{background:var(--seq-yellow);color:#111;border-radius:2px;font-size:9px;font-weight:bold;padding:1px 4px;}
   .range-btn.playing::before{content:'';position:absolute;left:5px;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:#fff;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §6 · TEMPO READOUT + ACTION (CTRL) BUTTONS + SETTINGS TOGGLE
+     ────────────────────────────────────────────────────────────── */
   .tempo-top{display:flex;flex-direction:column;align-items:center;gap:2px;padding:0 6px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;justify-content:center;}
   .tempo-top-row{display:flex;align-items:baseline;gap:4px;}
   .tempo-top-val{font-size:18px;font-weight:bold;color:var(--seq-text);font-family:var(--seq-font);}
@@ -183,6 +210,9 @@
   .set-toggle-seg.on{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);}
   /* smd-wrap is the ONLY child of its gray panel — no bottom margin, so the
      panel's 8px padding reads the same on all four sides. */
+  /* ──────────────────────────────────────────────────────────────
+     CSS §7 · DISPLAY (SMD) — cells, drag & CC-learn states, swing bar
+     ────────────────────────────────────────────────────────────── */
   .smd-wrap{background:var(--seq-yellow-bg);border:1px solid var(--seq-yellow-dark);border-radius:3px;padding:6px;}
   .smd-header{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--seq-yellow);letter-spacing:.1em;margin-bottom:6px;text-transform:uppercase;}
   .smd-grid{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1fr;gap:4px;aspect-ratio:4/2;}
@@ -211,6 +241,9 @@
   .snd-val{white-space:nowrap;}
   .swing-bar-wrap{position:absolute;bottom:4px;left:4px;right:4px;height:3px;background:#1a1a10;border-radius:2px;overflow:hidden;}
   .swing-bar-fill{height:100%;background:var(--seq-yellow);border-radius:2px;transition:width .08s;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §8 · BOTTOM BAR — MIDI config + SOUND EDITOR
+     ────────────────────────────────────────────────────────────── */
   .seq-bottom-bar{display:flex;flex-direction:column;gap:0;margin-top:6px;border:1px solid var(--seq-border);border-radius:3px;overflow:hidden;}
   .bottom-bar-sep{height:1px;background:var(--seq-border);}
   .midi-config-bar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;flex-wrap:wrap;}
@@ -245,6 +278,9 @@
   .se-type-row{display:flex;gap:3px;flex-wrap:wrap;}
   .se-type-btn{padding:3px 7px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:9px;color:var(--seq-text-dim);cursor:pointer;font-family:var(--seq-font);}
   .se-type-btn.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;font-weight:bold;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §9 · STATUS BAR + TRANSPORT ROW
+     ────────────────────────────────────────────────────────────── */
   .status-bar{background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:3px 8px;margin-bottom:6px;min-height:22px;display:flex;align-items:center;gap:6px;}
   .seq-dot{width:6px;height:6px;border-radius:50%;background:#60d060;flex-shrink:0;}
   .status-msg{font-size:10px;color:var(--seq-text-dim);}
@@ -436,6 +472,7 @@
     </div>
   </div>
 
+  <!-- ══ TOP BAR — transport pads (play/pause/stop/rec/metro), tempo, mode tabs ══ -->
   <div class="seq-top-bar">
     <div class="topbar-left-half" style="display:flex;align-items:stretch;gap:2px;flex:1;">
     <div style="display:flex;gap:2px;align-items:stretch;flex:1;">
@@ -465,6 +502,7 @@
     </div>
   </div>
 
+  <!-- ══ MAIN AREA — left: Parts + Step grid · right: Display (SMD) + Status ══ -->
   <div class="seq-main active" id="seq-main">
     <div class="seq-left">
       <div class="panel">
@@ -623,13 +661,76 @@
  *   the grids/buttons. attachGenericDrag() powers the draggable display cells
  *   (SEQ STRT/END, DIR, SPEED, SWING, …) with both mouse and touch support.
  *
- * SECTION MAP (search these headers):
- *   Scale lock · Held keys + Arpeggiator · Roll · Pattern store · PAT mode UI
- *   · Mode switching · Background-safe scheduler clock · Note event bridge
- *   · Step parameter display · CTRL mode · SETTINGS display · attachGenericDrag
- *   · SOUND ENGINE (fenced) · Metronome · Step Skip · Global bar clock
- *   · Looper · Random fill · PERSISTENCE.
+ * TABLE OF CONTENTS — every section starts with a banner like "§07 ·".
+ * Ctrl+F the §-number to jump there.  (§61 sections total)
+ *   §01  CONSTANTS & CONFIG TABLES
+ *   §02  CORE LIVE STATE
+ *   §03  SCALE LOCK
+ *   §04  VIRTUAL KEYBOARD — HELD KEYS + ARPEGGIATOR
+ *   §05  ROLL (KEY MODE)
+ *   §06  PATTERN STORE (8 banks × 64 patterns)
+ *   §07  PAT MODE UI (pattern grids)
+ *   §08  MODE SWITCHING (PAT / STEP / KEY / CTRL / SET)
+ *   §09  BACKGROUND-SAFE SCHEDULER CLOCK (Web Worker)
+ *   §10  SHARED POINTER-DRAG DISPATCHER
+ *   §11  NOTE EVENT BRIDGE — MIDI OUT + SOUND ENGINE
+ *   §12  DISPLAY INPUT — SCROLL-WHEEL + DOUBLE-TAP RESET
+ *   §13  DISPLAY (SMD) GRID — layout + build
+ *   §14  MIDI INPUT (Web MIDI → keyboard / CC routing)
+ *   §15  STEP HOLD + STEP PARAMETER DISPLAY
+ *   §16  RANDOM-FILL CONFIG DISPLAY (STEP MODE)
+ *   §17  PART SETUP PANEL + VELOCITY MIXER
+ *   §18  CTRL MODE — 8 MIDI CC CONTROLLERS + STEP LOCKS
+ *   §19  PARM MUTE (CTRL tab)
+ *   §20  PARM HOLD
+ *   §21  SOUND CTRL — synth params on the display (DRUM MACHINE)
+ *   §22  SOUND CTRL ⇄ SOUND-EDITOR SYNC + SOUND LOCKS
+ *   §23  HOLD PANEL — MASTER FX (shown while MUTE is held)
+ *   §24  HOLD PANEL — SEND FX (shown while SOLO is held)
+ *   §25  SETTINGS MODE DISPLAY (MIDI routing, CC maps, pages)
+ *   §26  KEYBOARD PANEL (KEY-mode display cells)
+ *   §27  DISPLAY VALUE UPDATERS (small refresh helpers)
+ *   §28  LOW-POWER AUDIO PROFILE (budget phones)
+ *   §29  CACHED AUDIO ASSETS (samples)
+ *   §30  SMPL CRUSHER (bit/rate reduction cache)
+ *   §31  SMD CELL DRAG WIRING + attachGenericDrag()
+ *   §32  PARTS PANEL (8 part buttons)
+ *   §33  STEP GRID (16 step pads)
+ *   §34  RANGE BAR (step pages 1–16 … 49–64)
+ *   §35  PAGE DUPLICATE / EXPAND (MUTE + page button)
+ *   §36  MASTER FX UI WIRING
+ *   §37  SOUND ENGINE (fenced block — DO NOT EDIT inside the fence)
+ *   §38  METRONOME
+ *   §39  STEP SKIP (playhead jumps marked steps)
+ *   §40  GLOBAL BAR CLOCK + SCHEDULER CORE
+ *   §41  LOOPER
+ *   §42  TRANSPORT (play / pause / stop)
+ *   §43  GLOBAL KEYBOARD SHORTCUTS (keydown / keyup)
+ *   §44  MODIFIER HOLD BUTTONS (Mute / Solo / Align / Select)
+ *   §45  PTRN LOAD — hold-to-browse (STEP MODE)
+ *   §46  PTRN CLEAR — tap vs hold (STEP MODE)
+ *   §47  RANDOM FILL (STEP MODE)
+ *   §48  TOUCH — HOLD-CAPABLE ACTION BUTTONS
+ *   §49  TOUCH — TEMPORARY MODE HOLD ON TABS
+ *   §50  LIVE RECORDING (record steps while playing)
+ *   §51  INITIAL UI BUILD + TRANSPORT BUTTON WIRING
+ *   §52  PERSISTENCE — FULL-STATE SERIALIZE / DESERIALIZE
+ *   §53  AUTOSAVE (IndexedDB / localStorage)
+ *   §54  FILE I/O — save / load .json project
+ *   §55  LAYOUT — FIT-TO-SCREEN SCALING
+ *   §56  LAYOUT — PORTRAIT PHONE MODE
+ *   §57  AUDIO UNLOCK (iOS gesture requirement)
+ *   §58  UNIVERSAL PRESS HIGHLIGHT
+ *   §59  STARTUP — AUTO-SAVE RESTORE
+ *   §60  AUDIO RECORDER (WAV bounce of the sound engine)
+ *   §61  BOOT — MIDI init + autosave timer
  * ==================================================================== */
+
+/* ════════════════════════════════════════════════════════════════════
+   §01 · CONSTANTS & CONFIG TABLES
+   Key maps, step ranges, drum types, playback speeds, MIDI-delay times,
+   per-type synth defaults, step-param factory defaults.
+   ════════════════════════════════════════════════════════════════════ */
 const PARTS_KEYS=['1','2','3','4','5','6','7','8'];
 const STEP_KEYS=['Q','W','E','R','T','Y','U','I','A','S','D','F','G','H','J','K'];
 const RANGE_LABELS=['1–16','17–32','33–48','49–64'];
@@ -698,6 +799,12 @@ function updateAccVelGrey(sp){
   if(velEl) velEl.style.opacity=manual?1:0.35;
   if(accEl) accEl.style.opacity=manual?0.35:1;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   §02 · CORE LIVE STATE
+   parts[8] (steps/params/synth cfg per part), playState[8] (transport
+   position), active part/mode flags, KEY-mode + arpeggiator settings.
+   ════════════════════════════════════════════════════════════════════ */
 const parts=DEFAULTS.map(d=>({
   steps:Array(64).fill(false),
   skip:Array(64).fill(false), // per-step skip flag — playhead jumps over these
@@ -767,7 +874,9 @@ const ARP_RATES=[
 let keyArpRate=3;    // index into ARP_RATES (default 1/16)
 let keyArpRange=1;   // arp octave range (1-4)
 let keyArpGate=50;   // arp note length as % of step interval (5-100)
-// ── Scale lock ────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §03 · SCALE LOCK
+   ════════════════════════════════════════════════════════════════════ */
 // When a scale is selected, keys outside it are grayed and unplayable.
 // Scales are sets of pitch-class intervals from the root.
 const SCALES=[
@@ -857,7 +966,9 @@ function playKeyNote(slot){
   setStatus('Key '+curKeyLayout.names[slot]+Math.floor(tot/12)+' → Part '+(activePart+1));
 }
 
-// ── Held keys + Arpeggiator ───────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §04 · VIRTUAL KEYBOARD — HELD KEYS + ARPEGGIATOR
+   ════════════════════════════════════════════════════════════════════ */
 const keyHeld=new Set();   // slots currently held down
 const keyHeldMidi=new Map(); // slot -> {ch, note} actually sent, for exact note-off
 function keyDown(slot){
@@ -1012,7 +1123,9 @@ function scheduleArp(until){
   }
 }
 
-// ── Roll (KEY mode) ───────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §05 · ROLL (KEY MODE)
+   ════════════════════════════════════════════════════════════════════ */
 // Hold a roll button (1/4,1/8,1/16,1/32) to retrigger the last-played key
 // repeatedly, locked to tempo. Release to stop.
 let rollActive=false, rollTimer=null, rollDiv=4;
@@ -1061,7 +1174,9 @@ function releaseRoll(div){
   if(rollTimer){ clearTimeout(rollTimer); rollTimer=null; }
 }
 
-// ── Pattern store ─────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §06 · PATTERN STORE (8 banks × 64 patterns)
+   ════════════════════════════════════════════════════════════════════ */
 // 8 banks × 16 patterns. Each slot is null (empty) or a deep copy of parts[].
 const patternStore=Array.from({length:8},()=>Array(64).fill(null));
 let activeBank=0;      // currently viewed/selected bank (0-7)
@@ -1284,7 +1399,9 @@ function queuePatternChange(bank,pattern){
   buildPatternGrids();
 }
 
-// ── PAT mode UI ───────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §07 · PAT MODE UI (pattern grids)
+   ════════════════════════════════════════════════════════════════════ */
 function buildPatternGrids(){
   // Banks (top grid — 8 buttons)
   const bankGrid=document.getElementById('bank-grid');
@@ -1332,7 +1449,9 @@ function updatePatInfo(){
   if(el) el.textContent='Bank '+(activeBank+1)+' — Pattern '+(activePattern+1);
 }
 
-// ── Mode switching ────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §08 · MODE SWITCHING (PAT / STEP / KEY / CTRL / SET)
+   ════════════════════════════════════════════════════════════════════ */
 // ── Temporary mode hold ───────────────────────────────────────────
 // Holding a mode key (PAT/STEP/KEY/CTRL) momentarily switches to it. On
 // release: if it was a quick tap with no change made, it's a permanent
@@ -1433,7 +1552,9 @@ function renderSettingsLinkButtons(){
   });
 }
 let playInterval=null,tempo=120,audioCtx=null,seOpen=false;
-// ── Background-safe scheduler clock ───────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §09 · BACKGROUND-SAFE SCHEDULER CLOCK (Web Worker)
+   ════════════════════════════════════════════════════════════════════ */
 // Chrome throttles setInterval/setTimeout heavily when the tab is minimized
 // or unfocused, which starves the note scheduler and causes stuck/late notes
 // when driving an external DAW (e.g. via IAC). Running the periodic "tick" in
@@ -1478,7 +1599,9 @@ function stopSchedClock(){
 }
 let shiftHeld=false,ctrlHeld=false,altHeld=false,triggerHeld=false;
 
-// ── Shared pointer-drag dispatcher ──────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §10 · SHARED POINTER-DRAG DISPATCHER
+   ════════════════════════════════════════════════════════════════════ */
 // Draggable display cells used to each attach their own mousemove/mouseup/
 // touchmove/touchend listeners to `document` every time their panel rebuilt,
 // and never removed them — so over a session hundreds of stale listeners piled
@@ -1506,7 +1629,9 @@ const partMidiOut=Array.from({length:8},()=>({deviceId:null,channel:-1})); // -1
 
 // Send note-on and note-off for a given part index and step params
 // Part pi → MIDI channel pi+1 (parts 1-8 → channels 1-8)
-// ── Note event bridge ─────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §11 · NOTE EVENT BRIDGE — MIDI OUT + SOUND ENGINE
+   ════════════════════════════════════════════════════════════════════ */
 // The sequencer speaks MIDI: every trigger is encoded as a full
 // MIDI-style note event {ch, note, vel, when, durSec} and dispatched
 // to BOTH the external MIDI output and the internal Sound Engine.
@@ -1673,7 +1798,9 @@ const CELL_DEFS=[
     fmtVal(){const p=parts[activePart];if(shiftHeld){const pv=p.dlyPitch||0;return (pv>0?'+':'')+pv;}return p.dlyFb+'%';}},
 ];
 
-// ── Global scroll-wheel for ALL display cells, in every mode/panel ────
+/* ════════════════════════════════════════════════════════════════════
+   §12 · DISPLAY INPUT — SCROLL-WHEEL + DOUBLE-TAP RESET
+   ════════════════════════════════════════════════════════════════════ */
 // Each panel builder attaches `cell._wheelAdjust = (dir, shift)=>{}` to its
 // adjustable cells. One delegated listener on the display grid finds the cell
 // under the pointer and calls it. dir = +1 (up) / -1 (down). preventDefault
@@ -1716,6 +1843,11 @@ function setupDisplayWheel(){
   },{passive:false});
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §13 · DISPLAY (SMD) GRID — layout + build
+   The 4×2 "display" panel. renormalizeSmdAspect/resetSmdGridStyle keep its
+   size identical across modes; buildSmdGrid renders the sequencer cells.
+   ════════════════════════════════════════════════════════════════════ */
 // Normalize the SMD "display" grid back to its default CSS layout (the 4×2
 // cell grid, aspect-ratio 4/2). A few special pages — MIDI IN/OUT in Settings
 // and the big TEMPO readout — switch the grid to a flex layout using inline
@@ -1836,6 +1968,11 @@ function flashCell(idx){
   clearTimeout(cell._ft);cell._ft=setTimeout(()=>cell.classList.remove('cc-active'),150);
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §14 · MIDI INPUT (Web MIDI → keyboard / CC routing)
+   onMidiMessage routes notes through the virtual keyboard (scale lock, arp,
+   record) and CCs onto display cells. initMIDI/refreshMidiInputs wire ports.
+   ════════════════════════════════════════════════════════════════════ */
 function onMidiMessage(e, srcDeviceId){
   const[status,d1,d2]=e.data;
   const type=status&0xf0;
@@ -2154,7 +2291,9 @@ document.getElementById('midi-out-select').addEventListener('change',e=>{
 function setMidiDot(s){const d=document.getElementById('midi-in-dot');d.className='midi-status-dot'+(s==='on'?' on':s==='err'?' err':'');}
 
 // Display helpers
-// ── Step parameter display ────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §15 · STEP HOLD + STEP PARAMETER DISPLAY
+   ════════════════════════════════════════════════════════════════════ */
 let heldStepAbs = -1;
 let heldStepWasOn = false;
 let heldStepParamChanged = false;
@@ -2223,7 +2362,9 @@ function fmtGate(pct){
 }
 function midiNoteName(n){return NOTE_NAMES[n%12]+(Math.floor(n/12)-1);}
 
-// ── Random fill configuration (STEP mode) ────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §16 · RANDOM-FILL CONFIG DISPLAY (STEP MODE)
+   ════════════════════════════════════════════════════════════════════ */
 // Held while the Random button is down; the actual randomize fires on release.
 // Gate min/max are chosen from this musical list (value = % of one step).
 const RAND_GATES=[12,17,20,25,33,38,50,62,67,75,88,100,150,200,250,300,350,400];
@@ -2413,7 +2554,9 @@ function updatePartDefGrey(sp){
   if(accEl) accEl.style.opacity=manual?0.35:1;
 }
 
-// ── PART SETUP (DRUM MACHINE, CTRL tab, hold a part button) ──────────────
+/* ════════════════════════════════════════════════════════════════════
+   §17 · PART SETUP PANEL + VELOCITY MIXER
+   ════════════════════════════════════════════════════════════════════ */
 // Holding a part in CTRL mode shows a quick setup for THAT part on the display:
 //   box0  TYPE  — scrub through sound types (short names, as on the part boxes)
 //   box1  VOICE — scrub MONO / POLY
@@ -2529,7 +2672,9 @@ function showVelMixer(){
   }
 }
 
-// ── CTRL mode: 8 MIDI CC controllers ──────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §18 · CTRL MODE — 8 MIDI CC CONTROLLERS + STEP LOCKS
+   ════════════════════════════════════════════════════════════════════ */
 // Per-part CC values (0-127), sent on the selected part's MIDI channel.
 // Default CC numbers (changeable later).
 const CTRL_CC_DEFAULTS=[7,74,73,91,10,71,72,93];
@@ -2625,7 +2770,9 @@ function flashCtrlBtn(id){
 // While the CTRL "All" button is held, Save/Reload/Clear apply to every part.
 let ctrlAllHeld=false;
 function ctrlTargetParts(){ return ctrlAllHeld ? [0,1,2,3,4,5,6,7] : [activePart]; }
-// ── PARM MUTE (CTRL tab: MUTE + PARM / MUTE + PARM ALL) ─────────────
+/* ════════════════════════════════════════════════════════════════════
+   §19 · PARM MUTE (CTRL tab: MUTE + PARM / MUTE + PARM ALL)
+   ════════════════════════════════════════════════════════════════════ */
 // Disables step parameter locks on playback WITHOUT deleting them. Purely a
 // GLOBAL performance state — like part mute/solo it is never stored in
 // patterns and never persisted. Two independent layers:
@@ -2652,7 +2799,9 @@ function toggleParmMuteAll(){
   setStatus(parmMuteAll?'Param locks MUTED — ALL parts':'Param locks active — ALL parts');
   refreshParmMuteUI(); flashCtrlBtn('ctrl-reload');
 }
-// ── PARM HOLD (CTRL tab) ────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §20 · PARM HOLD (CTRL tab)
+   ════════════════════════════════════════════════════════════════════ */
 // OFF (default): step locks are single-step — each lock plays only on its own
 // step and the next unlocked step snaps the parameter back to the global
 // value. ON: locks are STICKY — a locked value lasts until another step lock
@@ -2766,6 +2915,9 @@ function recordCtrlLock(idx,val){
   markStepLockDot(activePart,abs);
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §21 · SOUND CTRL — synth params on the display (DRUM MACHINE)
+   ════════════════════════════════════════════════════════════════════ */
 // ════════════════════════════════════════════════════════════════════
 // DRUM MACHINE sound-parameter CTRL — parallel to the MIDI CTRL above.
 // In DRUM MACHINE mode the CTRL panel edits the SELECTED part's SOUND
@@ -2870,7 +3022,9 @@ function soundStepHasLocks(part,abs){ const s=soundCtrlLocks[part][abs]; return 
 // the LOCK value — use the captured pre-lock global instead, so locks can
 // never leak into the global.
 function syncSoundLiveFromParts(pi){ const p=parts[pi]; const over=soundLockOverride[pi]; sndDefs(pi).forEach((d,idx)=>{ const g=(over&&over[idx]!==undefined)?over[idx]:d.get(p); soundLive[pi][idx]=sndToKnob(d,g); }); }
-// ── Two-way sync between the Sound-editor sliders and the SOUND CTRL display ──
+/* ════════════════════════════════════════════════════════════════════
+   §22 · SOUND CTRL ⇄ SOUND-EDITOR SYNC + SOUND LOCKS
+   ════════════════════════════════════════════════════════════════════ */
 // Both read/write the same parts[] fields, so they share a single source of
 // truth; these helpers just keep the two on-screen representations visually in
 // step when one side moves (from a drag, the wheel, or an incoming CC). Setting
@@ -3028,6 +3182,9 @@ function showSoundCtrlPanel(){
   });
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §23 · HOLD PANEL — MASTER FX (shown while MUTE is held)
+   ════════════════════════════════════════════════════════════════════ */
 // While Mute (Shift) is held in DRUM MACHINE + CTRL mode, the display shows the
 // master DISTORTION + EQ controls instead of the per-sound CTRL values.
 //   Row 1: DIST (tap OFF/ON) · VOL · GAIN · CHAR
@@ -3124,7 +3281,9 @@ function showMasterFXPanel(){
     paint();
   });
 }
-// ── Send FX hold panel (Reverb + Delay) ──
+/* ════════════════════════════════════════════════════════════════════
+   §24 · HOLD PANEL — SEND FX (shown while SOLO is held)
+   ════════════════════════════════════════════════════════════════════ */
 // While Solo (Ctrl) is held in DRUM MACHINE + CTRL mode, the display shows the
 // global REVERB + DELAY send controls.
 //   Row 1: RVRB (tap to cycle algorithm) · DECAY · DAMP · RTRN
@@ -3249,6 +3408,9 @@ function restoreSequencerDisplay(){
   updateSmdDisplay();
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §25 · SETTINGS MODE DISPLAY (MIDI routing, CC maps, pages)
+   ════════════════════════════════════════════════════════════════════ */
 // SETTINGS display: 8 cells, all labeled NONE, MIDI CC range 0-127, no output
 // (visual only for now). Values stored per [part][page][cell].
 const settingsVals={}; // key `${part}:${page}:${idx}` -> 0-127
@@ -3478,6 +3640,9 @@ function showSettingsPanel(){
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §26 · KEYBOARD PANEL (KEY-mode display cells)
+   ════════════════════════════════════════════════════════════════════ */
 // KEY mode display: box 1 controls the virtual keyboard velocity; rest empty.
 function showKeyPanel(){
   const grid=resetSmdGridStyle();
@@ -3546,6 +3711,11 @@ function showKeyPanel(){
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §27 · DISPLAY VALUE UPDATERS (small refresh helpers)
+   One tiny updater per display cell (FB, DIR, SPD, SWG, …) plus the main
+   updateSmdDisplay() that repaints the whole sequencer display.
+   ════════════════════════════════════════════════════════════════════ */
 function updateFbDisplay(){
   const el=document.getElementById('smd-fb-cell-val');
   if(el) el.textContent=parts[activePart].dlyFb+'%';
@@ -3680,7 +3850,9 @@ function reanchorPartRange(pi){
   schedGeneration++; // cancel stale delay/visual callbacks from the old range
 }
 
-// ── Low-power audio profile (older / budget Android phones) ─────────
+/* ════════════════════════════════════════════════════════════════════
+   §28 · LOW-POWER AUDIO PROFILE (budget phones)
+   ════════════════════════════════════════════════════════════════════ */
 // Chrome on old Androids glitches with the default 'interactive' latency hint
 // (it requests the smallest possible audio callback buffers) and struggles
 // with the most expensive constant DSP. iOS and desktops handle both fine, so
@@ -3704,7 +3876,9 @@ function getCtx(){
 }
 // Convert MIDI note number to Hz
 function midiToHz(midi){return 440*Math.pow(2,(midi-69)/12);}
-// ── Cached audio assets ─────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §29 · CACHED AUDIO ASSETS (samples)
+   ════════════════════════════════════════════════════════════════════ */
 // Generating noise/curves on every drum hit caused CPU spikes and GC churn on
 // the main thread (which the note scheduler shares) → intermittent crackle.
 // These build ONCE and are reused by every voice.
@@ -3726,7 +3900,9 @@ function getKickCurve(){
   for(let i=0;i<257;i++){ const x=i/128-1; _KICK_CURVE[i]=Math.tanh(x*2.2); }
   return _KICK_CURVE;
 }
-// ── SMPL CRUSHER ────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §30 · SMPL CRUSHER (bit/rate reduction cache)
+   ════════════════════════════════════════════════════════════════════ */
 // Pre-renders a bit-depth + sample-rate reduced copy of a sample buffer ONCE and
 // caches it per part, so there's no per-hit or per-audio-frame cost (and no
 // glitches). amount 0 = clean (returns the original buffer untouched).
@@ -3758,6 +3934,12 @@ function getCrushedBuffer(ctx, ch, srcBuf, amount){
   return b;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §31 · SMD CELL DRAG WIRING + attachGenericDrag()
+   attachDragHandlers wires every draggable display cell (SEQ STRT/END, DIR,
+   SPEED, SWING, MIDI DLY…). attachGenericDrag is the reusable mouse+touch
+   vertical-drag helper they are all built on.
+   ════════════════════════════════════════════════════════════════════ */
 function attachDragHandlers(){
   attachGenericDrag('smd-strt-cell','smd-strt-cell-hint',()=>parts[activePart].seqStart,v=>{
     const oldLen=parts[activePart].seqEnd-parts[activePart].seqStart+1;
@@ -4063,6 +4245,9 @@ function updatePartIndicator(){
   document.getElementById('part-indicator').textContent='Part '+(activePart+1)+tag+oos+' ('+len+'st)';
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §32 · PARTS PANEL (8 part buttons)
+   ════════════════════════════════════════════════════════════════════ */
 function buildParts(){
   const grid=document.getElementById('parts-grid');grid.innerHTML='';
   const titleEl=document.getElementById('parts-panel-title');
@@ -4220,6 +4405,68 @@ function buildParts(){
     const rv=document.getElementById('btn-resync')?.querySelector('.ctrl-val');
     if(rv){ rv.style.borderColor=anyUnsynced?'#ff9900':''; rv.style.color=anyUnsynced?'#ff9900':''; }
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   §33 · STEP GRID (16 step pads)
+   ════════════════════════════════════════════════════════════════════ */
+// Step-pad touch sweep/release handlers (STEP + CTRL tabs). These are named
+// module-level functions (using only the globals stepTouchId / heldStepAbs)
+// so the exact same handlers can be attached BOTH to the grid and to every
+// individual pad.
+//
+// WHY per-pad AND grid: touch events are delivered to the element the touch
+// STARTED on for the entire gesture. In STEP mode, pressing an OFF step calls
+// toggleStep() → buildSteps() → grid.innerHTML='' — which DETACHES the very
+// pad the finger is resting on. Events for that touch keep targeting the
+// detached pad, and a detached node no longer bubbles to the grid, so a
+// grid-only listener never sees the touchmove/touchend. Result: the hold
+// state (heldStepAbs / stepTouchId) stuck ON after release, leaving the step
+// parameter display and the held highlight active. (The CTRL tab never
+// rebuilds on press — toggleStep is read-only there — which is why CTRL-tab
+// step holds always released correctly.) Handlers attached directly to the
+// touched pad KEEP firing even after it is detached, so the release is
+// always caught; the grid-level copies remain as delegation/safety net.
+function _stepPadTouchMove(e){
+  if(stepTouchId===null) return;
+  const touch=Array.from(e.touches).find(t=>t.identifier===stepTouchId);
+  if(!touch) return;
+  e.preventDefault();
+  const target=document.elementFromPoint(touch.clientX,touch.clientY);
+  if(!target) return;
+  const pad=target.classList.contains('step-pad')?target:target.closest('.step-btn')?.querySelector('.step-pad');
+  if(!pad) return;
+  const newAbs=parseInt(pad.id.replace('spad-',''));
+  if(isNaN(newAbs)) return;
+  if(currentMode!=='step') return; // sweep only paints in STEP mode
+  const np=parts[activePart];
+  if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
+  const dataNew=offsetDataAbs(newAbs);
+  if(dataNew===heldStepAbs) return; // also makes the duplicate pad+grid run a no-op
+  if(heldStepAbs!==-1){
+    if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
+    endHold();
+  }
+  const wasOn=parts[activePart].steps[dataNew];
+  if(!wasOn) toggleStep(dataNew);
+  startHold(dataNew,wasOn);
+  showStepParams(dataNew);
+}
+function _stepPadTouchEnd(e){
+  if(stepTouchId===null) return; // also bails the duplicate grid run (pad ran first)
+  if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
+  stepTouchId=null;
+  if(heldStepAbs!==-1){
+    if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
+    if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
+    endHold();
+    restoreSequencerDisplay();
+  }
+}
+function _stepPadTouchCancel(e){
+  if(stepTouchId===null) return;
+  stepTouchId=null;
+  if(heldStepAbs!==-1){ endHold(); restoreSequencerDisplay(); }
 }
 
 function buildSteps(){
@@ -4423,56 +4670,27 @@ function buildSteps(){
         startHold(da,wasOn);
         showStepParams(da);
       },{passive:false});
+      // The sweep/release handlers must sit on the pad ITSELF, not only on the
+      // grid: toggling a step rebuilds the grid mid-touch and detaches this
+      // pad, after which its touch events no longer reach the grid listener —
+      // the hold would stay stuck ON after release. See _stepPadTouchEnd.
+      div.addEventListener('touchmove',_stepPadTouchMove,{passive:false});
+      div.addEventListener('touchend',_stepPadTouchEnd,{passive:false});
+      div.addEventListener('touchcancel',_stepPadTouchCancel,{passive:false});
     }
     grid.appendChild(div); // always render the pad (below-start steps show grayed)
   }
 
-  // Attach the grid-level touch sweep/end handlers ONCE (not per-pad, not per
-  // rebuild — otherwise they pile up and behave erratically). They use the
-  // current closure-free globals (heldStepAbs, stepTouchId) so a single set works.
+  // Attach the grid-level touch sweep/end handlers ONCE (not per rebuild —
+  // otherwise they pile up and behave erratically). The SAME named handlers
+  // are ALSO attached to every pad above — see _stepPadTouchEnd for why —
+  // and their stepTouchId / heldStepAbs guards make the duplicate
+  // pad+grid invocation harmless (the second run bails out immediately).
   if(!grid._stepTouchBound){
     grid._stepTouchBound=true;
-    grid.addEventListener('touchmove',e=>{
-      if(stepTouchId===null) return;
-      const touch=Array.from(e.touches).find(t=>t.identifier===stepTouchId);
-      if(!touch) return;
-      e.preventDefault();
-      const target=document.elementFromPoint(touch.clientX,touch.clientY);
-      if(!target) return;
-      const pad=target.classList.contains('step-pad')?target:target.closest('.step-btn')?.querySelector('.step-pad');
-      if(!pad) return;
-      const newAbs=parseInt(pad.id.replace('spad-',''));
-      if(isNaN(newAbs)) return;
-      if(currentMode!=='step') return; // sweep only paints in STEP mode
-      const np=parts[activePart];
-      if(newAbs+1<np.seqStart||newAbs+1>np.seqEnd) return; // stay in range
-      const dataNew=offsetDataAbs(newAbs);
-      if(dataNew===heldStepAbs) return;
-      if(heldStepAbs!==-1){
-        if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
-        endHold();
-      }
-      const wasOn=parts[activePart].steps[dataNew];
-      if(!wasOn) toggleStep(dataNew);
-      startHold(dataNew,wasOn);
-      showStepParams(dataNew);
-    },{passive:false});
-    grid.addEventListener('touchend',e=>{
-      if(stepTouchId===null) return;
-      if(!Array.from(e.changedTouches).some(t=>t.identifier===stepTouchId)) return;
-      stepTouchId=null;
-      if(heldStepAbs!==-1){
-        if(tryCtrlQuickTapToStep()) return; // CTRL quick tap → toggle + jump to STEP
-        if(shouldToggleOffOnRelease(heldStepAbs)) toggleStep(heldStepAbs);
-        endHold();
-        restoreSequencerDisplay();
-      }
-    },{passive:false});
-    grid.addEventListener('touchcancel',e=>{
-      if(stepTouchId===null) return;
-      stepTouchId=null;
-      if(heldStepAbs!==-1){ endHold(); restoreSequencerDisplay(); }
-    },{passive:false});
+    grid.addEventListener('touchmove',_stepPadTouchMove,{passive:false});
+    grid.addEventListener('touchend',_stepPadTouchEnd,{passive:false});
+    grid.addEventListener('touchcancel',_stepPadTouchCancel,{passive:false});
   }
 
   updatePartIndicator();updateSmdDisplay();
@@ -4490,6 +4708,9 @@ function wireRangeTap(div, fn){
   div.addEventListener('touchcancel',()=>{ active=false; });
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §34 · RANGE BAR (step pages 1–16 … 49–64)
+   ════════════════════════════════════════════════════════════════════ */
 function buildRangeBar(){
   const bar=document.getElementById('step-range-bar');bar.innerHTML='';
   if(saveBrowsing){
@@ -4581,7 +4802,9 @@ function buildRangeBar(){
   }
 }
 
-// ── Mute + page-button: duplicate/expand pages (STEP mode) ──────────────
+/* ════════════════════════════════════════════════════════════════════
+   §35 · PAGE DUPLICATE / EXPAND (MUTE + page button)
+   ════════════════════════════════════════════════════════════════════ */
 // Holding Mute (shift) and clicking a page button copies the active part's
 // pages to build a longer loop, based on which pages already have notes:
 //   Page 2: copy page 1 → 2.
@@ -4743,7 +4966,9 @@ document.getElementById('se-mono')?.addEventListener('click',()=>{
   setStatus('Part '+(activePart+1)+' voice: '+(p.mono!==false?'MONO':'POLY'));
 });
 
-// ── Master FX (distortion + EQ) UI wiring ─────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §36 · MASTER FX UI WIRING
+   ════════════════════════════════════════════════════════════════════ */
 function refreshMasterFXUI(){
   const dist=masterFX.distEnabled;
   const eqMode=masterFX.eqMode||'off';
@@ -4796,6 +5021,11 @@ document.getElementById('se-fx-eqpos').addEventListener('click',()=>{
 });
 
 let allMuted=false;
+/* ════════════════════════════════════════════════════════════════════
+   §37 · SOUND ENGINE (fenced block — DO NOT EDIT inside the fence)
+   All internal Web Audio synthesis: voices, per-part pan, send FX buses
+   (reverb/delay), master FX chain, factory reset. Ends at "END SOUND ENGINE".
+   ════════════════════════════════════════════════════════════════════ */
 // ╔════════════════════════════════════════════════════════════════╗
 // ║ SOUND ENGINE — internal Web Audio synth                         ║
 // ║                                                                  ║
@@ -5840,7 +6070,9 @@ function resetSoundEngineDefaults(){
 // ║ END SOUND ENGINE                                                 ║
 // ╚════════════════════════════════════════════════════════════════╝
 let tempoKeyHeld=false;
-// ── Metronome ─────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §38 · METRONOME
+   ════════════════════════════════════════════════════════════════════ */
 let metroOn=false, metroNextTime=0;
 function metroClick(when, accent){
   if(!audioCtx) return;
@@ -5942,7 +6174,9 @@ function triggerSelectPart(i){
   selectPart(i);
 }
 
-// ── Step Skip: marked steps are jumped over by the playhead ──────────
+/* ════════════════════════════════════════════════════════════════════
+   §39 · STEP SKIP (playhead jumps marked steps)
+   ════════════════════════════════════════════════════════════════════ */
 function partHasSkips(pi){ const s=parts[pi].skip; return !!s && s.some(Boolean); }
 function clearSkips(pi){ if(parts[pi].skip) parts[pi].skip.fill(false); }
 function toggleSkip(abs){
@@ -6077,7 +6311,9 @@ function updatePlayhead(abs){
   if(Math.floor(abs/16)!==prevPage) buildRangeBar();
 }
 
-// ── Global bar clock + per-part resync ───────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §40 · GLOBAL BAR CLOCK + SCHEDULER CORE
+   ════════════════════════════════════════════════════════════════════ */
 // globalTick counts raw TICK intervals since play started.
 // A "bar" = 16 base-tempo steps = 16 × baseMs() ms.
 // pendingResync[pi] = true means: reset that part on the next bar downbeat.
@@ -6408,7 +6644,9 @@ function schedulePlay(resetAccs=true){
   });
 }
 
-// ── Looper ─────────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §41 · LOOPER
+   ════════════════════════════════════════════════════════════════════ */
 // Hold 1/4, 1/8, 1/16, 1/32 in PAT mode to loop a window from the current
 // position. Release returns playback to where it would have been.
 let looperActive=false, looperLen=4; // len in 16th steps; 0.5 = 1/32 retrigger
@@ -6485,6 +6723,9 @@ function releaseLooper(len){
     setStatus('Looper off');
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §42 · TRANSPORT (play / pause / stop)
+   ════════════════════════════════════════════════════════════════════ */
 function startPlay(){
   if(playing) return;
   getCtx();playing=true;
@@ -6538,6 +6779,11 @@ function stopPlay(){
 
 function setStatus(m){document.getElementById('status-msg').textContent=m;}
 
+/* ════════════════════════════════════════════════════════════════════
+   §43 · GLOBAL KEYBOARD SHORTCUTS (keydown / keyup)
+   Every desktop shortcut lives in the two big listeners below: part select,
+   mute/solo/align holds, step toggles, pages, tabs, looper, transport.
+   ════════════════════════════════════════════════════════════════════ */
 const CODE_TO_PART={Digit1:0,Digit2:1,Digit3:2,Digit4:3,Digit5:4,Digit6:5,Digit7:6,Digit8:7};
 const CODE_TO_SLOT={KeyQ:0,KeyW:1,KeyE:2,KeyR:3,KeyT:4,KeyY:5,KeyU:6,KeyI:7,KeyA:8,KeyS:9,KeyD:10,KeyF:11,KeyG:12,KeyH:13,KeyJ:14,KeyK:15};
 const CODE_TO_PAGE={KeyZ:0,KeyX:1,KeyC:2,KeyV:3};
@@ -6794,7 +7040,9 @@ document.addEventListener('keyup',e=>{
     }
   }
 });
-// ── Modifier buttons as HOLD buttons (Mute/Solo/Align/Select) ─────────
+/* ════════════════════════════════════════════════════════════════════
+   §44 · MODIFIER HOLD BUTTONS (Mute / Solo / Align / Select)
+   ════════════════════════════════════════════════════════════════════ */
 // These mirror the keyboard modifiers: press-and-hold to engage, release to
 // disengage (not toggles). Works for both mouse and touch. While held, tap a
 // part (1–8) to mute/solo/align/select it.
@@ -6887,7 +7135,7 @@ let saveOrigBank=0, saveOrigPattern=0, saveClickCount=0;
 let saveLastBank=0, saveLastPat=0; // last slot written during the current save-hold
 // STEP-mode LOAD-browse: holding PTRN LOAD shows the pattern grid (like SAVE),
 // but tapping a slot LOADS that pattern. browseLoad reuses saveBrowsing's
-// rendering/navigation; loadHeld tracks the latched browse; the _loadHold*
+// rendering/navigation; loadHeld tracks the open browse; the _loadHold*
 // fields drive mouse hold-detection (quick click reloads, hold opens browse).
 let loadHeld=false, browseLoad=false;
 let _loadHoldTimer=null, _loadHoldFired=false;
@@ -6945,7 +7193,9 @@ function endSaveHold(){
   buildSteps();buildRangeBar();buildParts();buildPatternGrids();updatePartIndicator();
 }
 
-// ── STEP-mode PTRN LOAD: hold-to-browse-and-load ─────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §45 · PTRN LOAD — hold-to-browse (STEP MODE)
+   ════════════════════════════════════════════════════════════════════ */
 // Open the pattern-browse grid (reusing the SAVE-browse rendering + bank/page
 // navigation) in LOAD mode. Tapping any slot loads that pattern.
 function beginLoadHold(){
@@ -6990,7 +7240,9 @@ function loadFromSlot(patIdx){ // load the chosen pattern (any bank/page) and ex
   else { loadPattern(activeBank,patIdx,true); setStatus('Loaded \u2192 Bank '+(activeBank+1)+' Pat '+(patIdx+1)); }
   buildSteps();buildRangeBar();buildParts();updatePartIndicator();
 }
-// ── STEP-mode PTRN CLEAR: tap vs hold ────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §46 · PTRN CLEAR — tap vs hold (STEP MODE)
+   ════════════════════════════════════════════════════════════════════ */
 // Quick tap = clear the ACTIVE PART's sequence (unchanged behavior). HOLD
 // opens the same pattern-browse view as PTRN COPY / PTRN LOAD, but tapping a
 // slot EMPTIES that pattern. Multiple slots can be cleared in one browse;
@@ -7082,7 +7334,9 @@ document.getElementById('ctrl-clear').addEventListener('mousedown',()=>{
     _clearHoldTimer=setTimeout(()=>{ _clearHoldTimer=null; _clearHoldFired=true; beginClearHold(); },300);
   }
 });
-// ── Random fill (STEP mode) ──────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §47 · RANDOM FILL (STEP MODE)
+   ════════════════════════════════════════════════════════════════════ */
 // Replace the active part's sequence across its active range (seqStart..seqEnd)
 // with a random pattern, constrained by randomCfg: notes drawn from the chosen
 // SCALE/ROOT, octaves within LO..HI, velocity within MIN..MAX, gate within
@@ -7201,7 +7455,9 @@ document.addEventListener('mouseup',()=>{
   }
 });
 
-// ── Touch support for the hold-capable action buttons ────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §48 · TOUCH — HOLD-CAPABLE ACTION BUTTONS
+   ════════════════════════════════════════════════════════════════════ */
 // Each button maps to a roll/looper division. On touch we drive the SAME
 // engage/release functions the keyboard uses, passing that button's division
 // so layered holds work (hold slow, add fast, release fast → fall back to
@@ -7267,11 +7523,15 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
         if(!saveHeld){ beginSaveHold(); endSaveHold(); }
         return;
       }
-      // Hold threshold passed → save-browse is open. If destination slots were
-      // chosen, finish now; otherwise stay LATCHED so the user can tap slots,
-      // then tap Save again to finish (which saves the current pattern if still
-      // no slot was picked).
-      if(saveHeld && saveClickCount>0) endSaveHold();
+      // Hold threshold passed → save-browse is open. Releasing the button
+      // always finishes the browse, exactly like releasing the mouse or the
+      // 'O' key on desktop: destination slots tapped with a second finger
+      // while holding were already saved by saveToSlot; releasing with NO
+      // slot chosen just closes the browse (endSaveHold treats clickCount===0
+      // as the plain auto-save of the current pattern). A hold released
+      // without a change must always restore the previous view — the same
+      // rule as a CTRL-tab step hold — so the browse is never left latched.
+      if(saveHeld) endSaveHold();
       return;
     }
     const isStepLoadHold=(currentMode==='step' && id==='ctrl-reload');
@@ -7283,8 +7543,14 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
         if(!loadHeld) el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
         return;
       }
-      // Hold opened load-browse: stay LATCHED so the user can tap any pattern
-      // slot to load it (the slot tap loads and exits). Tap LOAD again to cancel.
+      // Hold opened load-browse. Tapping a slot with a SECOND finger while
+      // holding loads it and exits the browse on its own (loadFromSlot clears
+      // loadHeld). So if loadHeld is still set when the button is released,
+      // nothing was picked — close the browse without loading anything, like
+      // a CTRL-tab step hold: release with no change restores the previous
+      // view. (A quick tap — released before the hold threshold — is handled
+      // above and still reloads the current pattern.)
+      if(loadHeld) endLoadHold();
       return;
     }
     const isStepClearHold=(currentMode==='step' && id==='ctrl-clear');
@@ -7296,8 +7562,12 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
         if(!clearHeld) el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
         return;
       }
-      // Hold opened clear-browse: stay LATCHED so slots can be tapped to
-      // empty them. Tap CLEAR again to finish.
+      // Hold opened clear-browse. Slots tapped with a second finger while
+      // holding were already emptied by clearSlotFromBrowse; releasing the
+      // button finishes the browse (endClearHold reports how many were
+      // cleared, or just closes quietly when nothing was touched). Release
+      // with no change always restores — the browse is never left latched.
+      if(clearHeld) endClearHold();
       return;
     }
     // Settings-mode actions (SAVE/LOAD/NEW) must run inside this REAL touch
@@ -7318,7 +7588,7 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       return;
     }
     // Other tap actions: fire the click handler for a quick tap in modes where
-    // the button is a tap-action. Exclude STEP ctrl-save (latched, above).
+    // the button is a tap-action. Exclude STEP ctrl-save (handled above).
     if(wasQuick && !isStepSaveHold && id!=='ctrl-none' && (currentMode==='step'||currentMode==='ctrl')){
       el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
     }
@@ -7330,11 +7600,20 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     else if(currentMode==='pat'){ if(looperActive) releaseLooper(div); }
     else if(currentMode==='ctrl' && id==='ctrl-none') ctrlAllHeld=false;
     else if(currentMode==='step' && id==='ctrl-none' && isRandomPanelOpen()){ closeRandomParams(); restoreSequencerDisplay(); }
+    // A cancelled touch (system gesture, incoming call, …) must also close any
+    // browse the hold opened — otherwise it would stay stuck with no finger on
+    // the button, the exact latching this handler set exists to prevent.
+    else if(currentMode==='step' && id==='ctrl-save' && saveHeld) endSaveHold();
+    else if(currentMode==='step' && id==='ctrl-reload' && loadHeld) endLoadHold();
+    else if(currentMode==='step' && id==='ctrl-clear' && clearHeld) endClearHold();
   });
 });
 
-// ── Touch: hold a tab to TEMPORARILY switch to it (mirrors the desktop hold-a-
-// tab behavior). Hold the tab with one finger, make a change with another, then
+/* ════════════════════════════════════════════════════════════════════
+   §49 · TOUCH — TEMPORARY MODE HOLD ON TABS
+   ════════════════════════════════════════════════════════════════════ */
+// Mirrors the desktop hold-a-tab behavior. Hold the tab with one finger, make
+// a change with another, then
 // release the tab to revert to the original tab. A quick tap with no change (or
 // a hold under 1s) switches permanently. preventDefault suppresses the
 // synthesized click so the inline onclick=setMode() doesn't double-switch.
@@ -7396,6 +7675,10 @@ document.addEventListener('mouseup',()=>{
     restoreSequencerDisplay();
   }
 });
+
+/* ════════════════════════════════════════════════════════════════════
+   §50 · LIVE RECORDING (record steps while playing)
+   ════════════════════════════════════════════════════════════════════ */
 let recording=false;
 function toggleRecord(){
   recording=!recording;
@@ -7463,6 +7746,9 @@ function recordStep(pi,spOverride){
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §51 · INITIAL UI BUILD + TRANSPORT BUTTON WIRING
+   ════════════════════════════════════════════════════════════════════ */
 document.getElementById('btn-record').addEventListener('click',()=>toggleRecord());
 document.getElementById('btn-stop').addEventListener('click',togglePause);
 document.getElementById('btn-play').addEventListener('click',()=>{playing?stopPlay():startPlay();});
@@ -7473,7 +7759,7 @@ refreshActionBtnLabels(); // STEP (default) labels on first load, before any set
 if(typeof setupDisplayWheel==='function') setupDisplayWheel();
 
 // ════════════════════════════════════════════════════════════════════
-//  PERSISTENCE  —  full-state save/load
+//  §52 · PERSISTENCE — FULL-STATE SERIALIZE / DESERIALIZE
 // ════════════════════════════════════════════════════════════════════
 // Everything funnels through serializeAll()/deserializeAll(). To add a new
 // parameter later: add it in BOTH functions. deserializeAll always reads with
@@ -7617,7 +7903,9 @@ function deserializeAll(data){
   }catch(err){ setStatus('Load failed: '+err.message); return false; }
 }
 
-// ── Persistence layer ─────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §53 · AUTOSAVE (IndexedDB / localStorage)
+   ════════════════════════════════════════════════════════════════════ */
 // Uses IndexedDB as the primary store because it persists reliably across
 // page reloads even when the app is opened from a file:// URL (where
 // localStorage is partitioned per-load by some browsers and silently loses
@@ -7727,8 +8015,11 @@ window.addEventListener('beforeunload',()=>{ if(_saveDirty) persistNow(); });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&_saveDirty) persistNow(); });
 document.addEventListener('pagehide',()=>{ if(_saveDirty) persistNow(); });
 
-// ── File I/O (browser): download a .json, load via file picker. Later this is
-//    where the File System Access API or a desktop temp-file path slots in. ──
+/* ════════════════════════════════════════════════════════════════════
+   §54 · FILE I/O — save / load .json project
+   ════════════════════════════════════════════════════════════════════ */
+// Download a .json, load via a file picker. Later this is where the File
+// System Access API or a desktop temp-file path slots in.
 function downloadProject(){
   persistNow();
   const json=_memSave||JSON.stringify(serializeAll());
@@ -7843,7 +8134,9 @@ function newProject(){
 if(typeof refreshMasterFXUI==='function') refreshMasterFXUI();
 persistNow();
 
-// ── Uniform fit-to-screen scaling ───────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §55 · LAYOUT — FIT-TO-SCREEN SCALING
+   ════════════════════════════════════════════════════════════════════ */
 // The whole UI is a fixed 640px-wide design. On narrower screens (phones)
 // we scale the entire #seq-root down by a single factor so it fits the
 // viewport — same proportions, no rearranging. The wrapper's height is set
@@ -7900,7 +8193,9 @@ function applyMobileMode(){
   document.body.classList.toggle('touch-capable', touchPrimary);
 }
 
-// ── Portrait phone layout ────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §56 · LAYOUT — PORTRAIT PHONE MODE
+   ════════════════════════════════════════════════════════════════════ */
 // portraitPref: 'auto' (decide from screen), 'on' (forced), 'off' (forced desktop).
 let portraitPref='auto';
 function isPortraitAuto(){
@@ -8051,6 +8346,9 @@ if(window.ResizeObserver){
   _ro.observe(document.getElementById('seq-root'));
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   §57 · AUDIO UNLOCK (iOS gesture requirement)
+   ════════════════════════════════════════════════════════════════════ */
 // iOS/Safari require a user gesture to start audio, and newer iOS (17+) is
 // stricter: a plain resume() often isn't enough — the context only truly
 // "wakes" once an actual (silent) buffer has been played from within a user
@@ -8092,7 +8390,9 @@ window.addEventListener('focus',()=>{ if(audioCtx&&audioCtx.state==='suspended')
 
 
 // (step-pad press outline handled per-mode via btn-held class)
-// ── Universal press highlight ─────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §58 · UNIVERSAL PRESS HIGHLIGHT
+   ════════════════════════════════════════════════════════════════════ */
 // Add data-pressable to any element to get the white outline on press.
 // For elements with a visible child (.ctrl-val, .tport-top-pad, .step-pad),
 // press-active is applied to the child. Otherwise to the element itself.
@@ -8206,7 +8506,9 @@ requestAnimationFrame(syncModeTabWidths);
 // Re-sync whenever the layout changes (portrait toggle, resize, orientation).
 window.addEventListener('resize', ()=>requestAnimationFrame(syncModeTabWidths));
 window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimationFrame(syncModeTabWidths),120));
-// ── Auto-save restore on startup ──────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════
+   §59 · STARTUP — AUTO-SAVE RESTORE
+   ════════════════════════════════════════════════════════════════════ */
 // Load the saved on/off preference, then (if enabled) restore the last
 // auto-saved project from this browser/device and rebuild the UI. This is
 // async because IndexedDB is async (it persists reliably even on file://).
@@ -8243,6 +8545,9 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   }
 })();
 
+/* ════════════════════════════════════════════════════════════════════
+   §60 · AUDIO RECORDER (WAV bounce of the sound engine)
+   ════════════════════════════════════════════════════════════════════ */
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  AUDIO RECORDER                                                    ║
 // ║  Records the full sound-engine output and saves it as a WAV file.  ║
@@ -8538,6 +8843,9 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
   elPreview.addEventListener('click',togglePreview);
 })();
 
+/* ════════════════════════════════════════════════════════════════════
+   §61 · BOOT — MIDI init + autosave timer
+   ════════════════════════════════════════════════════════════════════ */
 initMIDI();
 // Auto-save: persist the live pattern into its slot when it has CHANGED. The
 // tick is a no-op during idle playback, so it never competes with the audio
