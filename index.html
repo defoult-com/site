@@ -165,6 +165,19 @@
   .step-pad.held{box-shadow:0 0 0 2px #fff inset;}
   /* Universal press highlight */
   .press-active{box-shadow:0 0 0 2px #fff inset!important;}
+  /* ── LOW-FX profile (old / low-end devices; class set by the low-power
+     detector next to LOW_POWER_AUDIO) ─────────────────────────────────────
+     The eased background transitions make every playhead move and trigger
+     flash repaint for ~4-5 frames instead of one, and the tiny glow shadows
+     force larger repaint areas — both are disproportionately expensive on
+     old Android GPUs. Colors and layout stay identical; state changes are
+     simply instant instead of eased. */
+  body.low-fx .step-pad,body.low-fx .part-num,body.low-fx .pat-num,
+  body.low-fx .tport-pad,body.low-fx .tport-top-pad,body.low-fx .action-key,
+  body.low-fx .range-btn,body.low-fx .smd-cell{transition:none!important;}
+  body.low-fx .step-pad.dot-flash::after,
+  body.low-fx .step-pad.has-lock::before,
+  body.low-fx.parm-muted .step-pad.has-lock::before{box-shadow:none!important;}
   .tport-top-pad.mode-on{background:var(--seq-yellow-bg);border-color:var(--seq-yellow);color:var(--seq-text);}
   .tport-top-pad.metro-flash{background:#fff;border-color:#fff;color:#111;}
   .step-pad.inactive{opacity:1;background:#333330;border:1px solid #4a4a40;color:#777;cursor:default;}
@@ -1244,6 +1257,7 @@ function liveHasContent(){
   }
   return false;
 }
+let _lastCommitT=0;
 function commitLiveToSlot(){   // unconditional write of live parts → loaded slot
   if(saveBrowsing||loadHeld||loadedPattern===null) return;
   if(typeof paramDragActive!=='undefined'&&paramDragActive) return; // not mid-gesture
@@ -1252,9 +1266,16 @@ function commitLiveToSlot(){   // unconditional write of live parts → loaded s
   // cleared to empty likewise drops its dot, which matches what's in it.
   patternStore[loadedBank][loadedPattern]=liveHasContent()?snapshotParts():null;
   patternDirty=false; _patChanged=false;
+  _lastCommitT=performance.now();
 }
 function autoSaveTick(){       // periodic: only works when something changed
   if(!_patChanged && !patternDirty) return;
+  // While the transport runs, commit at most every 5s: snapshotParts()
+  // allocates ~500 objects per run (8 parts × 64 stepParams + arrays), and at
+  // the 600ms tick rate during live tweaking that GC churn is audible as
+  // crackle on old phones. Pattern switches (autoCommitPattern), stop, hide
+  // and unload still commit immediately.
+  if(typeof playing!=='undefined'&&playing&&performance.now()-_lastCommitT<5000) return;
   commitLiveToSlot();
 }
 // Back-compat name used at switch points: flush live edits before switching.
@@ -3092,7 +3113,7 @@ const _SND_ROW1=[
   {label:'PAN',     min:-1,  max:1,   get:p=>(typeof p.pan==='number'?p.pan:0),  set:(pi,v)=>setPartPan(pi,v),        def:_=>0,                          fmt:v=>{if(Math.abs(v)<0.01)return'C';const r=Math.round(Math.abs(v)*100);return (v<0?'L':'R')+r;},
    schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].pan=v; getPartOut(pi); const n=_partPanners[pi]; if(n&&n.pan){ try{n.pan.setValueAtTime(v,when);}catch(e){ try{n.pan.value=v;}catch(_e){} } } }},
   {label:'REV SND', min:0,   max:1,   get:p=>(p.revSend||0),                     set:(pi,v)=>setPartSend(pi,'rev',v), def:_=>0,                          fmt:_sndPct,
-   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].revSend=v; getPartOut(pi); const g=_revSendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
+   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].revSend=v; getPartOut(pi); const g=_revSendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } if(v>0&&_sendFXNodes&&!_sendFXNodes.conv) syncRevChain(); }},
   {label:'DLY SND', min:0,   max:1,   get:p=>(p.dlySend||0),                     set:(pi,v)=>setPartSend(pi,'dly',v), def:_=>0,                          fmt:_sndPct,
    schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].dlySend=v; getPartOut(pi); const g=_dlySendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
 ];
@@ -3944,7 +3965,14 @@ function baseMs(){return Math.round((60/tempo/4)*1000);}
 function swingDelayMs(pi){const sp=50+parts[pi].swing;if(sp<=50)return 0;return baseMs()*SPEEDS[parts[pi].speedIndex].ratio*(sp/100-0.5)*2;}
 function getPage(){return partPage[activePart];}
 function absStepFn(s){return PAGE_OFFSET[getPage()]+s;}
-function isPartAudible(i){const any=parts.some(p=>p.soloed);return any?parts[i].soloed:!parts[i].muted;}
+function isPartAudible(i){
+  // Called several times per step per part in the scheduler tick. The old
+  // parts.some(p=>p.soloed) allocated a closure every call — pure GC churn on
+  // low-end phones. A plain loop is allocation-free and identical in result.
+  let any=false;
+  for(let k=0;k<8;k++){ if(parts[k].soloed){ any=true; break; } }
+  return any?parts[i].soloed:!parts[i].muted;
+}
 function toggleMute(i){if(parts[i].soloed)parts[i].soloed=false;parts[i].muted=!parts[i].muted;buildParts();buildSteps();setStatus('Part '+(i+1)+' '+(parts[i].muted?'MUTED':'unmuted'));}
 function toggleSolo(i){parts[i].soloed=!parts[i].soloed;if(parts[i].soloed)parts[i].muted=false;buildParts();buildSteps();setStatus('Part '+(i+1)+' '+(parts[i].soloed?'SOLO':'unsoloed'));}
 function clearAllMutes(){const n=parts.filter(p=>p.muted).length;parts.forEach(p=>p.muted=false);buildParts();buildSteps();setStatus(n?('Unmuted all parts ('+n+')'):'No muted parts');}
@@ -4023,6 +4051,14 @@ function reanchorPartRange(pi){
 //   · a slower scheduler tick with a longer lookahead window (fewer main-
 //     thread wakeups, more slack before a deadline is missed).
 const LOW_POWER_AUDIO=/Android/i.test(navigator.userAgent||'');
+// UI counterpart of the audio profile: strips paint-heavy cosmetics (eased pad
+// transitions, glow shadows — see the body.low-fx CSS block). Applied on
+// Androids that report little memory / few cores, and on ANY platform that
+// reports ≤2GB — the signals old and budget devices actually expose. Devices
+// that report neither stat keep the full visuals.
+const LOW_POWER_UI=(LOW_POWER_AUDIO&&((navigator.deviceMemory&&navigator.deviceMemory<=3)||(navigator.hardwareConcurrency&&navigator.hardwareConcurrency<=4)))
+                 ||(navigator.deviceMemory&&navigator.deviceMemory<=2);
+if(LOW_POWER_UI&&document.body) document.body.classList.add('low-fx');
 function getCtx(){
   if(!audioCtx){
     const AC=window.AudioContext||window.webkitAudioContext;
@@ -5554,21 +5590,59 @@ function buildSendFX(){
   if(_sendFXNodes) return _sendFXNodes;
   const ctx=getCtx();
   const mg=getMasterGain();
-  // Reverb chain
+  // Reverb bus ENDPOINTS only. The expensive piece — the ConvolverNode —
+  // is deliberately NOT built here: convolution burns CPU constantly once
+  // instantiated, even on pure silence, and every part's send defaults to 0,
+  // so most sessions never need it. revIn (the stable tap the per-part sends
+  // connect to) and revRet (the return into the master) are permanent;
+  // syncRevChain() attaches/detaches the convolver between them on demand.
   const revIn=ctx.createGain();
-  const conv=ctx.createConvolver(); conv.buffer=makeReverbIR(ctx,sendFX.revDecay,sendFX.revAlgo);
-  const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=dampToFreq(sendFX.revDamp);
   const revRet=ctx.createGain(); revRet.gain.value=sendFX.revReturn;
-  revIn.connect(conv); conv.connect(revLP); revLP.connect(revRet); revRet.connect(mg);
+  revRet.connect(mg);
   // Delay chain — a persistent input gain (per-part sends connect here) feeds an
   // algorithm-specific subgraph that can be swapped without touching the sends.
   const dlyIn=ctx.createGain();
   _dlyGraph=buildDelayGraph(ctx,mg,dlyIn,sendFX.dlyAlgo);
-  _sendFXNodes={revIn,conv,revLP,revRet,dlyIn};
+  _sendFXNodes={revIn,conv:null,revLP:null,revRet,dlyIn};
+  syncRevChain();
   return _sendFXNodes;
 }
+// ── Demand-gated reverb convolver ─────────────────────────────────────
+// Attached while any part's REV SND is above zero; detached (and left for GC)
+// once all sends are zero AND the tail has fully rung out, so zeroing the
+// last send never clips a sounding reverb.
+let _revOffTimer=null;
+function _anyRevSend(){
+  for(let i=0;i<8;i++){ const p=parts[i]; if(p&&p.revSend>0) return true; }
+  return false;
+}
+function syncRevChain(){
+  const n=_sendFXNodes; if(!n) return;
+  if(_anyRevSend()){
+    if(_revOffTimer){ clearTimeout(_revOffTimer); _revOffTimer=null; }
+    if(!n.conv){
+      const ctx=getCtx();
+      const conv=ctx.createConvolver(); conv.buffer=makeReverbIR(ctx,sendFX.revDecay,sendFX.revAlgo);
+      const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=dampToFreq(sendFX.revDamp);
+      n.revIn.connect(conv); conv.connect(revLP); revLP.connect(n.revRet);
+      n.conv=conv; n.revLP=revLP;
+    }
+  } else if(n.conv && !_revOffTimer){
+    _revOffTimer=setTimeout(()=>{
+      _revOffTimer=null;
+      const m=_sendFXNodes; if(!m||!m.conv) return;
+      if(_anyRevSend()) return; // re-activated while the tail was ringing
+      try{ m.revIn.disconnect(); }catch(e){}
+      try{ m.conv.disconnect(); }catch(e){}
+      try{ m.revLP.disconnect(); }catch(e){}
+      m.conv=null; m.revLP=null;
+    },(Math.min(10,sendFX.revDecay)+0.8)*1000);
+  }
+}
 // Rebuild the reverb impulse (needed when decay length OR algorithm changes).
-function rebuildReverbIR(){ if(_sendFXNodes) _sendFXNodes.conv.buffer=makeReverbIR(getCtx(),sendFX.revDecay,sendFX.revAlgo); }
+// No-op while the convolver is detached — syncRevChain builds a fresh IR
+// from the current settings whenever it re-attaches.
+function rebuildReverbIR(){ if(_sendFXNodes&&_sendFXNodes.conv) _sendFXNodes.conv.buffer=makeReverbIR(getCtx(),sendFX.revDecay,sendFX.revAlgo); }
 // Swap the delay subgraph for the current sendFX.dlyAlgo (keeps the sends wired).
 function rebuildDelayGraph(){
   if(!_sendFXNodes) return;
@@ -5582,13 +5656,14 @@ function rebuildDelayGraph(){
 function applySendFX(){
   if(!_sendFXNodes) return;
   const t=getCtx().currentTime, n=_sendFXNodes;
-  n.revLP.frequency.setValueAtTime(dampToFreq(sendFX.revDamp),t);
+  if(n.revLP) n.revLP.frequency.setValueAtTime(dampToFreq(sendFX.revDamp),t);
   n.revRet.gain.setValueAtTime(sendFX.revReturn,t);
   if(_dlyGraph){
     _dlyGraph.setTime(sendFX.dlyTime/1000);
     _dlyGraph.setFb(Math.max(0,Math.min(0.95,sendFX.dlyFb)));
     _dlyGraph.setReturn(sendFX.dlyReturn);
   }
+  syncRevChain();
 }
 // Live per-part send update (which: 'rev' | 'dly').
 function setPartSend(ch,which,v){
@@ -5596,6 +5671,7 @@ function setPartSend(ch,which,v){
   if(parts[ch]) parts[ch][which==='rev'?'revSend':'dlySend']=v;
   const g=which==='rev'?_revSendGain[ch]:_dlySendGain[ch];
   if(g){ try{ g.gain.setValueAtTime(v,getCtx().currentTime); }catch(e){ try{ g.gain.value=v; }catch(_e){} } }
+  if(which==='rev') syncRevChain(); // attach/detach the demand-gated convolver
 }
 
 // Per-channel sample slots (engine-owned; loaded via the Sound panel)
@@ -5626,6 +5702,35 @@ async function loadSampleForPart(pi,file){
   partSampleNames[pi]=file.name;
   setStatus('Part '+(pi+1)+' sample: '+file.name+' ('+buf.duration.toFixed(2)+'s)');
   if(typeof buildSoundEditor==='function'&&seOpen) buildSoundEditor();
+}
+
+// ── Shared voice factory (allocation-free per note) ───────────────────
+// The per-voice node tracker used to build a fresh wrapper object with six
+// arrow closures plus a _track closure on EVERY note. On low-end phones that
+// steady per-note allocation fed GC pauses that starve the audio thread
+// (crackle). Because voice construction is fully synchronous and never
+// re-entrant, one wrapper can be reused: _voiceSink is pointed at the current
+// voice's node array for the duration of that (synchronous) build. currentTime
+// is refreshed per voice so the snapshot semantics are unchanged.
+let _voiceSink=null;
+function _trackShared(n){ if(n&&_voiceSink) _voiceSink.push(n); return n; }
+let _voiceCtxWrap=null;
+function _getVoiceCtx(raw){
+  if(!_voiceCtxWrap || _voiceCtxWrap._raw!==raw){
+    _voiceCtxWrap={
+      _raw:raw,
+      sampleRate:raw.sampleRate,
+      currentTime:raw.currentTime,
+      createGain:()=>_trackShared(raw.createGain()),
+      createOscillator:()=>_trackShared(raw.createOscillator()),
+      createBiquadFilter:()=>_trackShared(raw.createBiquadFilter()),
+      createWaveShaper:()=>_trackShared(raw.createWaveShaper()),
+      createBufferSource:()=>_trackShared(raw.createBufferSource()),
+      createBuffer:(...a)=>raw.createBuffer(...a),
+    };
+  }
+  _voiceCtxWrap.currentTime=raw.currentTime; // snapshot for this voice
+  return _voiceCtxWrap;
 }
 
 window.SoundEngine={
@@ -5660,18 +5765,11 @@ window.SoundEngine={
     // glitching and tempo slowdown over time. We wrap the context's factory
     // methods so each drum case below auto-registers its nodes — no per-case
     // edits needed. A source's onended (plus a fallback timer) triggers cleanup.
+    // Per-voice node list (needed for cleanup); the factory wrapper itself is
+    // shared and points _voiceSink here for this synchronous build.
     const _nodes=[];
-    const _track=n=>{ if(n) _nodes.push(n); return n; };
-    const ctx={
-      sampleRate:_rawCtx.sampleRate,
-      currentTime:_rawCtx.currentTime,
-      createGain:()=>_track(_rawCtx.createGain()),
-      createOscillator:()=>_track(_rawCtx.createOscillator()),
-      createBiquadFilter:()=>_track(_rawCtx.createBiquadFilter()),
-      createWaveShaper:()=>_track(_rawCtx.createWaveShaper()),
-      createBufferSource:()=>_track(_rawCtx.createBufferSource()),
-      createBuffer:(...a)=>_rawCtx.createBuffer(...a),
-    };
+    const ctx=_getVoiceCtx(_rawCtx);
+    _voiceSink=_nodes;
     let _cleaned=false;
     const _cleanup=()=>{
       if(_cleaned) return; _cleaned=true;
@@ -5993,14 +6091,16 @@ window.SoundEngine={
       src.stop(when+dur+0.06);
       break;}
     }
+    _voiceSink=null; // node construction (all synchronous) is done for this voice
     // ── Schedule cleanup once the voice has finished ──────────────────
     // Prefer onended on real source nodes (fires when they stop); the last
     // source to end disconnects every node this voice created. A timer
     // fallback covers iOS edge cases where onended may not fire.
-    const _srcs=_nodes.filter(n=>n&&typeof n.start==='function');
-    if(_srcs.length){
-      let _remaining=_srcs.length;
-      _srcs.forEach(s=>{ s.onended=()=>{ if(--_remaining<=0) _cleanup(); }; });
+    let _remaining=0;
+    for(let i=0;i<_nodes.length;i++){ const n=_nodes[i]; if(n&&typeof n.start==='function') _remaining++; }
+    if(_remaining>0){
+      const done=()=>{ if(--_remaining<=0) _cleanup(); };
+      for(let i=0;i<_nodes.length;i++){ const n=_nodes[i]; if(n&&typeof n.start==='function') n.onended=done; }
     }
     const _tailSec=Math.max(0,(when-_rawCtx.currentTime))+Math.max(durSec,0)+0.5;
     setTimeout(_cleanup, Math.min(15000, _tailSec*1000));
@@ -6581,16 +6681,26 @@ function queueVisual(at,fn,isOff,pri){
   _visQ.push({at,fn,off:!!isOff,pri:pri===undefined?1:pri});
   if(_visQ.length>600) _visQ.splice(0,_visQ.length-600); // safety valve, never expected
 }
+const _visDue=[]; // reused scratch — avoids allocating a `due` array every tick
 function pumpVisuals(){
   if(!_visQ.length||!audioCtx) return;
   const now=audioCtx.currentTime;
-  let due=null;
-  for(let i=0;i<_visQ.length;i++){
-    if(_visQ[i].at<=now){ (due||(due=[])).push(_visQ[i]); _visQ.splice(i,1); i--; }
+  const q=_visQ;
+  // Single pass: collect due events into the scratch buffer and compact the
+  // survivors to the front (write index w). The old version spliced inside
+  // the loop — O(n²) with an array shift per removed element every tick.
+  let w=0; _visDue.length=0;
+  for(let i=0;i<q.length;i++){
+    const ev=q[i];
+    if(ev.at<=now) _visDue.push(ev);
+    else q[w++]=ev;
   }
-  if(!due) return;
-  due.sort((a,b)=>(a.at-b.at)||(a.pri-b.pri)); // time order, playhead before flashes
-  for(const ev of due){ try{ ev.fn(); }catch(_){} }
+  q.length=w; // drop consumed slots before running callbacks, so any new
+              // events a callback queues land after the survivors
+  if(!_visDue.length) return;
+  _visDue.sort((a,b)=>(a.at-b.at)||(a.pri-b.pri)); // playhead (pri 0) before flashes
+  for(let i=0;i<_visDue.length;i++){ try{ _visDue[i].fn(); }catch(_){} }
+  _visDue.length=0;
 }
 // The clock stops ticking on stop/pause, so pending "off" events (class
 // removals — unconditional, exactly like the old timers that still fired after
@@ -7001,6 +7111,9 @@ function stopPlay(){
   }
   document.getElementById('pad-play').classList.remove('playing');
   document.getElementById('pad-pause')?.classList.remove('playing');
+  // Flush the saves that were throttled while playing, once the stop UI has
+  // painted and the audio scheduler is idle (see autoSaveTick / persist tick).
+  setTimeout(()=>{ try{ autoCommitPattern(); if(_saveDirty&&!(typeof paramDragActive!=='undefined'&&paramDragActive)) persistNow(); }catch(e){} },120);
   setStatus('Stopped');
 }
 
@@ -7992,7 +8105,17 @@ function recordStep(pi,spOverride){
     if(!p.stepSeen) p.stepSeen=Array(64).fill(false);
     p.stepSeen[abs]=true;
     patternDirty=true;
-    buildSteps();
+    // Single-pad refresh instead of a full buildSteps(): rebuilding all 16
+    // pads (innerHTML parse + listener re-attach + style recalc) per recorded
+    // hit is visible jank on old devices. The pad for this hit sits at
+    // gridAbs (the grid shows the offset-shifted view) and only exists while
+    // the STEP grid is showing this part; in KEY mode the spad-* ids belong
+    // to the keyboard, so we must not touch them — the grid re-renders from
+    // data on the next buildSteps() (mode/page change) anyway.
+    if(pi===activePart && isStepLike()){
+      const pad=document.getElementById('spad-'+gridAbs);
+      if(pad) pad.classList.add('on');
+    }
     setStatus('Recorded step '+(abs+1)+' on Part '+(pi+1));
   } else if(spOverride){
     // Overdubbing the keyboard onto an existing step: update its note/velocity
@@ -8061,7 +8184,12 @@ function serializeAll(){
     // ── per-part page selection ──
     partPage:[...partPage],
     // ── the pattern store (each pattern already includes per-part CTRL data) ──
-    patternStore:patternStore.map(bank=>bank.map(pat=>pat?JSON.parse(JSON.stringify(pat)):null)),
+    // patternStore is passed by REFERENCE, not deep-cloned: every consumer of
+    // serializeAll() JSON.stringify()s the result immediately (persistNow,
+    // downloadProject), so the old JSON.parse(JSON.stringify(...)) clone of
+    // all 8 banks × 64 patterns allocated megabytes of garbage per autosave —
+    // enough to stall the audio scheduler on old phones.
+    patternStore,
     // ── the live working copy of parts (may differ from stored pattern if unsaved) ──
     liveParts:snapshotParts(),
   };
@@ -8216,6 +8344,7 @@ function persistNow(){    // write full state to the store(s)
   try{
     _memSave=JSON.stringify(serializeAll());
     _saveDirty=false;
+    _lastPersistT=performance.now();
     if(autoSaveEnabled){
       try{ localStorage.setItem(AUTOSAVE_KEY,_memSave); }catch(e){}
       idbSet(AUTOSAVE_KEY,_memSave);   // primary, reload-safe store
@@ -8261,9 +8390,16 @@ function refreshAutoSaveBtn(){
 // Debounced autosave: coalesces bursts of edits; writes only when dirty and
 // not mid-gesture. Worst-case loss is a few seconds; idle costs nothing.
 const AUTOSAVE_INTERVAL=2500; // ms
+let _lastPersistT=0;
 setInterval(()=>{
   if(!_saveDirty) return;
   if(paramDragActive) return; // don't write mid knob-drag
+  // While the transport runs, stretch the effective period to 10s: a full
+  // serialize + JSON.stringify every 2.5s creates enough garbage and main-
+  // thread stall to make the audio scheduler stutter on old phones. Stop,
+  // hide, and unload still flush instantly (see stopPlay and the listeners
+  // below), so worst-case loss is unchanged for anything that ends normally.
+  if(typeof playing!=='undefined'&&playing&&performance.now()-_lastPersistT<10000) return;
   persistNow();
 }, AUTOSAVE_INTERVAL);
 // Flush on tab close / hide so closing doesn't lose the last edits
@@ -8919,7 +9055,11 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     // startedAt is the (possibly future) bar-quantized start — clamp at 0
     // while armed and waiting for the downbeat.
     elTime.textContent=fmtTime(ctx?Math.max(0,ctx.currentTime-startedAt):0);
-    rafId=requestAnimationFrame(tick);
+    // The readout resolves to 0.1s, so a 60fps rAF loop was pure waste — a
+    // 10Hz timeout gives the identical display for a fraction of the wakeups
+    // (matters on old phones, where the recorder's ScriptProcessor already
+    // competes for the main thread).
+    rafId=setTimeout(tick,100);
   }
 
   // Next global bar downbeat — the same clock the queued pattern switches use.
@@ -9051,7 +9191,7 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     if(!recording) return;
     recording=false;
     recStartAt=null; recStopAt=null;
-    cancelAnimationFrame(rafId);
+    clearTimeout(rafId); // tick is a 10Hz timeout now, not rAF
     try{ tapNode && tapNode.disconnect(procNode); }catch(e){}
     try{ procNode && procNode.disconnect(); }catch(e){}
     try{ sinkGain && sinkGain.disconnect(); }catch(e){}
