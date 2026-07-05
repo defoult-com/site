@@ -3325,7 +3325,7 @@ function showSoundCtrlPanel(){
 // cycle. Edits go straight to the shared masterFX state and the live FX nodes.
 const MASTER_FX_DEFS=[
   {kind:'dist'},
-  {key:'volume',    label:'VOL',  min:0,   max:2,  step:0.01, dflt:1.0, fmt:v=>Math.round(v*100)+'%'},
+  {key:'volume',    label:'VOL',  min:0,   max:2,  step:0.01, dflt:0.5, fmt:v=>Math.round(v*100)+'%'},
   {key:'gain',      label:'GAIN', min:1,   max:50, step:0.1,  dflt:1.0, fmt:v=>v.toFixed(1)+'\u00d7'},
   {key:'character', label:'CHAR', min:0,   max:1,  step:0.01, dflt:0.5, fmt:v=>Math.round(v*100)+'%'},
   {kind:'eq'},
@@ -6241,6 +6241,10 @@ function resetSoundEngineDefaults(){
 // ╔════════════════════════════════════════════════════════════════╗
 // ║ END SOUND ENGINE                                                 ║
 // ╚════════════════════════════════════════════════════════════════╝
+// Distortion output level (VOL) starts at 50% — applied here, outside the
+// sound-engine fence, from the same reset default so the two stay in sync.
+// (Saved projects keep their own stored value; this only sets a fresh session.)
+{ const _v=MASTER_FX_DEFS.find(d=>d.key==='volume'); if(_v) masterFX.volume=_v.dflt; }
 let tempoKeyHeld=false;
 /* ════════════════════════════════════════════════════════════════════
    §38 · METRONOME
