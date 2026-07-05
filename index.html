@@ -170,6 +170,10 @@
   .step-pad.inactive{opacity:1;background:#333330;border:1px solid #4a4a40;color:#777;cursor:default;}
   .step-pad.inactive.on{background:#4a4a45;color:#999;}
   .step-pad.skipped{background:#333330!important;border:1px solid #4a4a40!important;color:#777!important;}
+  /* Cycle-restricted step: a small notch in the bottom-left corner marks that
+     the step plays on only some of the 4 loop repetitions. */
+  .step-pad.cyc-skip::after{content:'';position:absolute;left:2px;bottom:2px;width:0;height:0;border-left:5px solid var(--seq-yellow-dark);border-top:5px solid transparent;opacity:.9;}
+  .step-pad.on.cyc-skip::after{border-left-color:#111;}
   .step-pad.skipped.on{background:#4a4a45!important;color:#999!important;}
   .step-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#111;padding:2px 0;}
   .step-range-bar{display:flex;gap:3px;margin-top:5px;}
@@ -229,6 +233,18 @@
   .cc-num-input:focus{border-color:var(--seq-yellow);background:#1a1a00;}
   .smd-cell.cc-active .cc-num-input{border-color:#60d0d0;}
   .smd-cell.cc-active{border-color:#60d0d0 !important;background:#001a1a !important;}
+  /* Desktop keyboard-selected display parameter ( , / . to move, ; / l to
+     change). A bright ring + subtle fill; sits above hover/drag but below the
+     CC-learn active state. */
+  .smd-cell.kb-selected{border-color:var(--seq-yellow)!important;background:#2a3010!important;box-shadow:0 0 0 2px var(--seq-yellow) inset;}
+  .smd-cell.kb-selected .smd-cell-label{color:var(--seq-yellow);}
+  /* The keyboard-selection square is a desktop-only affordance. Force it off on
+     mobile/touch so it can never render there even if a mobile browser
+     misreports pointer/hover to the JS gate. */
+  body.mobile-mode .smd-cell.kb-selected,
+  body.touch-capable .smd-cell.kb-selected{border-color:var(--seq-border)!important;background:var(--seq-btn-bg)!important;box-shadow:none!important;}
+  body.mobile-mode .smd-cell.kb-selected .smd-cell-label,
+  body.touch-capable .smd-cell.kb-selected .smd-cell-label{color:var(--seq-yellow-dark);}
   .smd-cell-label{font-size:9px;color:var(--seq-yellow-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
   .smd-cell-val{font-size:18px;font-weight:bold;color:var(--seq-yellow);line-height:1;}
   .smd-cell.draggable .smd-cell-val{color:#fff;}
@@ -810,6 +826,10 @@ function updateAccVelGrey(sp){
 const parts=DEFAULTS.map(d=>({
   steps:Array(64).fill(false),
   skip:Array(64).fill(false), // per-step skip flag — playhead jumps over these
+  // Per-step CYCLE mask: 4 bits (one per sequence repetition 1-4). A set bit
+  // means the step sounds on that cycle; 15 = plays on every cycle (default).
+  // Lets a step appear/disappear across a 4-repetition super-loop.
+  cyc:Array(64).fill(15),
   stepParams:Array.from({length:64},()=>defaultStepParams()),
   // Tracks steps that have been placed at least once. A step keeps its params
   // when toggled off, so re-activating a "seen" step restores them instead of
@@ -847,7 +867,7 @@ const parts=DEFAULTS.map(d=>({
   seqStart:1,seqEnd:16,dirIndex:0,speedIndex:DEFAULT_SPEED_IDX,swing:0,seqOffset:0,midiDly:0,midiDlyTime:DEFAULT_DLY_TIME_IDX,dlyFb:0,dlyPitch:0,muted:false,soloed:false,...d
 }));
 // seqOffset shifts all active steps forward/backward within the loop, wrapping at boundaries
-const playState=Array(8).fill(null).map(()=>({pos:0,ppDir:1,acc:0,stepCount:0}));
+const playState=Array(8).fill(null).map(()=>({pos:0,ppDir:1,acc:0,stepCount:0,cycle:0}));
 const partPage=Array(8).fill(0);
 const partInPhase=Array(8).fill(true);
 const lastFireTime=Array(8).fill(0);
@@ -1255,6 +1275,7 @@ function snapshotParts(){
       ...rest,
       steps:[...p.steps],
       skip:[...(p.skip||Array(64).fill(false))],
+      cyc:[...(p.cyc||Array(64).fill(15))],
       stepParams:p.stepParams.map(sp=>({...sp})),
       stepSeen:[...(p.stepSeen||Array(64).fill(false))],
       // Per-part CTRL setup is stored IN the pattern: live values, the output
@@ -1285,6 +1306,7 @@ function restoreParts(snapshot){
     Object.assign(parts[i],keepSound);
     parts[i].steps=[...saved.steps];
     parts[i].skip=[...(saved.skip||Array(64).fill(false))];
+    parts[i].cyc=saved.cyc?[...saved.cyc]:Array(64).fill(15);
     parts[i].stepParams=saved.stepParams.map(sp=>({...sp}));
     // Older snapshots predate stepSeen: treat any currently-on step as "seen"
     // so its params are remembered if removed and re-added.
@@ -1348,7 +1370,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
     const now=audioCtx.currentTime;
     for(let pi=0;pi<8;pi++){
       const stepSec=baseSec()*SPEEDS[parts[pi].speedIndex].ratio;
-      playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+      playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
       partInPhase[pi]=true;
       if(downbeatTime!==undefined){
         // New pattern's step 0 plays exactly on this future downbeat
@@ -1809,6 +1831,105 @@ const CELL_DEFS=[
 /* ════════════════════════════════════════════════════════════════════
    §12 · DISPLAY INPUT — SCROLL-WHEEL + DOUBLE-TAP RESET
    ════════════════════════════════════════════════════════════════════ */
+// ── Desktop keyboard selection of a display parameter ────────────────
+// DESKTOP ONLY. On the sequencer display grid one cell is highlighted; the
+// ,/. keys move the highlight across the row and wrap to the next row, looping
+// end-to-start; the ;/l keys change the selected parameter's value (; up, l
+// down), reusing each cell's existing _wheelAdjust, so clamping and the MUTE-
+// shifted variants behave exactly like the scroll wheel. Works on EVERY display
+// that fills the grid — STEP params, CTRL CCs, the PAT velocity mixer, the KEY
+// keyboard panel and the SETTINGS cells. Touch devices never see the highlight
+// and the keys are ignored there.
+// DESKTOP display-parameter keyboard selection (see the block comment above).
+// Generalized to EVERY display that fills the grid — STEP params, CTRL CCs,
+// the velocity mixer (PAT), the keyboard panel (KEY) and the settings cells —
+// by operating over whatever adjustable cells are currently rendered rather
+// than a fixed list. "Adjustable" = a .smd-cell that exposes a _wheelAdjust
+// handler (the same handler the scroll wheel uses), taken in DOM order, which
+// is reading order: row 1 left→right, then row 2.
+let smdSel=0; // index into the CURRENT display's adjustable cells (0-based)
+function isDesktopEnv(){
+  // A real mouse/keyboard machine: fine pointer + hover, and not mobile-mode.
+  if(document.body.classList.contains('mobile-mode')) return false;
+  if(!window.matchMedia) return true;
+  return window.matchMedia('(hover: hover)').matches && window.matchMedia('(pointer: fine)').matches;
+}
+// The adjustable cells of whatever display is currently shown, in reading order.
+function smdCells(){
+  const grid=document.getElementById('smd-grid');
+  if(!grid) return [];
+  return Array.prototype.filter.call(grid.querySelectorAll('.smd-cell'),
+    c=>typeof c._wheelAdjust==='function');
+}
+// Active on desktop whenever the distal display currently shows adjustable
+// cells. This deliberately includes the transient panels that own the grid
+// while something is held: the STEP parameter panel and the CTRL step-lock
+// panels (a step held open), the part-setup panel (a part held open), the
+// random-fill panel, and the MUTE/SOLO FX panels — in addition to the base
+// STEP / CTRL / velocity / KEY / SETTINGS displays. The only exclusions are the
+// pattern save/load/clear browse (the grid then shows pattern slots, which are
+// not adjustable parameters) and a bare Mute/Solo hold that doesn't raise an FX
+// panel (e.g. STEP mute mode, where the keys would fight the part-select flow).
+function smdSelectionActive(){
+  if(!isDesktopEnv()) return false;
+  if(saveBrowsing) return false;
+  if((shiftHeld || ctrlHeld) && _holdPanel===null) return false;
+  return smdCells().length>0;
+}
+// Build the status string from the cell's own label + value (works for any
+// display without needing per-display metadata).
+function smdCellStatus(cell){
+  const l=cell.querySelector('.smd-cell-label'), v=cell.querySelector('.smd-cell-val');
+  const lt=l?l.textContent.trim():'', vt=v?v.textContent.trim():'';
+  return vt?(lt+': '+vt):lt;
+}
+// Re-apply the highlight after any rebuild of the grid (each display wipes it).
+function refreshSmdSelection(){
+  const grid=document.getElementById('smd-grid');
+  if(!grid) return;
+  grid.querySelectorAll('.smd-cell.kb-selected').forEach(c=>c.classList.remove('kb-selected'));
+  if(!smdSelectionActive()) return;
+  const cells=smdCells();
+  if(!cells.length) return;
+  if(smdSel<0||smdSel>=cells.length) smdSel=Math.max(0,Math.min(cells.length-1,smdSel));
+  cells[smdSel].classList.add('kb-selected');
+}
+// Left/Right: move the highlight across the row and wrap to the next, looping
+// end↔start. dir = +1 right / -1 left.
+function moveSmdSelection(dir){
+  if(!smdSelectionActive()) return;
+  const cells=smdCells();
+  const n=cells.length; if(!n) return;
+  smdSel=((smdSel+dir)%n+n)%n;
+  refreshSmdSelection();
+  const cell=cells[smdSel];
+  if(cell){ cell.scrollIntoView({block:'nearest',inline:'nearest'}); setStatus(smdCellStatus(cell)); }
+}
+// Up/Down: change the selected parameter (reuses the cell's wheel handler).
+function adjustSmdSelection(dir){
+  if(!smdSelectionActive()) return;
+  const cells=smdCells();
+  if(smdSel<0||smdSel>=cells.length) return;
+  const cell=cells[smdSel];
+  if(!cell||typeof cell._wheelAdjust!=='function') return;
+  // SEQ START / END are bar-snapping range cells: their internal apply() snaps
+  // the value to the nearest bar line (keyed off the global Shift state), which
+  // can pin the value in place and make the arrow keys look unresponsive —
+  // especially on SEQ START, sitting at its minimum. For keyboard stepping we
+  // want a plain, always-moving ±1, so we run the cell's free (non-snapped)
+  // path for those two. Every other cell keeps its exact wheel behaviour.
+  const isRangeCell=(cell.id==='smd-strt-cell'||cell.id==='smd-end-cell');
+  if(isRangeCell){
+    const savedShift=shiftHeld;
+    shiftHeld=true;                 // disables the snap inside apply()
+    try{ cell._wheelAdjust(dir, true); }
+    finally{ shiftHeld=savedShift; }
+  } else {
+    cell._wheelAdjust(dir, shiftHeld);
+  }
+  setStatus(smdCellStatus(cell));
+}
+
 // Each panel builder attaches `cell._wheelAdjust = (dir, shift)=>{}` to its
 // adjustable cells. One delegated listener on the display grid finds the cell
 // under the pointer and calls it. dir = +1 (up) / -1 (down). preventDefault
@@ -1968,6 +2089,7 @@ function buildSmdGrid(){
     grid.appendChild(cell);
   });
   attachDragHandlers();
+  if(typeof refreshSmdSelection==='function') refreshSmdSelection();
 }
 
 function flashCell(idx){
@@ -2330,11 +2452,14 @@ function startHold(abs,wasOn){ // abs is the DATA step index
   if(heldStepAbs>=0){const p=document.getElementById('spad-'+offsetPadAbs(heldStepAbs));if(p)p.classList.remove('held');}
   heldStepAbs=abs; heldStepWasOn=wasOn; heldStepParamChanged=false; heldStepStartTime=performance.now();
   const pad=document.getElementById('spad-'+offsetPadAbs(abs));if(pad)pad.classList.add('held');
+  if(currentMode==='step') buildRangeBar(); // page buttons → this step's cycle toggles
 }
 function shouldToggleOffOnRelease(abs){ if(currentMode==='ctrl') return false; return heldStepWasOn && !heldStepParamChanged && !holdExceeded() && heldStepAbs===abs; }
 function endHold(){
+  const wasStep=(currentMode==='step' && heldStepAbs>=0);
   if(heldStepAbs>=0){const pad=document.getElementById('spad-'+offsetPadAbs(heldStepAbs));if(pad)pad.classList.remove('held');}
   heldStepAbs=-1; heldStepWasOn=false; heldStepParamChanged=false; heldStepStartTime=0;
+  if(wasStep) buildRangeBar(); // cycle toggles → normal page buttons
 }
 
 // CTRL tab: holding a step shows its automation (unchanged). A QUICK TAP instead
@@ -3856,7 +3981,7 @@ function nextAbsStep(pi){
   }
   return abs;
 }
-function resetPartPlayState(pi){playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;partInPhase[pi]=false;}
+function resetPartPlayState(pi){playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;partInPhase[pi]=false;}
 // After SEQ STRT/END changes mid-play, flush any lookahead steps that were
 // scheduled for the OLD range and re-anchor this part so the very next step
 // lands inside the new window — prevents below-start steps from firing one
@@ -4645,11 +4770,12 @@ function buildSteps(){
     const isBelowStart=(stepNum<p.seqStart);
     const dAbs=offsetDataAbs(abs); // data step shown on this pad (offset-aware)
     const isSkipped=p.skip&&p.skip[dAbs]&&!isInactive;
+    const hasCyc=isOn&&!isInactive&&stepHasCyc(activePart,dAbs); // step plays on some but not all cycles
     // Lock dots are shown in both the CTRL tab (where locks are edited) and
     // the STEP tab, so locked steps stay visible while sequencing. They turn
     // red via body.parm-muted while the part's locks are muted.
     const hasLock=(currentMode==='ctrl'||currentMode==='step')&&(isDrumMachine()?soundStepHasLocks(activePart,dAbs):stepHasLocks(activePart,dAbs));
-    let padCls='step-pad'+(isOn?' on':'')+(isHead?' playhead':'')+(isInactive?' inactive':'')+(isSkipped?' skipped':'')+(hasLock?' has-lock':'');
+    let padCls='step-pad'+(isOn?' on':'')+(isHead?' playhead':'')+(isInactive?' inactive':'')+(isSkipped?' skipped':'')+(hasCyc?' cyc-skip':'')+(hasLock?' has-lock':'');
     const div=document.createElement('div');div.className='step-btn';div.dataset.pressable='1';
     div.innerHTML=`<div class="${padCls}" id="spad-${abs}">${stepNum}</div><div class="step-kbd">${STEP_KEYS[slot]}</div>`;
     // Allow clicks on inactive steps that are BEYOND seqEnd (so they can expand it)
@@ -4738,6 +4864,26 @@ function wireRangeTap(div, fn){
    ════════════════════════════════════════════════════════════════════ */
 function buildRangeBar(){
   const bar=document.getElementById('step-range-bar');bar.innerHTML='';
+  // While a step is held in STEP mode, the 4 page buttons become that step's
+  // CYCLE toggles (which of the 4 loop repetitions it plays on). Tap a button
+  // (or, on desktop, press its page key while holding the step) to toggle.
+  if(currentMode==='step' && heldStepAbs!==-1 && !saveBrowsing){
+    const p=parts[activePart];
+    const dataAbs=heldStepAbs; // startHold stores the DATA step index
+    const mask=(p.cyc&&p.cyc[dataAbs]!==undefined)?p.cyc[dataAbs]:15;
+    for(let i=0;i<4;i++){
+      const on=!!(mask&(1<<i));
+      const div=document.createElement('div');
+      div.className='range-btn'+(on?' active':'');
+      div.innerHTML=`<span>CYC ${i+1}</span><span class="rkbd">${RANGE_KEYS[i]}</span>`;
+      div.dataset.pressable='1';
+      const toggle=()=>toggleCycleBit(dataAbs,i);
+      div.addEventListener('click',toggle);
+      wireRangeTap(div,toggle);
+      bar.appendChild(div);
+    }
+    return;
+  }
   if(saveBrowsing){
     for(let i=0;i<4;i++){
       const off=i*16;
@@ -4848,6 +4994,7 @@ function applyMutePageCopy(target){
       p.stepParams[dofs+k]={...p.stepParams[so+k]};
       if(p.stepSeen) p.stepSeen[dofs+k]=p.stepSeen[so+k];
       if(p.skip) p.skip[dofs+k]=p.skip[so+k];
+      if(p.cyc) p.cyc[dofs+k]=p.cyc[so+k];
     }
   };
   const h1=has(0),h2=has(1),h3=has(2);
@@ -6207,6 +6354,23 @@ function triggerSelectPart(i){
    ════════════════════════════════════════════════════════════════════ */
 function partHasSkips(pi){ const s=parts[pi].skip; return !!s && s.some(Boolean); }
 function clearSkips(pi){ if(parts[pi].skip) parts[pi].skip.fill(false); }
+// A step has cycle restrictions if its mask isn't the default 15 (all cycles).
+function stepHasCyc(pi,dataAbs){ const c=parts[pi].cyc; return !!c && c[dataAbs]!==undefined && c[dataAbs]!==15; }
+// Toggle whether the held step sounds on cycle `cyc` (0-3). Mirrors the picture's
+// page-button behaviour: each of the 4 page controls enables/disables the step
+// for one repetition of the loop.
+function toggleCycleBit(dataAbs, cyc){
+  if(currentMode!=='step') return;
+  const p=parts[activePart];
+  if(!p.cyc) p.cyc=Array(64).fill(15);
+  p.cyc[dataAbs]^=(1<<cyc);
+  heldStepParamChanged=true;     // editing cycles must not toggle the step off on release
+  patternDirty=true;
+  buildRangeBar(); buildSteps();
+  const m=p.cyc[dataAbs];
+  const on=[1,2,3,4].filter((_,k)=>m&(1<<k));
+  setStatus('Step '+(dataAbs+1)+' cycles: '+(m===15?'all':(m===0?'none':on.join(','))));
+}
 function toggleSkip(abs){
   if(currentMode==='ctrl') return;
   const p=parts[activePart];
@@ -6363,7 +6527,7 @@ function queueResync(pi){
 
 function fireResync(pi){
   pendingResync[pi]=false;
-  playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+  playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
   partInPhase[pi]=true; // reset happened on bar boundary = in phase
   const el=document.getElementById('pnum-'+pi);
   if(el){el.style.outline='';el.style.outlineOffset='';}
@@ -6524,6 +6688,9 @@ function scheduleDrum(pi,abs,isOffBeat,stepAt){
   if(isPartAudible(pi)){ if(isDrumMachine()) playSoundLocks(pi, shiftedAbs, stepAt); else playCtrlLocks(pi, shiftedAbs, stepAt); }
   if(p.skip&&p.skip[abs]) return; // step-skip: playhead already jumps these; guard for safety
   if(!p.steps[shiftedAbs]||!isPartAudible(pi)) return;
+  // Cycle-skip: a masked step only sounds on cycles whose bit is set. On other
+  // cycles its slot is silent — the playhead still advances (no visual blink).
+  if(p.cyc){ const m=p.cyc[shiftedAbs]; if(m!==undefined && !(m & (1<<playState[pi].cycle))) return; }
   const sp=p.stepParams[shiftedAbs];
   if(sp&&sp.prob<100&&Math.random()*100>=sp.prob) return;
   if(sp&&sp.stepOffset<0) return; // handled by scheduleNegativeOffset
@@ -6602,7 +6769,7 @@ function schedulePlay(resetAccs=true){
   if(resetAccs){
     globalTick=0;
     for(let pi=0;pi<8;pi++){
-      playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+      playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
       pendingResync[pi]=false;partInPhase[pi]=true;
       partNextTime[pi]=audioStartTime;
     }
@@ -6621,7 +6788,7 @@ function schedulePlay(resetAccs=true){
     // Immediate resync (speed/direction change) — reset part now
     for(let pi=0;pi<8;pi++){
       if(immediateResync[pi]){
-        playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+        playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
         // Snap to nearest bar downbeat (past or future within lookahead)
         const el2=now-audioStartTime;
         const bar2=barSec();
@@ -6643,7 +6810,7 @@ function schedulePlay(resetAccs=true){
         let anyFired=false;
         for(let pi=0;pi<8;pi++){
           if(pendingResync[pi]){
-            playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+            playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
             // Snap to exact bar downbeat so part locks to global grid
             partNextTime[pi]=downbeatTime;
             pendingResync[pi]=false;partInPhase[pi]=true;
@@ -6703,6 +6870,13 @@ function schedulePlay(resetAccs=true){
             stepInc=stepSec/2;
             loopElapsed[pi]+=0.5;
           }
+        }
+        // Per-step cycle-skip: advance this part's 4-cycle counter when a new
+        // loop begins (deterministic directions return to pos 0). Random has no
+        // stable cycle, so it stays on cycle 0. scheduleDrum reads
+        // playState[pi].cycle to decide whether a cycle-masked step sounds.
+        if(playState[pi].pos===0 && playState[pi].stepCount>0 && parts[pi].dirIndex!==4){
+          playState[pi].cycle=(playState[pi].cycle+1)&3;
         }
         const abs=nextAbsStep(pi);
         const isOffBeat=(playState[pi].stepCount%2===1);
@@ -6844,7 +7018,7 @@ function stopPlay(){
   if(playhead>=0){if(isStepLike()){const prev=document.getElementById('spad-'+playhead);if(prev)prev.className='step-pad'+(shiftedIsOn(activePart,playhead)?' on':'');}playhead=-1;}
   for(let pi=0;pi<8;pi++){
     pendingResync[pi]=false;immediateResync[pi]=false;
-    playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;
+    playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
     const el=document.getElementById('pnum-'+pi);if(el){el.style.outline='';el.style.outlineOffset='';}
   }
   document.getElementById('pad-play').classList.remove('playing');
@@ -7007,7 +7181,7 @@ document.addEventListener('keydown',e=>{
     showStepParams(da);
     return;
   }
-  if(e.code in CODE_TO_PAGE){e.preventDefault();if(!e.repeat){const _pi=CODE_TO_PAGE[e.code];setPage(_pi);const _rbs=document.querySelectorAll('.range-btn');if(_rbs[_pi])pressOn(_rbs[_pi]);}return;}
+  if(e.code in CODE_TO_PAGE){e.preventDefault();if(!e.repeat){const _pi=CODE_TO_PAGE[e.code];if(currentMode==='step'&&heldStepAbs!==-1){toggleCycleBit(heldStepAbs,_pi);}else{setPage(_pi);const _rbs=document.querySelectorAll('.range-btn');if(_rbs[_pi])pressOn(_rbs[_pi]);}}return;}
   if(e.code==='KeyN'&&!shiftHeld&&!ctrlHeld&&!altHeld){
     e.preventDefault();
     if(!e.repeat){ tempoKeyHeld=true; pressOn(document.getElementById('tempo-box')); showTempoDisplay(); }
@@ -7018,6 +7192,20 @@ document.addEventListener('keydown',e=>{
     const step=e.shiftKey?10:1;
     setTempoVal(tempo+(e.code==='ArrowRight'?step:-step));
     updateTempoBig();
+    return;
+  }
+  // Desktop display-parameter selection:
+  //   ,  → move selection left      .  → move selection right  (wrap + loop)
+  //   ;  → increase selected value  l  → decrease selected value
+  // Active only when a display with adjustable cells is showing; otherwise the
+  // keys fall through. (Arrow keys are intentionally NOT used, so they stay
+  // free for tempo nudging while N is held.)
+  if((e.code==='Comma'||e.code==='Period'||e.code==='Semicolon'||e.code==='KeyL')&&smdSelectionActive()){
+    e.preventDefault();
+    if(e.code==='Comma') moveSmdSelection(-1);          // , = left
+    else if(e.code==='Period') moveSmdSelection(1);      // . = right
+    else if(e.code==='Semicolon') adjustSmdSelection(1); // ; = up (increase)
+    else adjustSmdSelection(-1);                          // l = down (decrease)
     return;
   }
   if(e.code==='KeyM'&&!shiftHeld&&!ctrlHeld&&!altHeld){
@@ -7373,6 +7561,7 @@ function clearActivePartSteps(){
   parts[activePart].steps=Array(64).fill(false);
   parts[activePart].stepParams=Array.from({length:64},()=>defaultStepParams());
   parts[activePart].stepSeen=Array(64).fill(false);
+  if(parts[activePart].cyc) parts[activePart].cyc.fill(15);
   patternDirty=true;
   buildSteps();buildRangeBar();buildParts();
   setStatus('Part '+(activePart+1)+' steps cleared');
@@ -8160,6 +8349,7 @@ function newProject(){
   for(let i=0;i<8;i++){
     parts[i].steps=Array(64).fill(false);
     parts[i].skip=Array(64).fill(false);
+    parts[i].cyc=Array(64).fill(15);
     parts[i].stepParams=Array.from({length:64},()=>defaultStepParams());
     parts[i].stepSeen=Array(64).fill(false);
     parts[i].seqStart=1; parts[i].seqEnd=16; parts[i].dirIndex=0;
@@ -8269,6 +8459,9 @@ function applyMobileMode(){
   const mm = window.matchMedia ? (q)=>window.matchMedia(q).matches : ()=>false;
   const touchPrimary = mm('(pointer: coarse)') && !mm('(hover: hover)');
   document.body.classList.toggle('touch-capable', touchPrimary);
+  // The keyboard-selection square is desktop-only; drop any lingering highlight
+  // now that the mobile/touch state may have changed.
+  if(typeof refreshSmdSelection==='function') refreshSmdSelection();
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -8404,6 +8597,17 @@ if(window.ResizeObserver){
       if(w!==_smdLastW){ _smdLastW=w; renormalizeSmdAspect(); }
     });
     _smdRO.observe(_smdGrid);
+  }
+}
+// Keep the desktop keyboard-selection highlight correct across EVERY display.
+// Each display (STEP, CTRL, velocity mixer, KEY, SETTINGS) rebuilds the grid's
+// children when shown; this one observer re-applies the highlight afterwards so
+// no individual builder needs to know about the feature. childList-only (not
+// subtree), so per-step value text updates during playback never trigger it.
+if(window.MutationObserver){
+  const _selGrid=document.getElementById('smd-grid');
+  if(_selGrid && typeof refreshSmdSelection==='function'){
+    new MutationObserver(()=>refreshSmdSelection()).observe(_selGrid,{childList:true});
   }
 }
 // Manual view toggle: flips between portrait and wide, overriding auto.
