@@ -3032,7 +3032,9 @@ function showCtrlPanel(){
 // Refresh the lock dot on a step pad in CTRL mode
 function markStepLockDot(part,abs){
   if(part!==activePart) return;
-  const pad=document.getElementById('spad-'+abs);
+  // abs is a DATA index; the grid renders the offset-shifted view, so the
+  // dot belongs on the pad currently SHOWING this step (matches buildSteps).
+  const pad=document.getElementById('spad-'+offsetPadAbs(abs));
   if(!pad) return;
   const has=isDrumMachine()?soundStepHasLocks(part,abs):stepHasLocks(part,abs);
   if(has) pad.classList.add('has-lock'); else pad.classList.remove('has-lock');
@@ -3041,9 +3043,12 @@ function markStepLockDot(part,abs){
 function recordCtrlLock(idx,val){
   const p=parts[activePart];
   const lo=p.seqStart-1, len=p.seqEnd-p.seqStart+1;
-  let abs;
-  if(playhead>=0) abs=playhead;
-  else { const pos=((playState[activePart].pos-1)+len)%len; abs=lo+((pos+p.seqOffset)%len+len)%len; }
+  // playhead is a GRID position; playback reads locks at the shifted DATA
+  // index (grid − seqOffset, see playCtrlLocks), so convert before writing.
+  let grid;
+  if(playhead>=0) grid=playhead;
+  else grid=lo+((((playState[activePart].pos-1)%len)+len)%len);
+  const abs=lo+((((grid-lo)-p.seqOffset)%len)+len)%len;
   setCtrlLock(activePart,abs,idx,val);
   markStepLockDot(activePart,abs);
 }
@@ -3190,9 +3195,12 @@ function syncSoundDisplayCells(){
 function recordSoundLock(idx,knob){
   const p=parts[activePart];
   const lo=p.seqStart-1, len=p.seqEnd-p.seqStart+1;
-  let abs;
-  if(playhead>=0) abs=playhead;
-  else { const pos=((playState[activePart].pos-1)+len)%len; abs=lo+((pos+p.seqOffset)%len+len)%len; }
+  // playhead is a GRID position; playback reads locks at the shifted DATA
+  // index (grid − seqOffset, see playSoundLocks), so convert before writing.
+  let grid;
+  if(playhead>=0) grid=playhead;
+  else grid=lo+((((playState[activePart].pos-1)%len)+len)%len);
+  const abs=lo+((((grid-lo)-p.seqOffset)%len)+len)%len;
   setSoundLock(activePart,abs,idx,knob);
   markStepLockDot(activePart,abs);
 }
@@ -3325,7 +3333,7 @@ function showSoundCtrlPanel(){
 // cycle. Edits go straight to the shared masterFX state and the live FX nodes.
 const MASTER_FX_DEFS=[
   {kind:'dist'},
-  {key:'volume',    label:'VOL',  min:0,   max:2,  step:0.01, dflt:0.5, fmt:v=>Math.round(v*100)+'%'},
+  {key:'volume',    label:'VOL',  min:0,   max:2,  step:0.01, dflt:1.0, fmt:v=>Math.round(v*100)+'%'},
   {key:'gain',      label:'GAIN', min:1,   max:50, step:0.1,  dflt:1.0, fmt:v=>v.toFixed(1)+'\u00d7'},
   {key:'character', label:'CHAR', min:0,   max:1,  step:0.01, dflt:0.5, fmt:v=>Math.round(v*100)+'%'},
   {kind:'eq'},
@@ -6241,10 +6249,6 @@ function resetSoundEngineDefaults(){
 // ╔════════════════════════════════════════════════════════════════╗
 // ║ END SOUND ENGINE                                                 ║
 // ╚════════════════════════════════════════════════════════════════╝
-// Distortion output level (VOL) starts at 50% — applied here, outside the
-// sound-engine fence, from the same reset default so the two stay in sync.
-// (Saved projects keep their own stored value; this only sets a fresh session.)
-{ const _v=MASTER_FX_DEFS.find(d=>d.key==='volume'); if(_v) masterFX.volume=_v.dflt; }
 let tempoKeyHeld=false;
 /* ════════════════════════════════════════════════════════════════════
    §38 · METRONOME
@@ -6424,51 +6428,9 @@ function toggleStep(abs){
   buildRangeBar();buildParts();
 }
 
-function triggerStepWithSwing(pi,abs,isOffBeat,stepMs,_unused){
-  const p=parts[pi];
-  const lo=p.seqStart-1, len=p.seqEnd-p.seqStart+1;
-  const pos=abs-lo;
-  const shiftedPos=((pos-p.seqOffset)%len+len)%len;
-  const shiftedAbs=lo+shiftedPos;
-
-  if(!p.steps[shiftedAbs]) return;
-  if(recordSkipOnce[pi].has(shiftedAbs)){ recordSkipOnce[pi].delete(shiftedAbs); return; }
-  if(!isPartAudible(pi)) return;
-
-  // Probability check — skip step randomly based on prob setting
-  const sp=p.stepParams[shiftedAbs];
-  if(sp && sp.prob<100 && Math.random()*100>=sp.prob) return;
-
-  // Skip steps with negative offset — already pre-scheduled from previous tick
-  if(sp && sp.stepOffset<0) return;
-
-  const sMs=stepMs||baseMs()*SPEEDS[p.speedIndex].ratio;
-
-  // Swing + positive time offset
-  let delay=isOffBeat?swingDelayMs(pi):0;
-  if(sp && sp.stepOffset>0) delay+=sp.stepOffset*(sMs/16);
-
-  // Retrig/ratchet — fire N times evenly within the step interval
-  const retrig=(sp&&sp.retrig>1)?sp.retrig:1;
-  const retrigInterval=sMs/retrig;
-
-  const fire=()=>{
-    if(!playing)return;
-    playDrumAt(p,sp,audioCtx.currentTime);
-    // MIDI output: gate = % of the step (retrig) interval, tempo-relative
-    if(sp){
-      const gateMs=Math.max(10, retrigInterval*(sp.gate/100));
-      sendMidiNote(pi, sp, gateMs);
-    }
-    if(pi===activePart&&!saveBrowsing&&!isPatLike()){const pad=document.getElementById('spad-'+shiftedAbs);if(pad){pad.classList.add('trigger');setTimeout(()=>pad.classList.remove('trigger'),Math.min(60,retrigInterval*0.4));}}
-  };
-
-  for(let r=0;r<retrig;r++){
-    const t=delay+r*retrigInterval;
-    if(t<=0) fire();
-    else setTimeout(fire,Math.max(0,t));
-  }
-}
+// (triggerStepWithSwing removed — it was an orphaned legacy step-firing path;
+// the live scheduler fires steps via scheduleDrum(), which now also consumes
+// the recordSkipOnce entries that only this dead function used to check.)
 
 function shiftedIsOn(pi, abs){
   const p=parts[pi];
@@ -6691,6 +6653,12 @@ function scheduleDrum(pi,abs,isOffBeat,stepAt){
   // automates the sound engine; MIDI CONTROLLER mode sends CC automation.
   if(isPartAudible(pi)){ if(isDrumMachine()) playSoundLocks(pi, shiftedAbs, stepAt); else playCtrlLocks(pi, shiftedAbs, stepAt); }
   if(p.skip&&p.skip[abs]) return; // step-skip: playhead already jumps these; guard for safety
+  // A step live-recorded just ahead of the playhead already sounded as the
+  // manual key hit — consume its one-shot skip so the sequencer doesn't
+  // double it a moment later (entries are added in recordStep). Checked
+  // before the audibility gate so a muted part can't leave a stale entry
+  // that would silence a future loop's firing.
+  if(p.steps[shiftedAbs] && recordSkipOnce[pi].has(shiftedAbs)){ recordSkipOnce[pi].delete(shiftedAbs); return; }
   if(!p.steps[shiftedAbs]||!isPartAudible(pi)) return;
   // Cycle-skip: a masked step only sounds on cycles whose bit is set. On other
   // cycles its slot is silent — the playhead still advances (no visual blink).
@@ -6854,9 +6822,14 @@ function schedulePlay(resetAccs=true){
       const stepSec=baseSec()*SPEEDS[parts[pi].speedIndex].ratio;
       while(partNextTime[pi]<until){
         const stepAt=partNextTime[pi];
+        let hEntry=null;
         if(!looperActive){
           const h=loopHistory[pi];
-          h.push({t:stepAt,st:{...playState[pi]}});
+          // Each entry also carries the grid `abs` scheduled at this boundary
+          // (stamped below, once nextAbsStep resolves it) — recordStep anchors
+          // live-recorded hits to these actually-scheduled boundaries.
+          hEntry={t:stepAt,st:{...playState[pi]}};
+          h.push(hEntry);
           if(h.length>16) h.shift();
         }
         let stepInc=stepSec;
@@ -6883,6 +6856,7 @@ function schedulePlay(resetAccs=true){
           playState[pi].cycle=(playState[pi].cycle+1)&3;
         }
         const abs=nextAbsStep(pi);
+        if(hEntry) hEntry.abs=abs;
         const isOffBeat=(playState[pi].stepCount%2===1);
         playState[pi].stepCount++;
         scheduleDrum(pi,abs,isOffBeat,stepAt);
@@ -7967,40 +7941,51 @@ function recordStep(pi,spOverride){
   const p=parts[pi];
   const lo=p.seqStart-1;
   const len=p.seqEnd-p.seqStart+1;
-  const fwd=(p.dirIndex===0||p.dirIndex===undefined);
-  const back=(p.dirIndex===1);
-
-  let abs;
-  if((fwd||back) && playing && audioCtx){
-    // Derive BOTH the base step and the in-step fraction from the SAME audio
-    // clock reading, so they can never disagree (the playhead timer can lag the
-    // true clock by a few ms and cause an occasional one-step offset).
-    const INPUT_LATENCY_COMP=0.02; // seconds; input-event chain delay
+  // ── 1. Grid position of the hit ──────────────────────────────────────
+  // Anchor at the scheduled step boundary NEAREST to the (latency-
+  // compensated) press — the same candidate approach the looper uses
+  // (engageLooper): recently scheduled boundaries from loopHistory (each
+  // entry carries the grid `abs` it fired) plus the virtual, not-yet-
+  // scheduled next step at partNextTime. Unlike reconstructing the grid
+  // from audioStartTime, this stays correct across mid-play tempo drags,
+  // part SPEED changes, resyncs, SEQ range edits and every play direction.
+  let gridAbs=-1, unscheduled=false;
+  if(audioCtx){
     const stepSec=baseSec()*SPEEDS[p.speedIndex].ratio;
-    if(stepSec>0){
-      const tPress=audioCtx.currentTime-INPUT_LATENCY_COMP;
-      const elapsed=tPress-audioStartTime;
-      // Nearest step boundary (in time) to the latency-compensated press
-      const nearest=Math.round(elapsed/stepSec);
-      // Position within the looped range at that boundary, honoring direction
-      const k=((nearest%len)+len)%len;
-      const seqPos = fwd ? k : ((len-k)%len); // forward counts up, backward down
-      abs = lo + ((seqPos + p.seqOffset)%len+len)%len;
-      // Future-step skip: if we rounded UP to a step not yet scheduled, mute its
-      // first firing (the manual hit already sounded).
-      const roundedUp = nearest > Math.floor((audioCtx.currentTime-audioStartTime)/stepSec);
-      if(roundedUp){
-        const tNext=audioStartTime+Math.ceil((audioCtx.currentTime-audioStartTime)/stepSec)*stepSec;
-        if(partNextTime[pi]<=tNext+0.001) recordSkipOnce[pi].add(abs);
-      }
-    } else {
-      abs = (pi===activePart && playhead>=0) ? playhead : lo+((((playState[pi].pos-1)+len)%len + p.seqOffset)%len+len)%len;
+    // Input-event latency compensation, capped below half a step so very
+    // fast steps (high BPM × fast SPEED) can't be pulled a whole step early.
+    const comp=Math.min(0.02, stepSec*0.45);
+    const tPress=audioCtx.currentTime-comp;
+    const cands=loopHistory[pi].filter(c=>c.abs!==undefined);
+    // RANDOM direction: the next step is unknowable (peeking would re-roll),
+    // so only already-scheduled boundaries are candidates there.
+    if(p.dirIndex!==4) cands.push({t:partNextTime[pi],abs:peekNextAbsStep(pi),virtual:true});
+    let best=null,bestD=Infinity;
+    for(let c=0;c<cands.length;c++){
+      const d=Math.abs(cands[c].t-tPress);
+      if(d<bestD){bestD=d;best=cands[c];}
     }
-  } else {
-    // Ping-pong / random: no simple clock→step map, use the audible tracker
-    if(pi===activePart && playhead>=0) abs=playhead;
-    else { const pos=((playState[pi].pos-1)+len)%len; abs=lo+((pos+p.seqOffset)%len+len)%len; }
+    if(best){ gridAbs=best.abs; unscheduled=!!best.virtual; }
   }
+  if(gridAbs<0){
+    // No usable candidates (e.g. RANDOM before any history, looper active):
+    // fall back to the audible playhead tracker.
+    if(pi===activePart && playhead>=0) gridAbs=playhead;
+    else gridAbs=lo+((((playState[pi].pos-1)%len)+len)%len);
+  }
+
+  // ── 2. Grid position → DATA slot ─────────────────────────────────────
+  // The scheduler plays data slot (grid − seqOffset) at every grid position
+  // (see scheduleDrum / offsetDataAbs), so a hit heard at gridAbs must be
+  // WRITTEN to (gridAbs − seqOffset) for it to play back — and render on
+  // the grid — exactly where it was played.
+  const abs=lo+((((gridAbs-lo)-p.seqOffset)%len)+len)%len;
+
+  // ── 3. Double-fire suppression ───────────────────────────────────────
+  // Anchored to a boundary the scheduler hasn't reached yet: mute that
+  // slot's first firing — the manual hit already sounded. (Consumed in
+  // scheduleDrum.)
+  if(unscheduled) recordSkipOnce[pi].add(abs);
   if(!p.steps[abs]){
     p.steps[abs]=true;
     p.stepParams[abs]={...newStepParams(pi),...(spOverride||{})};
