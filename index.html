@@ -3107,15 +3107,26 @@ const TYPE_DEFAULTS={
   sample:{vol:0.8,freq:600,attack:0,decay:0.3,tone:0.5},
 };
 function typeDefaults(t){ return TYPE_DEFAULTS[t]||TYPE_DEFAULTS.kick; }
+// Automation-event dedupe. playSoundLocks fires the schedule() below on every
+// locked step; each setValueAtTime appends to the param's automation list,
+// which old WebKit (e.g. iPad Pro 9.7) never prunes — so a lock held across
+// many steps piled up thousands of identical events and the audio thread got
+// progressively slower (glitching that worsens over minutes). We skip the
+// schedule when the value is unchanged from the last one we scheduled, so the
+// event list only grows when the automation value actually changes. These
+// nodes are created once and never rebuilt mid-session (see getPartOut), so
+// the per-part cache stays valid; it is reset wherever the value is forced
+// directly (all-stop reset below).
+const _lastSchedPan=Array(8).fill(NaN), _lastSchedRev=Array(8).fill(NaN), _lastSchedDly=Array(8).fill(NaN);
 // Shared row-1 controls (identical for every type).
 const _SND_ROW1=[
   {label:'VOLUME',  min:0,   max:1,   get:p=>p.vol,                              set:(pi,v)=>{parts[pi].vol=v;},      def:p=>typeDefaults(p.type).vol,   fmt:_sndPct},
   {label:'PAN',     min:-1,  max:1,   get:p=>(typeof p.pan==='number'?p.pan:0),  set:(pi,v)=>setPartPan(pi,v),        def:_=>0,                          fmt:v=>{if(Math.abs(v)<0.01)return'C';const r=Math.round(Math.abs(v)*100);return (v<0?'L':'R')+r;},
-   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].pan=v; getPartOut(pi); const n=_partPanners[pi]; if(n&&n.pan){ try{n.pan.setValueAtTime(v,when);}catch(e){ try{n.pan.value=v;}catch(_e){} } } }},
+   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].pan=v; getPartOut(pi); const n=_partPanners[pi]; if(n&&n.pan&&_lastSchedPan[pi]!==v){ _lastSchedPan[pi]=v; try{n.pan.setValueAtTime(v,when);}catch(e){ try{n.pan.value=v;}catch(_e){} } } }},
   {label:'REV SND', min:0,   max:1,   get:p=>(p.revSend||0),                     set:(pi,v)=>setPartSend(pi,'rev',v), def:_=>0,                          fmt:_sndPct,
-   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].revSend=v; getPartOut(pi); const g=_revSendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } if(v>0&&_sendFXNodes&&!_sendFXNodes.conv) syncRevChain(); }},
+   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].revSend=v; getPartOut(pi); const g=_revSendGain[pi]; if(g&&_lastSchedRev[pi]!==v){ _lastSchedRev[pi]=v; try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } if(v>0&&_sendFXNodes&&!_sendFXNodes.conv) syncRevChain(); }},
   {label:'DLY SND', min:0,   max:1,   get:p=>(p.dlySend||0),                     set:(pi,v)=>setPartSend(pi,'dly',v), def:_=>0,                          fmt:_sndPct,
-   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].dlySend=v; getPartOut(pi); const g=_dlySendGain[pi]; if(g){ try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
+   schedule:(pi,v,when)=>{ if(parts[pi])parts[pi].dlySend=v; getPartOut(pi); const g=_dlySendGain[pi]; if(g&&_lastSchedDly[pi]!==v){ _lastSchedDly[pi]=v; try{g.gain.setValueAtTime(v,when);}catch(e){ try{g.gain.value=v;}catch(_e){} } } }},
 ];
 const _SND_ATTACK={label:'ATTACK', min:0,   max:0.2, get:p=>(p.attack||0), set:(pi,v)=>{parts[pi].attack=v;}, def:p=>typeDefaults(p.type).attack||0, fmt:v=>Math.round(v*1000)+' ms'};
 const _SND_DECAY ={label:'DECAY',  min:0.02,max:2,   get:p=>p.decay,        set:(pi,v)=>{parts[pi].decay=v;},  def:p=>typeDefaults(p.type).decay,    fmt:v=>v.toFixed(2)+'s'};
@@ -5436,6 +5447,7 @@ function getPartOut(ch){
 function setPartPan(ch,v){
   v=Math.max(-1,Math.min(1,v));
   if(parts[ch]) parts[ch].pan=v;
+  if(typeof _lastSchedPan!=='undefined') _lastSchedPan[ch]=NaN; // direct write — invalidate lock dedupe
   getPartOut(ch); // ensure the node exists
   const node=_partPanners[ch];
   if(node&&node.pan){
@@ -5669,6 +5681,7 @@ function applySendFX(){
 function setPartSend(ch,which,v){
   v=Math.max(0,Math.min(1,v));
   if(parts[ch]) parts[ch][which==='rev'?'revSend':'dlySend']=v;
+  if(typeof _lastSchedRev!=='undefined'){ if(which==='rev') _lastSchedRev[ch]=NaN; else _lastSchedDly[ch]=NaN; } // direct write — invalidate lock dedupe
   const g=which==='rev'?_revSendGain[ch]:_dlySendGain[ch];
   if(g){ try{ g.gain.setValueAtTime(v,getCtx().currentTime); }catch(e){ try{ g.gain.value=v; }catch(_e){} } }
   if(which==='rev') syncRevChain(); // attach/detach the demand-gated convolver
@@ -6322,6 +6335,7 @@ function resetSoundEngineDefaults(){
     if(_partPanners[i]&&_partPanners[i].pan){ try{ _partPanners[i].pan.value=0; }catch(e){} }
     if(_revSendGain[i]){ try{ _revSendGain[i].gain.value=0; }catch(e){} }
     if(_dlySendGain[i]){ try{ _dlySendGain[i].gain.value=0; }catch(e){} }
+    _lastSchedPan[i]=NaN; _lastSchedRev[i]=NaN; _lastSchedDly[i]=NaN; // forced directly — invalidate dedupe
     partSamples[i]=null; partSampleNames[i]=null;
   }
   // Master FX → defaults
@@ -6391,10 +6405,7 @@ function scheduleMetronome(until){
       const pad=document.getElementById('pad-metro');
       if(!pad) return;
       pad.classList.add('metro-flash');
-      queueVisual(audioCtx.currentTime+offSec,()=>{
-        const p2=document.getElementById('pad-metro');
-        if(p2) p2.classList.remove('metro-flash');
-      },true);
+      queueVisualOff(audioCtx.currentTime+offSec,'pad-metro','metro-flash');
     });
     metroNextTime+=beatSec;
   }
@@ -6616,10 +6627,7 @@ function flashPartDot(pi, when){
     const el=document.getElementById('pnum-'+pi);
     if(!el) return;
     el.classList.add('dot-flash');
-    queueVisual(audioCtx.currentTime+0.08,()=>{
-      const e2=document.getElementById('pnum-'+pi);
-      if(e2) e2.classList.remove('dot-flash');
-    },true);
+    queueVisualOff(audioCtx.currentTime+0.08,'pnum-'+pi,'dot-flash');
   });
 }
 
@@ -6633,10 +6641,7 @@ function flashPatternDot(when){
     const el=document.getElementById(id);
     if(!el) return;
     el.classList.add('dot-flash');
-    queueVisual(audioCtx.currentTime+0.08,()=>{
-      const e2=document.getElementById(id);
-      if(e2) e2.classList.remove('dot-flash');
-    },true);
+    queueVisualOff(audioCtx.currentTime+0.08,id,'dot-flash');
   });
 }
 
@@ -6655,10 +6660,7 @@ function fireVisual(pi,gridAbs,when,retrigIntervalSec){
     const pad=document.getElementById('spad-'+gridAbs);
     if(!pad) return;
     pad.classList.add('trigger');
-    queueVisual(audioCtx.currentTime+offSec,()=>{
-      const p2=document.getElementById('spad-'+gridAbs);
-      if(p2) p2.classList.remove('trigger');
-    },true);
+    queueVisualOff(audioCtx.currentTime+offSec,'spad-'+gridAbs,'trigger');
   });
 }
 
@@ -6677,9 +6679,30 @@ const _visQ=[];
 // adds (pri 1), because updatePlayhead rewrites the pad's className and would
 // wipe a just-added trigger flash. The old per-timer version left this to
 // sub-millisecond timer jitter; here it is deterministic.
+// Visual-queue records are pooled and reused. Previously every queued visual
+// allocated a fresh object AND (for the class-removal "off" events) a fresh
+// closure — 4-8 allocations per step in STEP/KEYB/CTRL. On a low-RAM device
+// that steady churn grows the heap until GC pauses lengthen and start landing
+// on the audio scheduler tick (progressive crackle that's worst in the busy
+// tabs and near-absent in PTRN, which queues almost nothing). Pooling + typed
+// "off" events drop the per-step allocation to ~zero.
+const _visPool=[];
+function _visRec(){ return _visPool.length?_visPool.pop():{at:0,pri:1,fn:null,off:false,el:null,cls:null}; }
+function _visFree(r){ r.fn=null; r.el=null; r.cls=null; if(_visPool.length<800) _visPool.push(r); }
 function queueVisual(at,fn,isOff,pri){
-  _visQ.push({at,fn,off:!!isOff,pri:pri===undefined?1:pri});
-  if(_visQ.length>600) _visQ.splice(0,_visQ.length-600); // safety valve, never expected
+  const r=_visRec(); r.at=at; r.fn=fn; r.off=!!isOff; r.el=null; r.cls=null; r.pri=(pri===undefined?1:pri);
+  _visQ.push(r);
+  if(_visQ.length>600){ const drop=_visQ.splice(0,_visQ.length-600); for(let i=0;i<drop.length;i++) _visFree(drop[i]); } // safety valve, never expected
+}
+// Typed class-removal event: no closure, no captured scope. Used for the
+// "off" half of every flash (the most numerous visual). pri defaults to 1.
+function queueVisualOff(at,elId,cls,pri){
+  const r=_visRec(); r.at=at; r.fn=null; r.off=true; r.el=elId; r.cls=cls; r.pri=(pri===undefined?1:pri);
+  _visQ.push(r);
+}
+function _runVis(r){
+  if(r.el){ const e=document.getElementById(r.el); if(e) e.classList.remove(r.cls); }
+  else if(r.fn){ r.fn(); }
 }
 const _visDue=[]; // reused scratch — avoids allocating a `due` array every tick
 function pumpVisuals(){
@@ -6699,7 +6722,7 @@ function pumpVisuals(){
               // events a callback queues land after the survivors
   if(!_visDue.length) return;
   _visDue.sort((a,b)=>(a.at-b.at)||(a.pri-b.pri)); // playhead (pri 0) before flashes
-  for(let i=0;i<_visDue.length;i++){ try{ _visDue[i].fn(); }catch(_){} }
+  for(let i=0;i<_visDue.length;i++){ const r=_visDue[i]; try{ _runVis(r); }catch(_){} _visFree(r); }
   _visDue.length=0;
 }
 // The clock stops ticking on stop/pause, so pending "off" events (class
@@ -6709,7 +6732,7 @@ function pumpVisuals(){
 // transport start.
 function flushVisuals(){
   const evs=_visQ.splice(0,_visQ.length).sort((a,b)=>a.at-b.at);
-  for(const ev of evs){ if(ev.off){ try{ ev.fn(); }catch(_){} } }
+  for(const r of evs){ if(r.off){ try{ _runVis(r); }catch(_){} } _visFree(r); }
 }
 
 function schedulePlayhead(pi,abs,stepAt){
