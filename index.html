@@ -270,6 +270,16 @@
   .snd-val{white-space:nowrap;}
   .swing-bar-wrap{position:absolute;bottom:4px;left:4px;right:4px;height:3px;background:#1a1a10;border-radius:2px;overflow:hidden;}
   .swing-bar-fill{height:100%;background:var(--seq-yellow);border-radius:2px;transition:width .08s;}
+  /* Display-parameter navigator (the 4 arrow buttons under the virtual display).
+     Lives inside the SMD gray panel as a sibling of smd-wrap. Reuses the
+     transport pad + yellow key-hint markup so height matches the top-bar
+     transport buttons exactly (18px SVG icon + key hint). */
+  #param-nav-row{margin-top:6px;margin-bottom:0;}
+  #param-nav-row .param-nav-btn:hover .tport-top-pad{border-color:var(--seq-yellow-dark);color:var(--seq-yellow);}
+  /* The , . ; l selection flow is a desktop keyboard affordance (the highlight
+     square is forced off on touch), so hide these buttons there to match. */
+  body.mobile-mode #param-nav-row,
+  body.touch-capable #param-nav-row{display:none!important;}
   /* ──────────────────────────────────────────────────────────────
      CSS §8 · BOTTOM BAR — MIDI config + SOUND EDITOR
      ────────────────────────────────────────────────────────────── */
@@ -557,6 +567,26 @@
         <div class="smd-wrap">
           <div class="smd-header"><span id="smd-mode-label">SEQUENCER PART 1</span><span id="pat-disp"></span></div>
           <div class="smd-grid" id="smd-grid"></div>
+        </div>
+        <!-- Display parameter navigator: mirrors the desktop , . ; l keys.
+             , / .  move the selected display cell left / right;
+             ; / l  increase / decrease its value. Up arrow = ; (increase),
+             down arrow = l (decrease) so each arrow matches its effect.
+             Same markup/sizing as the top-bar transport buttons. -->
+        <div class="seq-top-bar param-nav-row" id="param-nav-row">
+          <div class="tport-top-btn param-nav-btn" id="btn-param-prev" data-pressable="1" title="Previous parameter ( , )">
+            <div class="tport-top-pad"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Previous"><path d="M14 6 L14 18 L6 12 Z"></path></svg></div><div class="tport-top-kbd">,</div>
+          </div>
+          <div class="tport-top-btn param-nav-btn" id="btn-param-next" data-pressable="1" title="Next parameter ( . )">
+            <div class="tport-top-pad"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Next"><path d="M10 6 L10 18 L18 12 Z"></path></svg></div><div class="tport-top-kbd">.</div>
+          </div>
+          <div class="top-bar-sep"></div>
+          <div class="tport-top-btn param-nav-btn" id="btn-param-up" data-pressable="1" title="Increase value ( ; )">
+            <div class="tport-top-pad"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Increase"><path d="M12 7 L18 17 L6 17 Z"></path></svg></div><div class="tport-top-kbd">;</div>
+          </div>
+          <div class="tport-top-btn param-nav-btn" id="btn-param-down" data-pressable="1" title="Decrease value ( l )">
+            <div class="tport-top-pad"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Decrease"><path d="M6 7 L18 7 L12 17 Z"></path></svg></div><div class="tport-top-kbd">l</div>
+          </div>
         </div>
       </div>
 
@@ -8954,6 +8984,21 @@ function openSettings(){
 }
 document.getElementById('btn-settings')?.addEventListener('click',()=>{ openSettings(); });
 document.getElementById('btn-metro')?.addEventListener('click',()=>{ toggleMetro(); });
+
+// Display-parameter navigator buttons — same actions as the desktop , . ; l keys.
+//   ◀ , = move selection left     ▶ . = move selection right
+//   ▲ ; = increase selected value ▼ l = decrease selected value
+[['btn-param-prev',()=>moveSmdSelection(-1)],
+ ['btn-param-next',()=>moveSmdSelection(1)],
+ ['btn-param-up',  ()=>adjustSmdSelection(1)],
+ ['btn-param-down',()=>adjustSmdSelection(-1)]].forEach(([id,fn])=>{
+  document.getElementById(id)?.addEventListener('click',()=>{
+    // If nothing is selected yet, adopt the first cell so the very first tap
+    // gives visible feedback instead of a silent no-op.
+    if(smdSelectionActive() && !document.querySelector('.smd-cell.kb-selected')) refreshSmdSelection();
+    fn();
+  });
+});
 
 document.addEventListener('mousedown',e=>{
   const el=e.target.closest('[data-pressable]');
