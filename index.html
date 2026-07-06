@@ -3577,7 +3577,7 @@ function showTempoDisplay(){
     <div style="font-size:12px;color:var(--seq-text-dim);letter-spacing:.15em;">TEMPO</div>
     <div id="tempo-big-val" style="font-size:64px;font-weight:bold;color:var(--seq-yellow);line-height:1;font-family:var(--seq-font);">${tempo}</div>
     <div style="font-size:14px;color:var(--seq-text-dim);letter-spacing:.2em;">BPM</div>
-    <div style="font-size:10px;color:var(--seq-text-dim);margin-top:4px;">drag tempo · ← → nudge · turn any mapped CC</div>`;
+    <div style="font-size:10px;color:var(--seq-text-dim);margin-top:4px;">drag display · ; l nudge · turn any mapped CC</div>`;
   const lbl=document.getElementById('smd-mode-label');
   if(lbl) lbl.textContent='TEMPO';
 }
@@ -6443,6 +6443,20 @@ function setTempoVal(v){
   },{passive:false});
   document.addEventListener('touchend',e=>{if(drag&&Array.from(e.changedTouches).some(x=>x.identifier===tid)){drag=false;tid=null;}});
 })();
+// Hold N (tempo display showing) and drag vertically anywhere on the virtual
+// display to set tempo — same feel as dragging any other display parameter
+// (drag up = faster). Gated on tempoKeyHeld so it never interferes with normal
+// display interactions when N isn't held, and routed through the shared drag
+// dispatcher so no per-use document listeners are leaked.
+(function(){
+  const smd=document.getElementById('smd-grid');
+  if(!smd) return;
+  let sY=0,sV=0;
+  const PXV=3; // px of vertical travel per BPM
+  const _mv=cy=>{ setTempoVal(sV+Math.round((sY-cy)/PXV)); };
+  smd.addEventListener('mousedown',e=>{ if(!tempoKeyHeld) return; sY=e.clientY; sV=tempo; paramDragActive=true; e.preventDefault(); beginDrag(false,0,_mv); });
+  smd.addEventListener('touchstart',e=>{ if(!tempoKeyHeld) return; const t=e.changedTouches[0]; sY=t.clientY; sV=tempo; e.preventDefault(); beginDrag(true,t.identifier,_mv); },{passive:false});
+})();
 
 function handlePartClick(i){
   if(altHeld){ _alignComboUsed=true; if(playing)queueResync(i); else{resetPartPlayState(i);setStatus('Part '+(i+1)+' reset');} return;}
@@ -7301,10 +7315,14 @@ document.addEventListener('keydown',e=>{
     if(!e.repeat){ tempoKeyHeld=true; pressOn(document.getElementById('tempo-box')); showTempoDisplay(); }
     return;
   }
-  if(tempoKeyHeld&&(e.code==='ArrowLeft'||e.code==='ArrowRight')){
+  // Hold N + ; / l nudges tempo ( ; = faster, l = slower — same direction
+  // convention as the display-parameter value keys). Shift = ×10. This runs
+  // before the display-parameter handler below; while N is held the tempo
+  // display is showing (no selectable cells), so there is no conflict.
+  if(tempoKeyHeld&&(e.code==='Semicolon'||e.code==='KeyL')){
     e.preventDefault();
     const step=e.shiftKey?10:1;
-    setTempoVal(tempo+(e.code==='ArrowRight'?step:-step));
+    setTempoVal(tempo+(e.code==='Semicolon'?step:-step));
     updateTempoBig();
     return;
   }
@@ -7312,8 +7330,8 @@ document.addEventListener('keydown',e=>{
   //   ,  → move selection left      .  → move selection right  (wrap + loop)
   //   ;  → increase selected value  l  → decrease selected value
   // Active only when a display with adjustable cells is showing; otherwise the
-  // keys fall through. (Arrow keys are intentionally NOT used, so they stay
-  // free for tempo nudging while N is held.)
+  // keys fall through. (While N is held the tempo display is up and ; / l are
+  // captured above to nudge tempo, so they never reach this handler then.)
   if((e.code==='Comma'||e.code==='Period'||e.code==='Semicolon'||e.code==='KeyL')&&smdSelectionActive()){
     e.preventDefault();
     if(e.code==='Comma') moveSmdSelection(-1);          // , = left
