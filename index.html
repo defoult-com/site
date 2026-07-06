@@ -1922,31 +1922,47 @@ function moveSmdSelection(dir){
   const cells=smdCells();
   const n=cells.length; if(!n) return;
   smdSel=((smdSel+dir)%n+n)%n;
+  _smdKeyN=0; // new parameter → start from precise single steps again
   refreshSmdSelection();
   const cell=cells[smdSel];
   if(cell){ cell.scrollIntoView({block:'nearest',inline:'nearest'}); setStatus(smdCellStatus(cell)); }
 }
 // Up/Down: change the selected parameter (reuses the cell's wheel handler).
+// Keyboard acceleration: the scroll wheel moves one detent per notch, but
+// tapping/holding ; or l to cross a WIDE range (0-127 CC numbers, 10-1000 ms
+// times, 0-100 %) one unit at a time is tedious — that's the "have to press it
+// many times" feel. So rapid consecutive presses (and key auto-repeat, which
+// fires fast) step by progressively more, while a single deliberate tap still
+// moves exactly one unit for fine control. The cadence resets when you pause,
+// so a fresh slow tap is always precise. Every cell's _wheelAdjust treats dir
+// as a signed magnitude and clamps, so one scaled call = N steps with no extra
+// work (FX cells still rebuild only once per press).
+let _smdKeyN=0, _smdKeyT=0;
 function adjustSmdSelection(dir){
   if(!smdSelectionActive()) return;
   const cells=smdCells();
   if(smdSel<0||smdSel>=cells.length) return;
   const cell=cells[smdSel];
   if(!cell||typeof cell._wheelAdjust!=='function') return;
+  const now=(typeof performance!=='undefined'?performance.now():Date.now());
+  if(now-_smdKeyT<260) _smdKeyN++; else _smdKeyN=0;   // <260ms apart = a run
+  _smdKeyT=now;
+  const reps = _smdKeyN<2?1 : _smdKeyN<5?2 : _smdKeyN<10?4 : _smdKeyN<18?8 : 16;
+  const step=dir*reps;
   // SEQ START / END are bar-snapping range cells: their internal apply() snaps
   // the value to the nearest bar line (keyed off the global Shift state), which
-  // can pin the value in place and make the arrow keys look unresponsive —
-  // especially on SEQ START, sitting at its minimum. For keyboard stepping we
-  // want a plain, always-moving ±1, so we run the cell's free (non-snapped)
-  // path for those two. Every other cell keeps its exact wheel behaviour.
+  // can pin the value in place and make the keys look unresponsive — especially
+  // on SEQ START, sitting at its minimum. For keyboard stepping we want a plain,
+  // always-moving step, so we run the cell's free (non-snapped) path for those
+  // two. Every other cell keeps its exact wheel behaviour.
   const isRangeCell=(cell.id==='smd-strt-cell'||cell.id==='smd-end-cell');
   if(isRangeCell){
     const savedShift=shiftHeld;
     shiftHeld=true;                 // disables the snap inside apply()
-    try{ cell._wheelAdjust(dir, true); }
+    try{ cell._wheelAdjust(step, true); }
     finally{ shiftHeld=savedShift; }
   } else {
-    cell._wheelAdjust(dir, shiftHeld);
+    cell._wheelAdjust(step, shiftHeld);
   }
   setStatus(smdCellStatus(cell));
 }
@@ -2523,6 +2539,26 @@ function midiNoteName(n){return NOTE_NAMES[n%12]+(Math.floor(n/12)-1);}
 // Gate min/max are chosen from this musical list (value = % of one step).
 const RAND_GATES=[12,17,20,25,33,38,50,62,67,75,88,100,150,200,250,300,350,400];
 function nearestGateIdx(pct){ let bi=0,bd=Infinity; RAND_GATES.forEach((g,i)=>{const d=Math.abs(g-pct);if(d<bd){bd=d;bi=i;}}); return bi; }
+// GATE is stored as a percent (1-400) but displayed in coarse musical buckets
+// (⅛, ¼, ½, 1, 1½ …), so a ±1 percent key/wheel step usually lands in the same
+// bucket and looks like nothing happened. For key/wheel stepping we move through
+// the musical gate list instead, so every press is exactly one visible bucket.
+// `dir` may be >1 (keyboard acceleration) → move that many buckets. Direction-
+// aware rounding so a value sitting BETWEEN buckets steps to the adjacent one
+// (up → next higher, down → next lower) rather than snapping past it. Dragging
+// still sets any percent for fine control.
+function stepGate(cur, dir){
+  const L=RAND_GATES, n=L.length;
+  if(!dir) return cur;
+  const reps=Math.abs(dir);
+  if(dir>0){
+    let base=-1; for(let i=0;i<n;i++){ if(L[i]<=cur) base=i; else break; }
+    return L[Math.max(0,Math.min(n-1, base+reps))];
+  } else {
+    let base=n;  for(let i=n-1;i>=0;i--){ if(L[i]>=cur) base=i; else break; }
+    return L[Math.max(0,Math.min(n-1, base-reps))];
+  }
+}
 const randomCfg={
   scale:0,        // index into SCALES (0 = CHROM)
   rootNote:0,     // 0=C .. 11=B
@@ -2620,7 +2656,7 @@ function showStepParams(abs){
         const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(sp[def.key]);
         cell.classList.toggle('cc-active',!!sp[def.key]); updateAccVelGrey(sp);
       }else{
-        const nv=Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+        const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
         if(nv!==sp[def.key]){ sp[def.key]=nv; heldStepParamChanged=true; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
         const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
         if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
@@ -2691,7 +2727,7 @@ function showPartDefaults(pi){
     cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
     cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=sp[def.key];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{
-      const nv=Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+      const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
       if(nv!==sp[def.key]){ sp[def.key]=nv; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
       const el=document.getElementById('pd-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
       if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
@@ -3862,7 +3898,7 @@ function showKeyPanel(){
     const _mv=cy=>{ const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-cy)/stepPx))); if(nv!==spec.get()){spec.set(nv);paint();} };
     cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=spec.get();paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
     cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=spec.get();e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
-    cell._wheelAdjust=(dir)=>{ const nv=Math.max(spec.min,Math.min(spec.max,spec.get()+dir)); if(nv!==spec.get()){spec.set(nv);paint();} };
+    cell._wheelAdjust=(dir)=>{ const raw=spec.gate?stepGate(spec.get(),dir):spec.get()+dir; const nv=Math.max(spec.min,Math.min(spec.max,raw)); if(nv!==spec.get()){spec.set(nv);paint();} };
     return cell;
   }
 
@@ -3890,7 +3926,7 @@ function showKeyPanel(){
       cell=makeCell({idx,ccIdx:6,label:'RANGE',id:'karange-val',min:1,max:4,reset:1,stepPx:14,dim:keyArpMode===0,
         get:()=>keyArpRange, set:v=>keyArpRange=v, fmt:v=>''+v});
     } else if(idx===7){
-      cell=makeCell({idx,ccIdx:7,label:'GATE',id:'kgate-val',min:5,max:100,reset:50,dim:keyArpMode===0,textVal:true,
+      cell=makeCell({idx,ccIdx:7,label:'GATE',id:'kgate-val',min:5,max:100,reset:50,dim:keyArpMode===0,textVal:true,gate:true,
         get:()=>keyArpGate, set:v=>keyArpGate=v, fmt:v=>fmtGate(v)});
     } else {
       cell=document.createElement('div');
