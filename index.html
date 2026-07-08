@@ -937,9 +937,11 @@ function updateAccVelGrey(sp){
 const parts=DEFAULTS.map(d=>({
   steps:Array(64).fill(false),
   skip:Array(64).fill(false), // per-step skip flag — playhead jumps over these
-  // Per-step CYCLE mask: 4 bits (one per sequence repetition 1-4). A set bit
-  // means the step sounds on that cycle; 15 = plays on every cycle (default).
-  // Lets a step appear/disappear across a 4-repetition super-loop.
+  // Per-step CYCLE mask: 4 bits — one per cycle of the SHARED 4-bar super-loop
+  // (1 cycle = 1 bar = 16 base-tempo steps; every part reads the same global
+  // cycle counter, see cycleAt()). A set bit means the step sounds on that
+  // cycle; 15 = plays on every cycle (default). Lets a step appear/disappear
+  // across the super-loop, in sync across all parts.
   cyc:Array(64).fill(15),
   stepParams:Array.from({length:64},()=>defaultStepParams()),
   // Tracks steps that have been placed at least once. A step keeps its params
@@ -1487,6 +1489,13 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
   for(let pi=0;pi<8;pi++) partInPhase[pi]=true;
   if(audioCtx && playing){
     const now=audioCtx.currentTime;
+    // Re-anchor the shared CYC super-loop so the new pattern starts on
+    // cycle 1. Queued switches anchor at the swap downbeat; seamless loads
+    // anchor at the most recent bar downbeat so cycle boundaries always stay
+    // on the global bar grid.
+    const _bar=barSec();
+    cycleAnchor = downbeatTime!==undefined ? downbeatTime
+                : (_bar>0 ? audioStartTime+Math.floor((now-audioStartTime)/_bar)*_bar : now);
     for(let pi=0;pi<8;pi++){
       const stepSec=baseSec()*SPEEDS[parts[pi].speedIndex].ratio;
       playState[pi].pos=0;playState[pi].ppDir=1;playState[pi].acc=0;playState[pi].stepCount=0;playState[pi].cycle=0;
@@ -5060,7 +5069,7 @@ function wireRangeTap(div, fn){
 function buildRangeBar(){
   const bar=document.getElementById('step-range-bar');bar.innerHTML='';
   // While a step is held in STEP mode, the 4 page buttons become that step's
-  // CYCLE toggles (which of the 4 loop repetitions it plays on). Tap a button
+  // CYCLE toggles (which of the 4 shared super-loop cycles it plays on). Tap a button
   // (or, on desktop, press its page key while holding the step) to toggle.
   if(currentMode==='step' && heldStepAbs!==-1 && !saveBrowsing){
     const p=parts[activePart];
@@ -6629,9 +6638,10 @@ function partHasSkips(pi){ const s=parts[pi].skip; return !!s && s.some(Boolean)
 function clearSkips(pi){ if(parts[pi].skip) parts[pi].skip.fill(false); }
 // A step has cycle restrictions if its mask isn't the default 15 (all cycles).
 function stepHasCyc(pi,dataAbs){ const c=parts[pi].cyc; return !!c && c[dataAbs]!==undefined && c[dataAbs]!==15; }
-// Toggle whether the held step sounds on cycle `cyc` (0-3). Mirrors the picture's
+// Toggle whether the held step sounds on cycle `cyc` (0-3) of the SHARED
+// 4-bar super-loop (see cycleAt()). Mirrors the picture's
 // page-button behaviour: each of the 4 page controls enables/disables the step
-// for one repetition of the loop.
+// for one cycle of the shared super-loop.
 function toggleCycleBit(dataAbs, cyc){
   if(currentMode!=='step') return;
   const p=parts[activePart];
@@ -6769,9 +6779,22 @@ const SCHED_INTERVAL=LOW_POWER_AUDIO?40:25;   // ms between scheduler runs
 const LOOKAHEAD=LOW_POWER_AUDIO?0.18:0.10;    // seconds to schedule ahead
 
 let audioStartTime=0; // AudioContext time when transport started
+let cycleAnchor=0;    // bar-grid time the shared CYC super-loop counts from
 
 function baseSec(){ return 60/tempo/4; }
 function barSec(){ return baseSec()*16; }
+// Shared CYC cycle (0-3) at AudioContext time t: ONE BAR PER CYCLE, counted
+// from cycleAnchor (transport start; re-anchored on pattern switch so a new
+// pattern begins on cycle 1). Deriving the cycle from the scheduled step time
+// — instead of incrementally counting per-part loop wraps — keeps every part
+// on the SAME cycle number regardless of length, speed, direction (random
+// included), mid-song aligns or SEQ range edits. The epsilon absorbs float
+// error so a step landing exactly on a bar boundary belongs to the NEW cycle.
+function cycleAt(t){
+  const bar=barSec(); if(!(bar>0)) return 0;
+  const c=Math.floor((t-cycleAnchor)/bar + 1e-6);
+  return (c<0?0:c)&3;
+}
 
 // playDrum but fires at a specific AudioContext time
 
@@ -7009,6 +7032,10 @@ function scheduleNegativeOffset(pi,nextAbs,currentStepAt,stepSec){
   const shiftedNext=lo+(((nextAbs-lo-p.seqOffset)%len+len)%len);
   const nsp=p.stepParams[shiftedNext];
   if(!nsp||nsp.stepOffset>=0||!p.steps[shiftedNext]||!isPartAudible(pi)) return;
+  // Cycle-skip applies here too — evaluated at the step's NOMINAL boundary
+  // (currentStepAt+stepSec), not the early fire time, so a negative-offset
+  // step just before a bar line still counts as the cycle it belongs to.
+  if(p.cyc){ const m=p.cyc[shiftedNext]; if(m!==undefined && !(m & (1<<cycleAt(currentStepAt+stepSec)))) return; }
   if(nsp.prob<100&&Math.random()*100>=nsp.prob) return;
   const offsetSec=nsp.stepOffset*(stepSec/16);
   const fireAt=currentStepAt+stepSec+offsetSec;
@@ -7025,6 +7052,7 @@ function scheduleNegativeOffset(pi,nextAbs,currentStepAt,stepSec){
 function schedulePlay(resetAccs=true){
   const ctx=getCtx();
   audioStartTime=ctx.currentTime+0.05;
+  cycleAnchor=audioStartTime; // CYC super-loop restarts with the bar grid
   if(resetAccs){
     globalTick=0;
     for(let pi=0;pi<8;pi++){
@@ -7135,13 +7163,13 @@ function schedulePlay(resetAccs=true){
             loopElapsed[pi]+=0.5;
           }
         }
-        // Per-step cycle-skip: advance this part's 4-cycle counter when a new
-        // loop begins (deterministic directions return to pos 0). Random has no
-        // stable cycle, so it stays on cycle 0. scheduleDrum reads
+        // Per-step cycle-skip: the 4-cycle super-loop is GLOBAL — one bar
+        // (16 base-tempo steps) per cycle, derived from the step's scheduled
+        // time via cycleAt() — so ALL parts see the same cycle number at the
+        // same musical time, whatever their length, speed, direction (random
+        // included) or mid-song resyncs/edits. scheduleDrum reads
         // playState[pi].cycle to decide whether a cycle-masked step sounds.
-        if(playState[pi].pos===0 && playState[pi].stepCount>0 && parts[pi].dirIndex!==4){
-          playState[pi].cycle=(playState[pi].cycle+1)&3;
-        }
+        playState[pi].cycle=cycleAt(stepAt);
         const abs=nextAbsStep(pi);
         if(hEntry) hEntry.abs=abs;
         const isOffBeat=(playState[pi].stepCount%2===1);
