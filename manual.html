@@ -93,8 +93,8 @@
   <h3>Action buttons</h3>
   <table>
     <tr><th>Button</th><th>Quick tap</th><th>Hold</th></tr>
-    <tr><td><span class="btnface">PTRN COPY</span> <kbd>O</kbd></td><td>Save the current pattern into its slot</td><td>Browse: tap slot(s) to save a copy there, tap again to finish</td></tr>
-    <tr><td><span class="btnface">PTRN LOAD</span> <kbd>P</kbd></td><td>Reload the current pattern (revert edits)</td><td>Browse: tap any slot to load it</td></tr>
+    <tr><td><span class="btnface">PTRN COPY</span> <kbd>O</kbd></td><td class="dim">Nothing to do — edits are auto-saved into the current slot as you make them (the status bar confirms)</td><td>Browse: tap slot(s) to save a copy there — release to finish; you continue on the last slot saved</td></tr>
+    <tr><td><span class="btnface">PTRN LOAD</span> <kbd>P</kbd></td><td class="dim">Nothing to do — the slot always holds your latest edits, so there is nothing to revert</td><td>Browse: tap any slot to load it (queued to the next bar while playing)</td></tr>
     <tr><td><span class="btnface">PTRN CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's steps</td><td>Browse: tap slot(s) to <span class="red">empty</span> them — including the loaded one</td></tr>
     <tr><td><span class="btnface">PTRN RAND</span> <kbd>]</kbd></td><td colspan="2">Hold to see the random ranges (scale, root, octave span, velocity, gate) — release to fill the part randomly</td></tr>
   </table>
@@ -191,7 +191,8 @@
   <h2>10 · Projects &amp; saving</h2>
   <ul>
     <li>In SETTINGS, the four action buttons become: <span class="btnface">FILE SAVE</span> <kbd>O</kbd> exports the whole project (all banks, patterns, sounds, settings) as a file; <span class="btnface">FILE LOAD</span> <kbd>P</kbd> imports one; <span class="btnface">FILE NEW</span> <kbd>[</kbd> resets everything.</li>
-    <li><span class="btnface">AUTO-SAVE</span> <kbd>]</kbd> (on by default) keeps the project persisted in the browser and commits pattern edits back to their slot automatically — steps and knob moves alike, no save button needed.</li>
+    <li><b>Patterns always save themselves</b> — every edit (steps and knob moves alike) is committed back to the pattern's slot automatically. There is no save button for patterns; use <span class="btnface">PTRN COPY</span> (hold) only to copy a pattern to <b>other</b> slots.</li>
+    <li><span class="btnface">AUTO-SAVE</span> <kbd>]</kbd> (on by default) additionally keeps the whole project persisted in the browser, so it survives a reload. Turning it off clears the stored data.</li>
   </ul>
 </section>
 
