@@ -7797,7 +7797,7 @@ function endSaveHold(){
   // already auto-saved into the current slot, so just stay on it.
   if(saveClickCount===0){
     patternDirty=false;
-    setStatus('Pattern auto-saved \u2192 Bank '+(saveOrigBank+1)+' Pat '+(saveOrigPattern+1));
+    setStatus('Auto-saved \u2192 Bank '+(saveOrigBank+1)+' Pat '+(saveOrigPattern+1)+' \u2014 hold COPY to copy elsewhere');
     activeBank=saveOrigBank; activePattern=saveOrigPattern;
   } else {
     // Saved to one or more slots: continue on the LAST slot we saved into, so
@@ -7847,14 +7847,16 @@ function endLoadHold(){       // cancel load-browse without loading anything
   setStatus('Load cancelled');
 }
 // Releasing a HELD PTRN LOAD (keyboard 'P') without having tapped a slot does
-// the quick-tap default: reload the current pattern. Mirrors how releasing a
-// held 'O' saves the current pattern via endSaveHold.
+// the quick-tap default: nothing to load/revert (patterns auto-save), just
+// restore the view. Mirrors the mouse/touch quick tap via the click handler.
 function reloadFromLoadHold(){
   if(!loadHeld) return;
   clearLoadBrowseUI();
   activeBank=saveOrigBank; activePattern=saveOrigPattern;
-  if(activePattern!==null){ if(playing) reloadPatternLive(); else loadPattern(activeBank,activePattern,true); }
-  setStatus('Reloaded Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
+  // No reload: the slot already holds the latest edits (patterns auto-save), so
+  // a quick tap has nothing to revert. Just close the browse and restore the
+  // view — matches the mouse/touch quick-tap handler.
+  setStatus('Pattern up to date \u2014 hold LOAD to browse slots');
   buildSteps();buildRangeBar();buildParts();updatePartIndicator();
 }
 function loadFromSlot(patIdx){ // load the chosen pattern (any bank/page) and exit
@@ -8110,8 +8112,8 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
       if(saveHeld){ endSaveHold(); }            // tap again while browsing → finish
       else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!saveHeld) beginSaveHold(); },300); }
     }
-    // STEP Load: match desktop. A quick TAP reloads the current pattern; a
-    // LONG-PRESS opens load-browse so you can tap any pattern slot to load it.
+    // STEP Load: match desktop. A quick TAP does nothing (patterns auto-save);
+    // a LONG-PRESS opens load-browse so you can tap any pattern slot to load it.
     else if(currentMode==='step' && id==='ctrl-reload'){
       if(loadHeld){ endLoadHold(); }            // tap again while browsing → cancel
       else { holdTimer=setTimeout(()=>{ holdTimer=null; if(touchActive&&!loadHeld) beginLoadHold(); },300); }
@@ -8161,8 +8163,8 @@ let _touchHoldCount=0; // number of hold-buttons currently held by touch
     const isStepLoadHold=(currentMode==='step' && id==='ctrl-reload');
     if(isStepLoadHold){
       if(holdTimer){
-        // Released before the hold threshold → quick TAP. Reload the current
-        // pattern (existing behavior) via the button's click handler.
+        // Released before the hold threshold → quick TAP. Runs the button's
+        // click handler, which is now a no-op status (patterns auto-save).
         clearTimeout(holdTimer); holdTimer=null;
         if(!loadHeld) el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
         return;
@@ -8260,11 +8262,11 @@ document.getElementById('ctrl-reload').addEventListener('click',()=>{
     toggleParmMuteAll();
     return;
   }
-  if(activePattern!==null){
-    if(playing) reloadPatternLive();       // keep the sequencer running
-    else loadPattern(activeBank,activePattern,true); // stopped: full reload
-  }
-  setStatus('Reloaded Bank '+(activeBank+1)+' Pattern '+(activePattern+1));
+  // Quick tap has nothing to reload: every edit is auto-committed back to the
+  // pattern's slot (see commitLiveToSlot), so the slot already mirrors the live
+  // state — there is nothing to revert. Just confirm; hold LOAD to browse and
+  // load a DIFFERENT pattern.
+  setStatus('Pattern up to date \u2014 hold LOAD to browse slots');
 });
 document.getElementById('ctrl-clear').addEventListener('click',()=>{
   // STEP-mode hold bookkeeping: a quick release cancels the pending hold and
