@@ -1444,6 +1444,10 @@ function restoreParts(snapshot){
       if(ctrl.sndLocks) Object.assign(soundCtrlLocks[i], JSON.parse(JSON.stringify(ctrl.sndLocks)));
     }
   });
+  // The assigns above changed pan/revSend/dlySend as plain fields — push them
+  // onto any live audio nodes and re-gate the reverb convolver (guarded: the
+  // sound-engine fence owns the function and may be removed).
+  if(typeof syncPartFXNodes==='function') syncPartFXNodes();
 }
 
 function savePattern(){
@@ -1458,7 +1462,7 @@ function loadPattern(bank,pattern,immediate,downbeatTime){
   autoCommitPattern();   // persist the outgoing pattern's live edits before switching
   looperActive=false;
   looperHeld=[];
-  loopHistory.forEach(h=>h.length=0);
+  loopHistory.forEach(_lhClear); // recycle pooled records
   recordSkipOnce.forEach(s=>s.clear());
   patternPage=Math.floor(pattern/16);
   const snap=patternStore[bank][pattern];
@@ -1715,7 +1719,7 @@ let playInterval=null,tempo=120,audioCtx=null,seOpen=false;
 // when driving an external DAW (e.g. via IAC). Running the periodic "tick" in
 // a Web Worker avoids that throttling. The worker only fires ticks; all
 // scheduling and MIDI logic stays on the main thread.
-let schedWorker=null, schedTickFn=null;
+let schedWorker=null, schedTickFn=null, _lastWorkerTick=0, _schedMs=25;
 function makeSchedWorker(){
   try{
     const src=[
@@ -1727,21 +1731,25 @@ function makeSchedWorker(){
     ].join('\n');
     const blob=new Blob([src],{type:'application/javascript'});
     const w=new Worker(URL.createObjectURL(blob));
-    w.onmessage=()=>{ if(schedTickFn) schedTickFn(); };
+    w.onmessage=()=>{ _lastWorkerTick=performance.now(); if(schedTickFn) schedTickFn(); };
     w.onerror=()=>{ try{w.terminate();}catch(e){} schedWorker=null; };
     return w;
   }catch(e){ return null; }
 }
 function startSchedClock(ms,fn){
   schedTickFn=fn;
-  // Always run a main-thread interval so playback works even if the Worker
-  // can't load (file://, CSP, blob restrictions). The Worker, when available,
-  // also fires ticks — it's not throttled in the background, so it keeps the
-  // clock alive when the tab is minimized. Duplicate ticks are harmless: the
-  // scheduler only schedules events in the [now, now+LOOKAHEAD] window and
-  // advances by absolute time, so an extra tick just re-checks the same window.
+  _schedMs=ms;
+  _lastWorkerTick=0; // main interval drives until the first worker tick lands
+  // The Worker drives the clock (it isn't throttled when the tab is
+  // backgrounded). The main-thread interval is a WATCHDOG: it only fires the
+  // tick when worker ticks stop arriving (worker unavailable — file://, CSP,
+  // blob restrictions — or killed). Previously BOTH fired every period, so
+  // the whole scheduler body ran twice per interval — pure duplicated work.
   if(playInterval){ clearInterval(playInterval); }
-  playInterval=setInterval(fn,ms);
+  playInterval=setInterval(()=>{
+    if(performance.now()-_lastWorkerTick < _schedMs*2.5) return; // worker alive
+    fn();
+  },ms);
   try{
     if(!schedWorker) schedWorker=makeSchedWorker();
     if(schedWorker) schedWorker.postMessage({cmd:'start',ms});
@@ -5836,6 +5844,30 @@ function setPartSend(ch,which,v){
   if(which==='rev') syncRevChain(); // attach/detach the demand-gated convolver
 }
 
+// Push each part's restored FX fields (pan, reverb/delay send) onto any LIVE
+// audio nodes, and re-gate the demand-attached reverb convolver.
+// restoreParts writes plain fields; nodes built LATER read them at build time,
+// but nodes that already exist (project load mid-session, pattern switch while
+// playing) kept their old gains until a knob nudged them — "the value is right
+// but there's no reverb until I move the parameter". Likewise syncRevChain's
+// attach decision is made once inside buildSendFX and cached, so it must be
+// re-evaluated after the fields change. Never spins up the audio context:
+// with no context there are no nodes, and the lazy build reads the fields.
+function syncPartFXNodes(){
+  const t=audioCtx?audioCtx.currentTime:0;
+  for(let i=0;i<8;i++){
+    const p=parts[i]; if(!p) continue;
+    if(_partPanners[i]&&_partPanners[i].pan){ const v=(typeof p.pan==='number')?p.pan:0;
+      try{ _partPanners[i].pan.setValueAtTime(v,t); }catch(e){ try{ _partPanners[i].pan.value=v; }catch(_e){} } }
+    if(_revSendGain[i]){ const v=p.revSend||0;
+      try{ _revSendGain[i].gain.setValueAtTime(v,t); }catch(e){ try{ _revSendGain[i].gain.value=v; }catch(_e){} } }
+    if(_dlySendGain[i]){ const v=p.dlySend||0;
+      try{ _dlySendGain[i].gain.setValueAtTime(v,t); }catch(e){ try{ _dlySendGain[i].gain.value=v; }catch(_e){} } }
+    if(typeof _lastSchedPan!=='undefined'){ _lastSchedPan[i]=NaN; _lastSchedRev[i]=NaN; _lastSchedDly[i]=NaN; } // direct writes — invalidate lock dedupe
+  }
+  syncRevChain(); // re-gate: attaches when any restored send > 0, detaches when none
+}
+
 // Per-channel sample slots (engine-owned; loaded via the Sound panel)
 const partSamples=Array(8).fill(null);
 const partSampleNames=Array(8).fill(null);
@@ -6798,14 +6830,12 @@ function cycleAt(t){
 
 // playDrum but fires at a specific AudioContext time
 
+const _PNUM_IDS=['pnum-0','pnum-1','pnum-2','pnum-3','pnum-4','pnum-5','pnum-6','pnum-7'];
 function flashPartDot(pi, when){
   if((currentMode==='pat'||currentMode==='set')&&!shiftHeld&&!ctrlHeld) return; // KEY mode shows parts, so dots flash there
-  queueVisual(when,()=>{
-    const el=document.getElementById('pnum-'+pi);
-    if(!el) return;
-    el.classList.add('dot-flash');
-    queueVisualOff(audioCtx.currentTime+0.08,'pnum-'+pi,'dot-flash');
-  });
+  // Typed queue event — zero closures for the up-to-8-per-step dot flashes
+  // (the old closure form had no run-time guards, so behaviour is identical).
+  queueVisualAdd(when,_PNUM_IDS[pi],'dot-flash',0.08);
 }
 
 // In PAT mode: flash the playing pattern's slot dot on any active step from any part
@@ -6864,7 +6894,7 @@ const _visQ=[];
 // tabs and near-absent in PTRN, which queues almost nothing). Pooling + typed
 // "off" events drop the per-step allocation to ~zero.
 const _visPool=[];
-function _visRec(){ return _visPool.length?_visPool.pop():{at:0,pri:1,fn:null,off:false,el:null,cls:null}; }
+function _visRec(){ return _visPool.length?_visPool.pop():{at:0,pri:1,fn:null,off:false,el:null,cls:null,dur:0}; }
 function _visFree(r){ r.fn=null; r.el=null; r.cls=null; if(_visPool.length<800) _visPool.push(r); }
 function queueVisual(at,fn,isOff,pri){
   const r=_visRec(); r.at=at; r.fn=fn; r.off=!!isOff; r.el=null; r.cls=null; r.pri=(pri===undefined?1:pri);
@@ -6877,11 +6907,24 @@ function queueVisualOff(at,elId,cls,pri){
   const r=_visRec(); r.at=at; r.fn=null; r.off=true; r.el=elId; r.cls=cls; r.pri=(pri===undefined?1:pri);
   _visQ.push(r);
 }
+// Typed class-ADD event: adds `cls` to #elId when due and self-queues the
+// matching removal `durSec` later. Like queueVisualOff, this carries no
+// closure — used by the highest-volume "on" flashes (part dots: up to 8 per
+// step) whose old closure form had no run-time guards to preserve anyway.
+function queueVisualAdd(at,elId,cls,durSec,pri){
+  const r=_visRec(); r.at=at; r.fn=null; r.off=false; r.el=elId; r.cls=cls; r.dur=durSec; r.pri=(pri===undefined?1:pri);
+  _visQ.push(r);
+}
 function _runVis(r){
-  if(r.el){ const e=document.getElementById(r.el); if(e) e.classList.remove(r.cls); }
+  if(r.el){
+    const e=document.getElementById(r.el); if(!e) return;
+    if(r.off) e.classList.remove(r.cls);
+    else { e.classList.add(r.cls); queueVisualOff(audioCtx.currentTime+r.dur, r.el, r.cls); }
+  }
   else if(r.fn){ r.fn(); }
 }
 const _visDue=[]; // reused scratch — avoids allocating a `due` array every tick
+const _visCmp=(a,b)=>(a.at-b.at)||(a.pri-b.pri); // hoisted — no per-tick closure
 function pumpVisuals(){
   if(!_visQ.length||!audioCtx) return;
   const now=audioCtx.currentTime;
@@ -6898,7 +6941,7 @@ function pumpVisuals(){
   q.length=w; // drop consumed slots before running callbacks, so any new
               // events a callback queues land after the survivors
   if(!_visDue.length) return;
-  _visDue.sort((a,b)=>(a.at-b.at)||(a.pri-b.pri)); // playhead (pri 0) before flashes
+  _visDue.sort(_visCmp); // playhead (pri 0) before flashes
   for(let i=0;i<_visDue.length;i++){ const r=_visDue[i]; try{ _runVis(r); }catch(_){} _visFree(r); }
   _visDue.length=0;
 }
@@ -7143,9 +7186,14 @@ function schedulePlay(resetAccs=true){
           // Each entry also carries the grid `abs` scheduled at this boundary
           // (stamped below, once nextAbsStep resolves it) — recordStep anchors
           // live-recorded hits to these actually-scheduled boundaries.
-          hEntry={t:stepAt,st:{...playState[pi]}};
+          // Pooled record (see _lhRec by the loopHistory definition): fields
+          // are overwritten in place — no per-step allocation.
+          hEntry=_lhRec();
+          hEntry.t=stepAt;
+          const st=hEntry.st, ps=playState[pi];
+          st.pos=ps.pos; st.ppDir=ps.ppDir; st.acc=ps.acc; st.stepCount=ps.stepCount; st.cycle=ps.cycle;
           h.push(hEntry);
-          if(h.length>16) h.shift();
+          if(h.length>16) _lhFree(h.shift());
         }
         let stepInc=stepSec;
         if(looperActive){
@@ -7196,6 +7244,17 @@ let looperHeld=[]; // stack of held looper lengths; last is the active rate
 // Recent scheduled states per part — lets the looper anchor at the AUDIBLE
 // step instead of the lookahead-advanced one
 const loopHistory=Array.from({length:8},()=>[]);
+// History records are POOLED: the tick loop pushes one per scheduled step per
+// part (all 8 parts, every boundary), and fresh {t,st:{...}} pairs at that
+// rate were the last steady per-step allocation left in the scheduler — GC
+// churn that lands on the audio thread's deadlines on low-RAM devices.
+// Records recycle when they roll off the 16-entry window or the history is
+// cleared. Consumers (engageLooper, recordStep) only read or copy fields out,
+// never retain a record, so in-place reuse is safe.
+const _lhPool=[];
+function _lhRec(){ return _lhPool.length?_lhPool.pop():{t:0,abs:undefined,st:{pos:0,ppDir:1,acc:0,stepCount:0,cycle:0}}; }
+function _lhFree(r){ r.abs=undefined; if(_lhPool.length<160) _lhPool.push(r); }
+function _lhClear(h){ for(let i=0;i<h.length;i++) _lhFree(h[i]); h.length=0; }
 const loopSnapshot=Array.from({length:8},()=>null);
 const loopSchedCount=Array(8).fill(0);
 const loopElapsed=Array(8).fill(0);
@@ -7302,7 +7361,7 @@ function stopPlay(){
   // Full stop: reset all positions to the start
   releaseRoll();
   recordSkipOnce.forEach(s=>s.clear());
-  loopHistory.forEach(h=>h.length=0);
+  loopHistory.forEach(_lhClear); // recycle pooled records
   playing=false;paused=false;looperActive=false;looperHeld=[];stopSchedClock();
   // Single-step locks: snap every overridden parameter back to its global value.
   restoreLockOverrides();
@@ -8438,8 +8497,14 @@ function deserializeAll(data){
       if(data.ctrl.locks){ for(let i=0;i<8;i++){ for(const key in ctrlLocks[i]) delete ctrlLocks[i][key]; if(data.ctrl.locks[i]) Object.assign(ctrlLocks[i], JSON.parse(JSON.stringify(data.ctrl.locks[i]))); } }
       if(data.ctrl.sndLocks){ for(let i=0;i<8;i++){ for(const key in soundCtrlLocks[i]) delete soundCtrlLocks[i][key]; if(data.ctrl.sndLocks[i]) Object.assign(soundCtrlLocks[i], JSON.parse(JSON.stringify(data.ctrl.sndLocks[i]))); } }
     }
-    // master FX
-    if(data.masterFX){ Object.assign(masterFX, data.masterFX); if(typeof migrateMasterFX==='function') migrateMasterFX(); try{ if(typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
+    // master FX — rebuild live nodes only if the audio graph already exists
+    // (mid-session project load). On a cold-start restore audioCtx is null and
+    // MUST stay null: buildMasterFX→getCtx would spin up the context before any
+    // gesture, which then made the sendFX branch below build the reverb bus
+    // while parts still held default (zero) sends — gating the demand-attached
+    // convolver OFF and caching that decision. getMasterGain() builds and
+    // applies everything lazily from the restored masterFX on first sound.
+    if(data.masterFX){ Object.assign(masterFX, data.masterFX); if(typeof migrateMasterFX==='function') migrateMasterFX(); try{ if(audioCtx&&typeof buildMasterFX==='function'){buildMasterFX();rewireMasterFX();applyMasterFX();} }catch(e){} if(typeof refreshMasterFXUI==='function') refreshMasterFXUI(); }
     if(data.sendFX){
       Object.assign(sendFX, data.sendFX);
       if(REVERB_ALGOS.indexOf(sendFX.revAlgo)<0) sendFX.revAlgo='HALL';
