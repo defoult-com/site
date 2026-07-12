@@ -491,6 +491,186 @@
   @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;}
     .rec-prev{padding:6px 10px;} .rec-save{padding:6px 10px;} }
 </style>
+
+<style id="web-perf-2026-07">
+/* Audio-pop fixes found while building the iOS app (2026-07-12):
+   (a) persistent containers get their own compositing layers so blinking
+   dots / playhead / metronome repaint a small region instead of the whole
+   page (repaint bursts starve Web Audio on 2-core devices);
+   (b) on touch devices, state-change transitions (incl. animated box-shadow)
+   cost ~6 frames of paint each — snap instead of fade. Desktop keeps fades. */
+.step-grid,.parts-grid,.smd-grid,.step-range-bar,.seq-top-bar,.rec-bar,#status-panel,#se-body,.midi-config-bar{transform:translateZ(0);}
+.part-num.has-steps::after,.step-pad.has-data::after,.step-pad.dot-flash::after{transition:none!important;}
+@media (pointer: coarse){
+  *,*::before,*::after{transition:none!important;animation:none!important;}
+  *{-webkit-tap-highlight-color:rgba(0,0,0,0)!important;}
+}
+</style>
+<script id="sample-persist-2026-07">
+/*
+ * sample-persist.js — samples loaded into the app's sampler live only in
+ * memory (partSamples[] holds decoded AudioBuffers), so they vanish on app
+ * restart. This overlay persists the ORIGINAL file bytes in IndexedDB when a
+ * sample is loaded and re-decodes them automatically on the next launch.
+ * Injected before </body> (repo untouched); runs after the app's script.
+ */
+(function () {
+  'use strict';
+  if (!window.indexedDB) return;
+
+  var DB = 'defoult-overlay';
+  var STORE = 'samples';
+  var storedKeys = {};      // pi -> true (mirror of what's in IDB)
+  var restored = false;     // deletion-sync only runs after restore
+
+  function openDb() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = function () {
+        if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE);
+      };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function idbPut(pi, rec) {
+    return openDb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(rec, pi);
+        tx.oncomplete = function () { storedKeys[pi] = true; res(); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function idbDel(pi) {
+    return openDb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(pi);
+        tx.oncomplete = function () { delete storedKeys[pi]; res(); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function idbAll() {
+    return openDb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var st = db.transaction(STORE, 'readonly').objectStore(STORE);
+        var keysReq = st.getAllKeys();
+        var valsReq = st.getAll();
+        var done = 0, keys, vals;
+        var fin = function () { if (++done === 2) res(keys.map(function (k, i) { return { key: k, val: vals[i] }; })); };
+        keysReq.onsuccess = function () { keys = keysReq.result; fin(); };
+        valsReq.onsuccess = function () { vals = valsReq.result; fin(); };
+        keysReq.onerror = valsReq.onerror = function (e) { rej(e); };
+      });
+    });
+  }
+
+  function readBytes(file) {
+    if (file.arrayBuffer) return file.arrayBuffer();
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { res(fr.result); };
+      fr.onerror = rej;
+      fr.readAsArrayBuffer(file);
+    });
+  }
+
+  function decodeBytes(bytes) {
+    return new Promise(function (res, rej) {
+      var ctx = (typeof getCtx === 'function') ? getCtx() : null;
+      if (!ctx) return rej(new Error('no ctx'));
+      try {
+        // Copy: decodeAudioData detaches the buffer it's given.
+        var p = ctx.decodeAudioData(bytes.slice(0), res, rej);
+        if (p && typeof p.then === 'function') p.then(res, rej);
+      } catch (e) { rej(e); }
+    });
+  }
+
+  // ---- Hook the app's loader: persist bytes after a successful load --------
+  function hook() {
+    if (typeof window.loadSampleForPart !== 'function') return false;
+    var orig = window.loadSampleForPart;
+    window.loadSampleForPart = function (pi, file) {
+      var r = orig.apply(this, arguments);
+      Promise.resolve(r).then(function () {
+        try {
+          // orig sets the name only when decode succeeded.
+          if (typeof partSampleNames !== 'undefined' && partSampleNames[pi] === file.name) {
+            readBytes(file).then(function (bytes) {
+              idbPut(pi, { name: file.name, bytes: bytes, t: Date.now() });
+            }).catch(function () {});
+          }
+        } catch (e) {}
+      }).catch(function () {});
+      return r;
+    };
+    return true;
+  }
+
+  // ---- Restore on launch ----------------------------------------------------
+  function restore() {
+    idbAll().then(function (items) {
+      items.forEach(function (it) { storedKeys[it.key] = true; });
+      if (!items.length) { restored = true; return; }
+      var ok = 0, pending = items.length;
+      var finishOne = function () {
+        if (--pending > 0) return;
+        restored = true;
+        if (ok > 0) {
+          try {
+            if (typeof setStatus === 'function') setStatus('Restored ' + ok + ' sample' + (ok > 1 ? 's' : ''));
+            if (typeof buildSoundEditor === 'function' && typeof seOpen !== 'undefined' && seOpen) buildSoundEditor();
+          } catch (e) {}
+        }
+      };
+      var tryDecode = function (it, retryOnGesture) {
+        decodeBytes(it.val.bytes).then(function (buf) {
+          try {
+            partSamples[it.key] = buf;
+            partSampleNames[it.key] = it.val.name;
+            ok++;
+          } catch (e) {}
+          finishOne();
+        }, function () {
+          if (retryOnGesture) {
+            // Some WebKit builds refuse to decode while the AudioContext is
+            // suspended pre-gesture — retry once on the first user tap.
+            var once = function () {
+              document.removeEventListener('pointerdown', once, true);
+              tryDecode(it, false);
+            };
+            document.addEventListener('pointerdown', once, true);
+          } else {
+            finishOne();
+          }
+        });
+      };
+      items.forEach(function (it) { tryDecode(it, true); });
+    }).catch(function () { restored = true; });
+  }
+
+  // ---- Mirror in-app sample clearing (e.g. reset-to-defaults) ---------------
+  setInterval(function () {
+    if (!restored || typeof partSampleNames === 'undefined') return;
+    Object.keys(storedKeys).forEach(function (k) {
+      var pi = +k;
+      if (!partSampleNames[pi]) idbDel(pi).catch(function () {});
+    });
+  }, 4000);
+
+  // ---- Init: wait for the app's globals -------------------------------------
+  var tries = 0;
+  var timer = setInterval(function () {
+    if (hook()) { clearInterval(timer); restore(); }
+    else if (++tries > 100) { clearInterval(timer); }
+  }, 100);
+})();
+
+</script>
 </head>
 <body>
 <button id="view-toggle" title="Toggle portrait / wide layout">Portrait</button>
@@ -6808,7 +6988,7 @@ function fireResync(pi){
 
 // Quantized delay times: multiplier of baseSec() (one 16th note)
 const SCHED_INTERVAL=LOW_POWER_AUDIO?40:25;   // ms between scheduler runs
-const LOOKAHEAD=LOW_POWER_AUDIO?0.18:0.10;    // seconds to schedule ahead
+const LOOKAHEAD=LOW_POWER_AUDIO?0.32:0.20;    // seconds to schedule ahead
 
 let audioStartTime=0; // AudioContext time when transport started
 let cycleAnchor=0;    // bar-grid time the shared CYC super-loop counts from
@@ -6911,7 +7091,9 @@ function queueVisualOff(at,elId,cls,pri){
 // matching removal `durSec` later. Like queueVisualOff, this carries no
 // closure — used by the highest-volume "on" flashes (part dots: up to 8 per
 // step) whose old closure form had no run-time guards to preserve anyway.
+const _dotFlashLast={}; // perf: coalesce dot blinks to ~5Hz per element (repaints starve audio on 2-core devices)
 function queueVisualAdd(at,elId,cls,durSec,pri){
+  if(cls==='dot-flash'){const _t=performance.now();if(_t-(_dotFlashLast[elId]||0)<190)return;_dotFlashLast[elId]=_t;}
   const r=_visRec(); r.at=at; r.fn=null; r.off=false; r.el=elId; r.cls=cls; r.dur=durSec; r.pri=(pri===undefined?1:pri);
   _visQ.push(r);
 }
@@ -9199,7 +9381,7 @@ function syncModeTabWidths(){
   ['tab-pat','tab-step','tab-key','tab-ctrl'].forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
-    el.style.flex = portrait ? '' : ('0 0 '+w+'px');
+    el.style.flex = portrait ? '' : '1 1 0'; // perf/responsive: fluid tabs never overflow
   });
 }
 requestAnimationFrame(syncModeTabWidths);
