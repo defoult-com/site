@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description"
 content="defOult is a free browser-based drum machine and step sequencer inspired by classic hardware grooveboxes. Works on desktop, tablet and mobile.">
-<title>defOult — free online drum machine & step sequencer</title>
+<title>defOult — drum machine & step sequencer</title>
+<link rel="canonical" href="https://defoult.com/">
+<!-- Google Search Console: verify with the "HTML tag" method — paste your token and uncomment:
+<meta name="google-site-verification" content="PASTE_YOUR_TOKEN_HERE"> -->
 <!-- ════════════════════════════════════════════════════════════════════
   HOW TO NAVIGATE THIS FILE
   One file, three layers:
@@ -2772,15 +2775,15 @@ function showStepParams(abs){
       // drag to change
       let sY=0,sV=0;
       const _mv=cy=>{
-        const delta=Math.round((sY-cy)/def.pxPerStep);
+        const delta=Math.round((sY-cy)/def.pxPerStep);if(def.key==='note'){var _t=Math.max(0,Math.min(127,sV+delta)),_n=((_t%12)+12)%12,_o=Math.floor(_t/12);if(_n!==sp.note||_o!==sp.oct){sp.note=_n;sp.oct=_o;try{heldStepParamChanged=true;}catch(_e){}}var _ne=document.getElementById('sp-cell-'+idx+'-val')||document.getElementById('pd-cell-'+idx+'-val');if(_ne)_ne.textContent=def.fmt(_n);var _oe=document.getElementById('sp-cell-4-val')||document.getElementById('pd-cell-4-val');if(_oe)_oe.textContent=''+_o;return;}
         const nv=Math.max(def.min,Math.min(def.max,sV+delta));
         if(nv!==sp[def.key]){sp[def.key]=nv;heldStepParamChanged=true;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
         const el=document.getElementById('sp-cell-'+idx+'-val');
         if(el) el.textContent=def.fmt(nv);
         if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
       };
-      cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
-      cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=sp[def.key];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
+      cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=(def.key==='note'?sp.note+sp.oct*12:sp[def.key]);paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+      cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=(def.key==='note'?sp.note+sp.oct*12:sp[def.key]);e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     }
     // Scroll-wheel adjust for this step-param cell.
     cell._wheelAdjust=(dir)=>{
@@ -2789,7 +2792,7 @@ function showStepParams(abs){
         const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(sp[def.key]);
         cell.classList.toggle('cc-active',!!sp[def.key]); updateAccVelGrey(sp);
       }else{
-        const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+        if(def.key==='note'){var _t=Math.max(0,Math.min(127,sp.note+sp.oct*12+dir)),_n=((_t%12)+12)%12,_o=Math.floor(_t/12);sp.note=_n;sp.oct=_o;try{heldStepParamChanged=true;}catch(_e){}var _ne=document.getElementById('sp-cell-'+idx+'-val')||document.getElementById('pd-cell-'+idx+'-val');if(_ne)_ne.textContent=def.fmt(_n);var _oe=document.getElementById('sp-cell-4-val')||document.getElementById('pd-cell-4-val');if(_oe)_oe.textContent=''+_o;return;}const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
         if(nv!==sp[def.key]){ sp[def.key]=nv; heldStepParamChanged=true; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
         const el=document.getElementById('sp-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
         if(def.key==='vel'||def.key==='accent') updateAccVelGrey(sp);
@@ -2850,17 +2853,17 @@ function showPartDefaults(pi){
 
     let sY=0,sV=0;
     const _mv=cy=>{
-      const delta=Math.round((sY-cy)/def.pxPerStep);
+      const delta=Math.round((sY-cy)/def.pxPerStep);if(def.key==='note'){var _t=Math.max(0,Math.min(127,sV+delta)),_n=((_t%12)+12)%12,_o=Math.floor(_t/12);if(_n!==sp.note||_o!==sp.oct){sp.note=_n;sp.oct=_o;try{heldStepParamChanged=true;}catch(_e){}}var _ne=document.getElementById('sp-cell-'+idx+'-val')||document.getElementById('pd-cell-'+idx+'-val');if(_ne)_ne.textContent=def.fmt(_n);var _oe=document.getElementById('sp-cell-4-val')||document.getElementById('pd-cell-4-val');if(_oe)_oe.textContent=''+_o;return;}
       const nv=Math.max(def.min,Math.min(def.max,sV+delta));
       if(nv!==sp[def.key]){sp[def.key]=nv;if(def.key==='vel')sp.velManual=true;if(def.key==='accent')sp.velManual=false;}
       const el=document.getElementById('pd-cell-'+idx+'-val');
       if(el) el.textContent=def.fmt(nv);
       if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
     };
-    cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=sp[def.key];paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
-    cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=sp[def.key];e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
+    cell.addEventListener('mousedown',e=>{sY=e.clientY;sV=(def.key==='note'?sp.note+sp.oct*12:sp[def.key]);paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sY=t.clientY;sV=(def.key==='note'?sp.note+sp.oct*12:sp[def.key]);e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
     cell._wheelAdjust=(dir)=>{
-      const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
+      if(def.key==='note'){var _t=Math.max(0,Math.min(127,sp.note+sp.oct*12+dir)),_n=((_t%12)+12)%12,_o=Math.floor(_t/12);sp.note=_n;sp.oct=_o;try{heldStepParamChanged=true;}catch(_e){}var _ne=document.getElementById('sp-cell-'+idx+'-val')||document.getElementById('pd-cell-'+idx+'-val');if(_ne)_ne.textContent=def.fmt(_n);var _oe=document.getElementById('sp-cell-4-val')||document.getElementById('pd-cell-4-val');if(_oe)_oe.textContent=''+_o;return;}const nv=def.key==='gate'?stepGate(sp.gate,dir):Math.max(def.min,Math.min(def.max,sp[def.key]+dir));
       if(nv!==sp[def.key]){ sp[def.key]=nv; if(def.key==='vel')sp.velManual=true; if(def.key==='accent')sp.velManual=false; }
       const el=document.getElementById('pd-cell-'+idx+'-val'); if(el) el.textContent=def.fmt(nv);
       if(def.key==='vel'||def.key==='accent') updatePartDefGrey(sp);
@@ -4028,10 +4031,10 @@ function showKeyPanel(){
     if(spec.reset!==undefined) cell.addEventListener('dblclick',()=>{spec.set(spec.reset);paint();});
     let sY=0,sV=0;
     const stepPx=spec.stepPx||2;
-    const _mv=cy=>{ const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-cy)/stepPx))); if(nv!==spec.get()){spec.set(nv);paint();} };
-    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=spec.get();paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
-    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=spec.get();e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
-    cell._wheelAdjust=(dir)=>{ const raw=spec.gate?stepGate(spec.get(),dir):spec.get()+dir; const nv=Math.max(spec.min,Math.min(spec.max,raw)); if(nv!==spec.get()){spec.set(nv);paint();} };
+    const _mv=cy=>{ if(spec.wrapOct){var _r=((sV+Math.round((sY-cy)/stepPx))%12+12)%12;if(_r!==keyScaleRoot){keyScaleRoot=_r;buildSteps();paint();}return;} const nv=Math.max(spec.min,Math.min(spec.max,sV+Math.round((sY-cy)/stepPx))); if(nv!==spec.get()){spec.set(nv);paint();} };
+    cell.addEventListener('mousedown',e=>{if(e.target.tagName==='INPUT')return;sY=e.clientY;sV=(spec.wrapOct?keyScaleRoot+keyOctave*12:spec.get());paramDragActive=true;e.preventDefault();beginDrag(false,0,_mv);});
+    cell.addEventListener('touchstart',e=>{if(e.target.tagName==='INPUT')return;const t=e.changedTouches[0];sY=t.clientY;sV=(spec.wrapOct?keyScaleRoot+keyOctave*12:spec.get());e.preventDefault();beginDrag(true,t.identifier,_mv);},{passive:false});
+    cell._wheelAdjust=(dir)=>{ if(spec.wrapOct){var _r=((keyScaleRoot+dir)%12+12)%12;if(_r!==keyScaleRoot){keyScaleRoot=_r;buildSteps();paint();}return;} const raw=spec.gate?stepGate(spec.get(),dir):spec.get()+dir; const nv=Math.max(spec.min,Math.min(spec.max,raw)); if(nv!==spec.get()){spec.set(nv);paint();} };
     return cell;
   }
 
@@ -4044,7 +4047,7 @@ function showKeyPanel(){
       cell=makeCell({idx,ccIdx:1,label:'SCALE',id:'kscale-val',min:0,max:SCALES.length-1,reset:0,stepPx:14,textVal:true,
         get:()=>keyScale, set:v=>{keyScale=v;buildSteps();}, fmt:v=>SCALES[v].name});
     } else if(idx===5){
-      cell=makeCell({idx,ccIdx:5,label:'ROOT',id:'kroot-val',min:0,max:11,reset:0,stepPx:14,
+      cell=makeCell({idx,ccIdx:5,label:'ROOT',id:'kroot-val',min:0,max:11,reset:0,stepPx:14,wrapOct:true,
         get:()=>keyScaleRoot, set:v=>{keyScaleRoot=v;buildSteps();}, fmt:v=>ROOT_NAMES[v]});
     } else if(idx===4){
       cell=makeCell({idx,ccIdx:4,label:'OCTAVE',id:'koct-val',min:0,max:10,reset:5,stepPx:14,
