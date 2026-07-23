@@ -29,15 +29,15 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
 <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <style>
-  #pwa-hint{position:fixed;left:8px;bottom:8px;z-index:1000;display:none;align-items:center;gap:10px;
+  #pwa-hint,.pwa-chip{position:fixed;left:8px;bottom:8px;z-index:1000;display:none;align-items:center;gap:10px;
     max-width:min(300px,calc(100vw - 16px));padding:7px 9px;border-radius:5px;
     background:#2a2a1e;border:1px solid #3a3a28;box-shadow:0 2px 8px rgba(0,0,0,.55);
     font-family:'Helvetica Neue Condensed','Helvetica Neue','Archivo Narrow','Arial Narrow',Helvetica,Arial,sans-serif;}
-  #pwa-hint.on{display:flex;}
-  #pwa-hint .pwa-txt{min-width:0;line-height:1.25;cursor:pointer;}
-  #pwa-hint .pwa-main{font-size:11px;font-weight:bold;letter-spacing:.05em;color:#f0c030;white-space:nowrap;}
-  #pwa-hint .pwa-sub{font-size:9px;color:#888870;}
-  #pwa-hint .pwa-x{flex:0 0 auto;width:20px;height:20px;border:1px solid #3a3a28;border-radius:3px;
+  #pwa-hint.on,.pwa-chip.on{display:flex;}
+  #pwa-hint .pwa-txt,.pwa-chip .pwa-txt{min-width:0;line-height:1.25;cursor:pointer;}
+  #pwa-hint .pwa-main,.pwa-chip .pwa-main{font-size:11px;font-weight:bold;letter-spacing:.05em;color:#f0c030;white-space:nowrap;}
+  #pwa-hint .pwa-sub,.pwa-chip .pwa-sub{font-size:9px;color:#888870;}
+  #pwa-hint .pwa-x,.pwa-chip .pwa-x{flex:0 0 auto;width:20px;height:20px;border:1px solid #3a3a28;border-radius:3px;
     background:#222218;color:#888870;font-size:12px;line-height:1;cursor:pointer;padding:0;}
 </style>
 <script>
@@ -504,6 +504,56 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
     if(r&&window.ResizeObserver) new ResizeObserver(scheduleClamp).observe(r);
   })();
   setTimeout(clampHeight,400); setTimeout(clampHeight,1400);
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   SILENT-MODE REMINDER — iOS only, first play only.
+   The ringer switch mutes Web Audio in Safari and in an installed PWA
+   alike, and nothing in the platform reports its position. So: a one-off
+   nudge the first time transport starts, dismissible for good, and it
+   stacks above the install chip if that one is still on screen.
+   ════════════════════════════════════════════════════════════════════ */
+(function(){
+  var STORE='defoult-silent-hint';
+  function pref(v){ try{ return v===undefined?localStorage.getItem(STORE):localStorage.setItem(STORE,v); }catch(e){ return null; } }
+  var iOS=/iP(hone|od|ad)/.test(navigator.platform)||(navigator.maxTouchPoints>1&&/Mac/.test(navigator.platform));
+  if(!iOS || pref()==='off') return;
+
+  var shown=false, chip=null, hideT=null;
+  function show(){
+    if(shown||pref()==='off') return;
+    shown=true;
+    chip=document.createElement('div');
+    chip.id='silent-hint';
+    chip.className='pwa-chip';
+    // Sit above the install chip when both are up.
+    chip.style.bottom=document.getElementById('pwa-hint')?'60px':'8px';
+    chip.innerHTML='<div class="pwa-txt"><div class="pwa-main"></div><div class="pwa-sub"></div></div>'
+                 +'<button class="pwa-x" type="button" aria-label="Dismiss">\u00d7</button>';
+    chip.querySelector('.pwa-main').textContent='\ud83d\udd07 NO SOUND?';
+    chip.querySelector('.pwa-sub').textContent='Switch the phone out of Silent Mode.';
+    chip.querySelector('.pwa-x').addEventListener('click',function(e){ e.stopPropagation(); pref('off'); close(); });
+    document.body.appendChild(chip);
+    chip.classList.add('on');
+    // It is a reminder, not a dialog — get out of the way on its own. Only the
+    // × silences it permanently.
+    hideT=setTimeout(close,9000);
+  }
+  function close(){ if(hideT){clearTimeout(hideT);hideT=null;} if(chip){chip.remove();chip=null;} }
+
+  // Fire on the first transport start. The app's `playing` flag is a top-level
+  // `let`, so it is not reachable from here — hook the two things that start
+  // playback instead: the transport button and its Space shortcut.
+  function arm(){ setTimeout(show,500); }
+  function watch(){
+    var btn=document.getElementById('btn-play');
+    if(btn){
+      btn.addEventListener('click',arm);
+      btn.addEventListener('touchstart',arm,{passive:true});
+    }
+    document.addEventListener('keydown',function(e){ if(e.code==='Space') arm(); });
+  }
+  if(document.body) watch(); else document.addEventListener('DOMContentLoaded',watch);
 })();
 </script>
 <!-- ════════════════════════════════════════════════════════════════════
