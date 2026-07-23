@@ -13,7 +13,7 @@
  * Bump CACHE when the site is redeployed; activate() drops every other cache,
  * so a stale worker can never strand an old build.
  */
-const CACHE = 'defoult-v1';
+const CACHE = 'defoult-v2';
 
 // Best-effort: about/manual live in the site repo and may not be deployed
 // alongside a given build, so each is added on its own and failures are ignored

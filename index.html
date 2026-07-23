@@ -15,15 +15,18 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
   its own window with no address bar and no bottom toolbar — the same framing
   as the native build. iOS cannot be prompted for this, so a dismissible hint
   points at the Share menu; Chrome fires beforeinstallprompt and gets a real
-  button. Status bar style is "black" (not black-translucent) on purpose: the
-  page keeps the default safe-area viewport, so iOS insets the content itself
-  and no safe-area CSS is needed here.
+  button. The status bar is TRANSLUCENT so the web view is always the full
+  screen in both orientations — an opaque bar makes iOS resize the view on
+  every rotation, and coming back to portrait it restores the bar WITHOUT
+  shrinking the view, leaving the layout 20px too tall and scrollable. With a
+  translucent bar the size never changes and the bar's height arrives as a
+  safe-area inset, which the fit CSS turns into body padding.
   ════════════════════════════════════════════════════════════════════ -->
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#1a1a14">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="defOult">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
@@ -111,6 +114,8 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
   var standalone=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
   if(!standalone) return;
   document.documentElement.classList.add('pwa-standalone');
+  if(/iP(hone|od|ad)/.test(navigator.platform)||(navigator.maxTouchPoints>1&&/Mac/.test(navigator.platform)))
+    document.documentElement.classList.add('pwa-ios');
 
   // env(safe-area-inset-*) reads 0 without this, and the status bar is
   // translucent in standalone — so the insets are what keep the UI clear of
@@ -121,7 +126,7 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
 
   var st=document.createElement('style');
   st.id='pwa-fit-css';
-  st.textContent="\n/* Fit the whole UI on one screen with NO scrolling, in every orientation —\n   fit-screen.js scales #seq-root to the safe-area viewport, these rules make\n   that deterministic and guarantee nothing scrolls. */\nhtml,body{overflow:hidden!important;height:100%!important;}\n/* overflow:hidden alone does not stop iOS rubber-banding, and if the scaled box\n   ever ends up a few px over the viewport the document becomes scrollable.\n   Taking <body> out of flow pins it to the viewport, so there is nothing to\n   scroll no matter what the fit produces. */\nbody{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:0!important;}\n/* <body> is a centered flex item, so it shrink-wraps to its content width;\n   with overflow:hidden that clips the scaled layer to a narrow box. Span the\n   full viewport so the clip sits at the screen edges. */\nbody{width:100%!important;min-width:100%!important;}\n/* Fixed app UI: no pinch-zoom, no double-tap zoom. */\nhtml,body{touch-action:pan-x pan-y!important;}\n/* #scale-wrap is a flex container and the fitter sizes it to the SCALED box,\n   so #seq-root — a shrinkable flex item — was being squeezed below the design\n   width the solver had just set (measured 453px against a requested 644px).\n   That fed back into the next solve and landscape settled ~54% of the screen\n   wide, with black bars either side. Take the root out of flex sizing so its\n   width is exactly what the solver asked for. */\n#seq-root{flex:0 0 auto!important;}\n@supports (padding: max(0px)){\n  /* Full-bleed: pad ONLY where a hardware inset exists (island/notch/home bar).\n     Non-zero only because the standalone launch adds viewport-fit=cover. */\n  body{\n    padding-top:env(safe-area-inset-top,0px)!important;\n    padding-right:env(safe-area-inset-right,0px)!important;\n    padding-bottom:env(safe-area-inset-bottom,0px)!important;\n    padding-left:env(safe-area-inset-left,0px)!important;\n  }\n}\n/* The fitted portrait layout solves a ~280px design width, which squeezed the\n   BOUNCE bar's running timer down to two characters (\"00:\"). Trim the bar's\n   labels a notch and let the PREVIEW slot size to its own text — the whole\n   layout is scaled back up afterwards, so nothing reads smaller on screen. */\nbody.portrait .rec-bar .rec-btn,\nbody.portrait .rec-bar .rec-prev,\nbody.portrait .rec-bar .rec-save{font-size:10px!important;}\nbody.portrait #rec-preview-label{min-width:0!important;}\n/* Landscape on short (phone) screens: drop the section headers and keyboard\n   hints, square up the pads, and give the layout a wide design width so the\n   scaler fills the screen in BOTH dimensions instead of leaving side bars. */\n@media (orientation:landscape) and (max-height:600px){\n  #parts-panel-header,.step-panel-header{display:none!important;}\n  .tport-top-kbd,.kbdkey,.part-kbd,.step-kbd,.rkbd,.ctrl-kbd{display:none!important;}\n  #seq-root{width:1024px!important;max-width:none!important;}\n  .step-pad,.part-num{aspect-ratio:1!important;height:auto!important;min-height:0!important;}\n  #step-panel{display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:8px!important;}\n  #step-panel .step-grid{flex:0 0 auto!important;}\n  #step-panel .step-range-bar{flex:1 1 auto!important;min-height:40px!important;margin-top:0!important;}\n  .range-btn{font-size:12px!important;}\n  .seq-top-bar .tport-top-pad{min-height:44px!important;}\n  .mode-tab{min-height:44px!important;}\n  #action-btn-row .ctrl-btn{min-height:58px!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:center!important;}\n  #action-btn-row .ctrl-val{flex:1 1 auto!important;display:flex!important;align-items:center!important;justify-content:center!important;height:auto!important;}\n  #tempo-pad{align-items:center!important;}\n  #tempo-pad .tempo-top-unit{transform:translateY(3px);}\n}";
+  st.textContent="\n/* Fit the whole UI on one screen with NO scrolling, in every orientation —\n   fit-screen.js scales #seq-root to the safe-area viewport, these rules make\n   that deterministic and guarantee nothing scrolls. */\nhtml,body{overflow:hidden!important;height:100%!important;}\n/* overflow:hidden alone does not stop iOS rubber-banding, and if the scaled box\n   ever ends up a few px over the viewport the document becomes scrollable.\n   Taking <body> out of flow pins it to the viewport, so there is nothing to\n   scroll no matter what the fit produces. */\nbody{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:0!important;}\n/* <body> is a centered flex item, so it shrink-wraps to its content width;\n   with overflow:hidden that clips the scaled layer to a narrow box. Span the\n   full viewport so the clip sits at the screen edges. */\nbody{width:100%!important;min-width:100%!important;}\n/* Fixed app UI: no pinch-zoom, no double-tap zoom. */\nhtml,body{touch-action:pan-x pan-y!important;}\n/* #scale-wrap is a flex container and the fitter sizes it to the SCALED box,\n   so #seq-root — a shrinkable flex item — was being squeezed below the design\n   width the solver had just set (measured 453px against a requested 644px).\n   That fed back into the next solve and landscape settled ~54% of the screen\n   wide, with black bars either side. Take the root out of flex sizing so its\n   width is exactly what the solver asked for. */\n#seq-root{flex:0 0 auto!important;}\n@supports (padding: max(0px)){\n  /* Portrait on iOS always has a status bar overlaying the translucent-bar\n     web view; some older builds report inset-top as 0 there, so floor it. */\n  @media (orientation:portrait){\n    html.pwa-ios body{padding-top:max(env(safe-area-inset-top,0px),20px)!important;}\n  }\n  /* Full-bleed: pad ONLY where a hardware inset exists (island/notch/home bar).\n     Non-zero only because the standalone launch adds viewport-fit=cover. */\n  body{\n    padding-top:env(safe-area-inset-top,0px)!important;\n    padding-right:env(safe-area-inset-right,0px)!important;\n    padding-bottom:env(safe-area-inset-bottom,0px)!important;\n    padding-left:env(safe-area-inset-left,0px)!important;\n  }\n}\n/* The fitted portrait layout solves a ~280px design width, which squeezed the\n   BOUNCE bar's running timer down to two characters (\"00:\"). Trim the bar's\n   labels a notch and let the PREVIEW slot size to its own text — the whole\n   layout is scaled back up afterwards, so nothing reads smaller on screen. */\nbody.portrait .rec-bar .rec-btn,\nbody.portrait .rec-bar .rec-prev,\nbody.portrait .rec-bar .rec-save{font-size:10px!important;}\nbody.portrait #rec-preview-label{min-width:0!important;}\n/* Landscape on short (phone) screens: drop the section headers and keyboard\n   hints, square up the pads, and give the layout a wide design width so the\n   scaler fills the screen in BOTH dimensions instead of leaving side bars. */\n@media (orientation:landscape) and (max-height:600px){\n  #parts-panel-header,.step-panel-header{display:none!important;}\n  .tport-top-kbd,.kbdkey,.part-kbd,.step-kbd,.rkbd,.ctrl-kbd{display:none!important;}\n  #seq-root{width:1024px!important;max-width:none!important;}\n  .step-pad,.part-num{aspect-ratio:1!important;height:auto!important;min-height:0!important;}\n  #step-panel{display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:8px!important;}\n  #step-panel .step-grid{flex:0 0 auto!important;}\n  #step-panel .step-range-bar{flex:1 1 auto!important;min-height:40px!important;margin-top:0!important;}\n  .range-btn{font-size:12px!important;}\n  .seq-top-bar .tport-top-pad{min-height:44px!important;}\n  .mode-tab{min-height:44px!important;}\n  #action-btn-row .ctrl-btn{min-height:58px!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:center!important;}\n  #action-btn-row .ctrl-val{flex:1 1 auto!important;display:flex!important;align-items:center!important;justify-content:center!important;height:auto!important;}\n  #tempo-pad{align-items:center!important;}\n  #tempo-pad .tempo-top-unit{transform:translateY(3px);}\n}";
   (document.head||document.documentElement).appendChild(st);
 
   // The app's own fit engine, unchanged — see web-overlay/fit-screen.js.
@@ -482,28 +487,42 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
     wrap.style.height=(natH*scale)+'px';
     try{ window.appScale=scale; }catch(e){}
   }
-  // fit() is scheduled on its own rAF, so land one frame behind it.
-  var clampRaf=null;
-  function scheduleClamp(){
-    if(clampRaf) cancelAnimationFrame(clampRaf);
-    clampRaf=requestAnimationFrame(function(){
-      clampRaf=requestAnimationFrame(function(){ clampRaf=null; clampHeight(); });
-    });
+  // Watch the box the fitter reserves rather than trying to land a frame behind
+  // it. The fitter runs both on its own rAF and synchronously from
+  // refreshLayout(), so no timer or frame ordering catches every pass — but a
+  // style mutation on #scale-wrap IS the fit finishing, whichever path ran.
+  // Our own correction re-enters the observer exactly once and then returns
+  // early (it fits by then), so this settles immediately.
+  function attachClamp(){
+    var wrap=document.getElementById('scale-wrap');
+    if(!wrap) return;
+    if(window.MutationObserver)
+      new MutationObserver(function(){ clampHeight(); })
+        .observe(wrap,{attributes:true,attributeFilter:['style']});
+    clampHeight();
   }
-  window.addEventListener('resize',scheduleClamp,{passive:true});
-  if(window.visualViewport) window.visualViewport.addEventListener('resize',scheduleClamp,{passive:true});
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',attachClamp);
+  else attachClamp();
+  window.addEventListener('resize',function(){ clampHeight(); },{passive:true});
+  if(window.visualViewport) window.visualViewport.addEventListener('resize',function(){ clampHeight(); },{passive:true});
   window.addEventListener('orientationchange',function(){
-    // Staggered: iOS settles its insets and viewport metrics over several
-    // hundred ms after the rotation animation.
-    scheduleClamp();
-    setTimeout(clampHeight,250); setTimeout(clampHeight,600); setTimeout(clampHeight,1100);
+    // iOS settles its insets and viewport metrics over several hundred ms after
+    // the rotation animation. Re-FIT (not just clamp) each time: coming back to
+    // portrait the status bar reappears and the usable height shrinks by its
+    // height, and a fit that ran a moment earlier sized the layout for a screen
+    // with no bar — the exact "rotate away and back and it scrolls" case.
+    var refit=function(){
+      try{ if(typeof window.applyAppScale==='function') window.applyAppScale(); }catch(e){}
+      clampHeight();
+    };
+    setTimeout(refit,250); setTimeout(refit,600); setTimeout(refit,1100);
   });
-  // The fitter re-runs whenever the app's content size changes; follow it.
-  (function(){
-    var r=document.getElementById('seq-root');
-    if(r&&window.ResizeObserver) new ResizeObserver(scheduleClamp).observe(r);
-  })();
-  setTimeout(clampHeight,400); setTimeout(clampHeight,1400);
+  // Last line of defence. A safe-area inset can change with no event of any
+  // kind, and then nothing writes to #scale-wrap for the observer to catch —
+  // the box simply stays too tall. A 1Hz check is a few DOM reads and only
+  // writes when there is real overhang, so the worst case self-heals in a
+  // second instead of lasting until the next rotation.
+  setInterval(clampHeight,1000);
 })();
 
 /* ════════════════════════════════════════════════════════════════════
