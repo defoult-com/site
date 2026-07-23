@@ -2623,7 +2623,7 @@ const CELL_DEFS=[
     apply(v){parts[activePart].speedIndex=Math.round(v/127*(SPEEDS.length-1));if(playing)queueResync(activePart);updateSpdDisplay();updatePartIndicator();buildParts();},
     reset(){parts[activePart].speedIndex=DEFAULT_SPEED_IDX;if(playing)queueResync(activePart);updateSpdDisplay();updatePartIndicator();buildParts();},
     fmtVal(){return SPEEDS[parts[activePart].speedIndex].label;}},
-  {id:'smd-off-cell',label:'TIME OFST',kind:'off',
+  {id:'smd-off-cell',label:'SEQ OFST',kind:'off',
     apply(v){const p=parts[activePart];const len=p.seqEnd-p.seqStart+1;parts[activePart].seqOffset=Math.round(((v-64)/63)*(len-1));updateOffDisplay();updatePartIndicator();buildSteps();},
     reset(){parts[activePart].seqOffset=0;updateOffDisplay();updatePartIndicator();buildSteps();},
     fmtVal(){const o=parts[activePart].seqOffset;return o===0?'0':(o>0?'+':'')+o;}},
