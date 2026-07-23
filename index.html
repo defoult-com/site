@@ -5019,15 +5019,37 @@ const LOW_POWER_AUDIO=/Android/i.test(navigator.userAgent||'')||IS_IOS;
 const LOW_POWER_UI=(LOW_POWER_AUDIO&&((navigator.deviceMemory&&navigator.deviceMemory<=3)||(navigator.hardwareConcurrency&&navigator.hardwareConcurrency<=4)))
                  ||(navigator.deviceMemory&&navigator.deviceMemory<=2);
 if(LOW_POWER_UI&&document.body) document.body.classList.add('low-fx');
+// A context sometimes opens at the rate of whatever audio route happened to be
+// live at that instant — 16kHz if a Bluetooth headset is in hands-free mode, or
+// if another app had a mic stream open. Every voice then loses its top octaves
+// (BiquadFilterNode clamps to Nyquist), and the CYM/hi-hat — which lives
+// ENTIRELY above 6kHz — disappears outright. A plain page refresh "fixed" it,
+// which is the giveaway that the device was fine and only the context was born
+// at a bad moment. So: if the rate comes back implausibly low, throw that
+// context away and ask for 44.1k explicitly.
+const MIN_SANE_RATE=40000;
 function getCtx(){
   if(!audioCtx){
     const AC=window.AudioContext||window.webkitAudioContext;
-    try{ audioCtx=LOW_POWER_AUDIO?new AC({latencyHint:0.08}):new AC(); }
+    const opts=LOW_POWER_AUDIO?{latencyHint:0.08}:{};
+    try{ audioCtx=new AC(opts); }
     catch(e){ audioCtx=new AC(); }
+    if(audioCtx.sampleRate<MIN_SANE_RATE){
+      const bad=audioCtx.sampleRate;
+      try{ audioCtx.close(); }catch(e){}
+      try{ audioCtx=new AC(Object.assign({},opts,{sampleRate:44100})); }
+      catch(e){ try{ audioCtx=new AC(opts); }catch(e2){ audioCtx=new AC(); } }
+      try{ setStatus('Audio device opened at '+bad+' Hz — reopened at '+audioCtx.sampleRate+' Hz'); }catch(e){}
+    }
   }
   if(audioCtx.state==='suspended')audioCtx.resume();
   return audioCtx;
 }
+// Filters set above Nyquist are clamped by the browser, which collapses the
+// narrow band a voice was designed to live in. Returns a multiplier that keeps
+// `hz` inside the usable range; apply the SAME multiplier to a whole filter
+// group so their ratios — the character of the sound — survive the move.
+function nyqFit(ctx,hz){ const lim=ctx.sampleRate*0.45; return hz>lim?lim/hz:1; }
 // Convert MIDI note number to Hz
 function midiToHz(midi){return 440*Math.pow(2,(midi-69)/12);}
 /* ════════════════════════════════════════════════════════════════════
@@ -5379,7 +5401,18 @@ function updatePartIndicator(){
     if(settingsPage===1) sub='';
     else if(settingsPage===9) sub=' · PART '+((settingsPartSel>=0?settingsPartSel:0)+1);
     else sub=(settingsPartSel>=0?(' · PART '+(settingsPartSel+1)):' · GLOBAL');
-    if(pi2) pi2.innerHTML='Settings · '+pageName+sub;
+    // Audio rate, shown here because a low one is otherwise invisible and
+    // sounds like a broken instrument: on a 16kHz route (Bluetooth hands-free)
+    // every voice loses its top octaves and the hi-hat can vanish entirely.
+    // Flagged in red below 40k so it reads as a fault, not a spec.
+    let rate='';
+    if(audioCtx){
+      const k=Math.round(audioCtx.sampleRate/100)/10;
+      rate=audioCtx.sampleRate<MIN_SANE_RATE
+        ? ' · <span style="color:var(--seq-red)">'+k+' kHz — reconnect audio device</span>'
+        : ' · '+k+' kHz';
+    }
+    if(pi2) pi2.innerHTML='Settings · '+pageName+sub+rate;
     return;
   }
   if(currentMode==='key'){
@@ -6869,8 +6902,18 @@ window.SoundEngine={
       const noiseAmt=upper*0.5;                 // noise grows toward ride/crash
       const metalFactor=1-upper*0.5;            // metal eases back as noise grows
       const ratios=[1,1.342,1.2312,1.6532,1.9523,2.1523];
-      const bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=Math.min(14000,freq*(8+c*8));bpf.Q.value=1;
-      const hpf=ctx.createBiquadFilter();hpf.type='highpass';hpf.frequency.value=Math.min(12000,freq*(12-c*8));
+      // This voice is nothing BUT its filter band — square partials shaped by a
+      // bandpass/highpass pair sitting around 6-10kHz. On a low-rate audio route
+      // both get clamped to Nyquist, the band collapses to nothing, and the
+      // hi-hat goes silent (turning TUNE down used to be the only way to hear
+      // it, because these frequencies all scale with `freq`). Move the whole
+      // group by ONE factor instead: duller at a reduced rate, never absent.
+      const cymBp=Math.min(14000,freq*(8+c*8));
+      const cymHp=Math.min(12000,freq*(12-c*8));
+      const cymNz=Math.min(12000,freq*(6+c*6));
+      const cymK=Math.min(nyqFit(ctx,cymBp),nyqFit(ctx,cymHp),nyqFit(ctx,cymNz));
+      const bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=cymBp*cymK;bpf.Q.value=1;
+      const hpf=ctx.createBiquadFilter();hpf.type='highpass';hpf.frequency.value=cymHp*cymK;
       const hg=ctx.createGain();
       hg.gain.setValueAtTime(vol*0.9,when);
       hg.gain.exponentialRampToValueAtTime(0.001,when+decay);
@@ -6884,7 +6927,7 @@ window.SoundEngine={
       if(noiseAmt>0){
         // Bright filtered noise for the upper (ride/crash) end of the range.
         const nsrc=ctx.createBufferSource();nsrc.buffer=noiseBuf(decay);
-        const nhp=ctx.createBiquadFilter();nhp.type='highpass';nhp.frequency.value=Math.min(12000,freq*(6+c*6));
+        const nhp=ctx.createBiquadFilter();nhp.type='highpass';nhp.frequency.value=cymNz*cymK;
         const ng=ctx.createGain();ng.gain.value=noiseAmt;
         nsrc.connect(nhp);nhp.connect(ng);ng.connect(hg);
         nsrc.start(when);nsrc.stop(when+decay+0.02);
