@@ -5041,6 +5041,10 @@ function getCtx(){
       catch(e){ try{ audioCtx=new AC(opts); }catch(e2){ audioCtx=new AC(); } }
       try{ setStatus('Audio device opened at '+bad+' Hz — reopened at '+audioCtx.sampleRate+' Hz'); }catch(e){}
     }
+    // The context is usually born on the first tap, which can happen while
+    // SETTINGS is already open — repaint so the rate shows up straight away
+    // instead of on the next mode change.
+    try{ updatePatDisp(); }catch(e){}
   }
   if(audioCtx.state==='suspended')audioCtx.resume();
   return audioCtx;
@@ -5366,10 +5370,22 @@ function updatePatDisp(){
   const el=document.getElementById('pat-disp');
   if(!el) return;
   if(currentMode==='set'){
-    // SETTINGS has no Bank/Pat readout. Reserve one text line of height with an
-    // invisible placeholder so the display grid/status bar sit at the same
-    // position as in the other modes.
-    el.innerHTML='<span style="visibility:hidden;">Bank 1 &middot; Pat 1</span>';
+    // SETTINGS has no Bank/Pat readout, so this corner shows the AUDIO RATE
+    // instead — one text line, so the display grid and status bar still sit
+    // exactly where they do in every other mode. It is here because a low rate
+    // is otherwise invisible and just sounds like a broken instrument: on a
+    // 16kHz route (Bluetooth hands-free) every voice loses its top octaves and
+    // the hi-hat can vanish entirely. Red below 40k, so it reads as a fault
+    // rather than a spec. Before the context exists there is nothing to report,
+    // so the original invisible placeholder still holds the line.
+    if(audioCtx){
+      const k=Math.round(audioCtx.sampleRate/100)/10;
+      el.innerHTML=audioCtx.sampleRate<MIN_SANE_RATE
+        ? '<span style="color:var(--seq-red);font-weight:bold;">'+k+' kHz — check audio device</span>'
+        : k+' kHz';
+    } else {
+      el.innerHTML='<span style="visibility:hidden;">Bank 1 &middot; Pat 1</span>';
+    }
     el.style.color='';
     return;
   }
@@ -5401,18 +5417,7 @@ function updatePartIndicator(){
     if(settingsPage===1) sub='';
     else if(settingsPage===9) sub=' · PART '+((settingsPartSel>=0?settingsPartSel:0)+1);
     else sub=(settingsPartSel>=0?(' · PART '+(settingsPartSel+1)):' · GLOBAL');
-    // Audio rate, shown here because a low one is otherwise invisible and
-    // sounds like a broken instrument: on a 16kHz route (Bluetooth hands-free)
-    // every voice loses its top octaves and the hi-hat can vanish entirely.
-    // Flagged in red below 40k so it reads as a fault, not a spec.
-    let rate='';
-    if(audioCtx){
-      const k=Math.round(audioCtx.sampleRate/100)/10;
-      rate=audioCtx.sampleRate<MIN_SANE_RATE
-        ? ' · <span style="color:var(--seq-red)">'+k+' kHz — reconnect audio device</span>'
-        : ' · '+k+' kHz';
-    }
-    if(pi2) pi2.innerHTML='Settings · '+pageName+sub+rate;
+    if(pi2) pi2.innerHTML='Settings · '+pageName+sub;
     return;
   }
   if(currentMode==='key'){
