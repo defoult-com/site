@@ -95,6 +95,362 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
     }); },2000);
   }
 })();
+
+/* ════════════════════════════════════════════════════════════════════
+   PWA FIT-TO-SCREEN — standalone launches only.
+   Installed to the home screen there is no address bar and no bottom
+   toolbar, so the viewport is FIXED — which is the one condition the app's
+   fit engine needs. Under those conditions we can reproduce the packaged
+   app exactly: the whole UI uniformly scaled to the safe-area viewport,
+   nothing scrolling, in either orientation.
+   In an ordinary browser tab none of this runs. Safari's toolbars grow and
+   shrink the viewport as you scroll, so a fit computed now is wrong a
+   moment later; tab visitors keep today's reflow-and-scroll layout.
+   ════════════════════════════════════════════════════════════════════ */
+(function(){
+  var standalone=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+  if(!standalone) return;
+  document.documentElement.classList.add('pwa-standalone');
+
+  // env(safe-area-inset-*) reads 0 without this, and the status bar is
+  // translucent in standalone — so the insets are what keep the UI clear of
+  // the island/notch and the home bar. Set here rather than in the static
+  // meta so a browser tab is never laid out edge-to-edge.
+  var vp=document.querySelector('meta[name=viewport]');
+  if(vp&&!/viewport-fit/.test(vp.content)) vp.content=vp.content+', viewport-fit=cover';
+
+  var st=document.createElement('style');
+  st.id='pwa-fit-css';
+  st.textContent="\n/* Fit the whole UI on one screen with NO scrolling, in every orientation —\n   fit-screen.js scales #seq-root to the safe-area viewport, these rules make\n   that deterministic and guarantee nothing scrolls. */\nhtml,body{overflow:hidden!important;height:100%!important;}\n/* <body> is a centered flex item, so it shrink-wraps to its content width;\n   with overflow:hidden that clips the scaled layer to a narrow box. Span the\n   full viewport so the clip sits at the screen edges. */\nbody{width:100%!important;min-width:100%!important;}\n/* Fixed app UI: no pinch-zoom, no double-tap zoom. */\nhtml,body{touch-action:pan-x pan-y!important;}\n/* #scale-wrap is a flex container and the fitter sizes it to the SCALED box,\n   so #seq-root — a shrinkable flex item — was being squeezed below the design\n   width the solver had just set (measured 453px against a requested 644px).\n   That fed back into the next solve and landscape settled ~54% of the screen\n   wide, with black bars either side. Take the root out of flex sizing so its\n   width is exactly what the solver asked for. */\n#seq-root{flex:0 0 auto!important;}\n@supports (padding: max(0px)){\n  /* Full-bleed: pad ONLY where a hardware inset exists (island/notch/home bar).\n     Non-zero only because the standalone launch adds viewport-fit=cover. */\n  body{\n    padding-top:env(safe-area-inset-top,0px)!important;\n    padding-right:env(safe-area-inset-right,0px)!important;\n    padding-bottom:env(safe-area-inset-bottom,0px)!important;\n    padding-left:env(safe-area-inset-left,0px)!important;\n  }\n}\n/* The fitted portrait layout solves a ~280px design width, which squeezed the\n   BOUNCE bar's running timer down to two characters (\"00:\"). Trim the bar's\n   labels a notch and let the PREVIEW slot size to its own text — the whole\n   layout is scaled back up afterwards, so nothing reads smaller on screen. */\nbody.portrait .rec-bar .rec-btn,\nbody.portrait .rec-bar .rec-prev,\nbody.portrait .rec-bar .rec-save{font-size:10px!important;}\nbody.portrait #rec-preview-label{min-width:0!important;}\n/* Landscape on short (phone) screens: drop the section headers and keyboard\n   hints, square up the pads, and give the layout a wide design width so the\n   scaler fills the screen in BOTH dimensions instead of leaving side bars. */\n@media (orientation:landscape) and (max-height:600px){\n  #parts-panel-header,.step-panel-header{display:none!important;}\n  .tport-top-kbd,.kbdkey,.part-kbd,.step-kbd,.rkbd,.ctrl-kbd{display:none!important;}\n  #seq-root{width:1024px!important;max-width:none!important;}\n  .step-pad,.part-num{aspect-ratio:1!important;height:auto!important;min-height:0!important;}\n  #step-panel{display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:8px!important;}\n  #step-panel .step-grid{flex:0 0 auto!important;}\n  #step-panel .step-range-bar{flex:1 1 auto!important;min-height:40px!important;margin-top:0!important;}\n  .range-btn{font-size:12px!important;}\n  .seq-top-bar .tport-top-pad{min-height:44px!important;}\n  .mode-tab{min-height:44px!important;}\n  #action-btn-row .ctrl-btn{min-height:58px!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:center!important;}\n  #action-btn-row .ctrl-val{flex:1 1 auto!important;display:flex!important;align-items:center!important;justify-content:center!important;height:auto!important;}\n  #tempo-pad{align-items:center!important;}\n  #tempo-pad .tempo-top-unit{transform:translateY(3px);}\n}";
+  (document.head||document.documentElement).appendChild(st);
+
+  // The app's own fit engine, unchanged — see web-overlay/fit-screen.js.
+  /*
+   * fit-screen.js — makes the whole UI fit on one screen with no scrolling, in
+   * every orientation. Overrides the app's applyAppScale (which skips scaling in
+   * portrait and lets short landscape scroll) with a uniform fit-to-viewport
+   * scale that respects the Dynamic Island / notch safe area (read from <body>'s
+   * env() padding). appScale is write-only in the app, so taps stay correct —
+   * the browser maps pointer events through the CSS transform.
+   *
+   * Injected before </body> (repo untouched), so it runs after the app defines
+   * applyAppScale.
+   */
+  (function () {
+    'use strict';
+
+    var raf = null;
+
+    function fit() {
+      var root = document.getElementById('seq-root');
+      var wrap = document.getElementById('scale-wrap');
+      if (!root || !wrap) return;
+
+      // Available area = layout viewport minus the safe-area insets, which the
+      // app applies as <body> padding (see safe-area.css).
+      var de = document.documentElement;
+      var cs = getComputedStyle(document.body);
+      var padL = parseFloat(cs.paddingLeft) || 0;
+      var padR = parseFloat(cs.paddingRight) || 0;
+      var padT = parseFloat(cs.paddingTop) || 0;
+      var padB = parseFloat(cs.paddingBottom) || 0;
+
+      var availW = de.clientWidth - padL - padR;
+      var availH = de.clientHeight - padT - padB;
+      if (availW < 1 || availH < 1) return;
+
+      // Phones: SOLVE the design width so the layout's aspect matches the
+      // screen's and the scaled UI fills BOTH dimensions (no dead bands).
+      // Height depends on width (square pads), so iterate to the fixed point.
+      var mq = function (q) { return window.matchMedia && window.matchMedia(q).matches; };
+      var landscape = mq('(orientation: landscape)');
+      // Any touch device (phone AND tablet) gets the fill treatment. The
+      // phone-only compact CSS stays gated by its own media queries.
+      var isTouchDevice = (typeof window.isMobileMode === 'function')
+        ? window.isMobileMode()
+        : (mq('(pointer: coarse)') && !mq('(hover: hover)'));
+      if (isTouchDevice) {
+        var loW = landscape ? 500 : 280;
+        var hiW = landscape ? 1600 : 1400;
+        var landscapePhone = landscape;
+        // Solve-and-FREEZE per viewport size: reading offsetHeight after setting
+        // width forces a synchronous reflow, so the fixed-point loop converges
+        // within this single call. Re-solving on every ResizeObserver tick made
+        // portrait oscillate between two widths (visible flicker) — so once a
+        // width is solved for this viewport, reuse it until the viewport changes
+        // or things go quiet for a while.
+        var key = availW + 'x' + availH + (landscapePhone ? 'l' : 'p');
+        var now = Date.now();
+        if (fit._key !== key || now - fit._t > 1500) { fit._key = key; fit._n = 0; }
+        fit._t = now;
+        if (fit._n < 3) {
+          // Deterministic solve: seed from the stylesheet width every time.
+          // Starting from the previous orientation's width converges to a
+          // slightly different fixed point (e.g. the BOUNCE bar wrapping to two
+          // rows only after a rotation round-trip).
+          if (fit._n === 0) root.style.removeProperty('width');
+          fit._n++;
+          for (var i = 0; i < 9; i++) {
+            var h = root.offsetHeight || 1;
+            var w = root.offsetWidth || 1024;
+            var desiredW = Math.max(loW, Math.min(hiW, h * (availW / availH)));
+            if (Math.abs(desiredW - w) < 2) break;   // tight: residual ≲1px bands
+            // Damped step — halves any oscillation instead of amplifying it.
+            var stepW = (w + desiredW) / 2;
+            // Inline !important beats the stylesheet's width!important rules.
+            root.style.setProperty('width', stepW + 'px', 'important');
+          }
+          fit._w = root.offsetWidth;
+        } else if (fit._w && Math.abs(root.offsetWidth - fit._w) > 1) {
+          root.style.setProperty('width', fit._w + 'px', 'important');
+        }
+      } else {
+        root.style.removeProperty('width');
+        fit._key = '';
+      }
+
+      // Compact landscape: keep pads at least SQUARE and stop the page-button
+      // bar from hoarding leftover height. aspect-ratio does this in CSS on
+      // modern WebKit, but iOS ≤14 lacks it (pads collapsed to 44px and the
+      // flex:1 range bar ballooned — seen in AUM's short plugin strip). Compute
+      // the sizes here instead; runs before the natural-size measurement so the
+      // scale accounts for them.
+      if (!fit._padStyle) {
+        fit._padStyle = document.createElement('style');
+        (document.head || document.documentElement).appendChild(fit._padStyle);
+      }
+      if (mq('(orientation: landscape) and (max-height: 600px)')) {
+        var samplePad = document.querySelector('.step-pad');
+        var samplePart = document.querySelector('.part-num');
+        var css = '';
+        var noAspect = !(window.CSS && CSS.supports && CSS.supports('aspect-ratio', '1 / 1'));
+        if (noAspect && samplePad && samplePad.offsetWidth > 10) {
+          css += '.step-pad{height:' + samplePad.offsetWidth + 'px!important;min-height:0!important;}';
+        }
+        if (noAspect && samplePart && samplePart.offsetWidth > 10) {
+          css += '.part-num{height:' + samplePart.offsetWidth + 'px!important;min-height:0!important;}';
+        }
+        if (samplePad && samplePad.offsetWidth > 10) {
+          css += '#step-panel .step-range-bar{max-height:' + Math.round(samplePad.offsetWidth * 1.35) + 'px!important;}';
+        }
+        if (fit._padStyle.textContent !== css) fit._padStyle.textContent = css;
+      } else if (fit._padStyle.textContent) {
+        fit._padStyle.textContent = '';
+      }
+
+      // FONT FLOOR: deep downscales (extreme plugin-window aspects solve to a
+      // very wide design → scale ~0.4) render the app's fixed-px fonts
+      // unreadably small. Boost every stylesheet font-size inversely to the
+      // scale (capped), regenerated from the app's own rules. Uses the PREVIOUS
+      // fit's scale — converges across fits via the ResizeObserver.
+      if (!fit._fontRules) {
+        fit._fontRules = [];
+        try {
+          for (var si = 0; si < document.styleSheets.length; si++) {
+            var rules; try { rules = document.styleSheets[si].cssRules; } catch (e) { continue; }
+            (function walk(list) {
+              for (var ri = 0; ri < list.length; ri++) {
+                var r = list[ri];
+                if (r.cssRules) { walk(r.cssRules); continue; }
+                if (r.selectorText && r.style && /px$/.test(r.style.fontSize || '')) {
+                  fit._fontRules.push([r.selectorText, parseFloat(r.style.fontSize)]);
+                }
+              }
+            })(rules);
+          }
+        } catch (e) {}
+        fit._fontStyle = document.createElement('style');
+        (document.head || document.documentElement).appendChild(fit._fontStyle);
+        fit._fontBoost = 1;
+      }
+      if (mq('(orientation: landscape) and (max-height: 600px)') && fit._lastScale) {
+        var boost = Math.min(2.2, Math.max(1, 0.8 / fit._lastScale));
+        boost = Math.round(boost * 20) / 20;                 // quantize: no churn
+        if (Math.abs(boost - fit._fontBoost) >= 0.1) {
+          fit._fontBoost = boost;
+          fit._fontStyle.textContent = (boost === 1) ? '' :
+            fit._fontRules.map(function (fr) {
+              return fr[0] + '{font-size:' + Math.round(fr[1] * boost) + 'px !important;}';
+            }).join('\n');
+        }
+      } else if (fit._fontBoost !== 1) {
+        fit._fontBoost = 1;
+        fit._fontStyle.textContent = '';
+      }
+
+      // Natural (layout) size — offsetWidth/Height ignore the CSS transform.
+      var naturalW = root.offsetWidth || 640;
+      var naturalH = root.offsetHeight || 1;
+
+      var scaleW = availW / naturalW;
+      var scale = Math.min(scaleW, availH / naturalH);
+      // Snap to a slight width OVERSCAN (+1px per side) when nearly width-limited:
+      // an exact-fill edge rasterizes as a half-pixel black hairline on older
+      // WebKit; the overscanned pixel is the app's own padding, so nothing
+      // visible is lost. Extra height is clipped harmlessly.
+      var scaleOver = (availW + 2) / naturalW;
+      if (scaleW >= scale && (naturalH * scaleOver) - availH <= 8) scale = scaleOver;
+      scale = Math.max(0.2, Math.min(3, scale));
+      fit._lastScale = scale;   // next fit's font-floor input
+
+      // iOS ≤14 compositor bug: a scaled layer with transform-origin "top center"
+      // paints anchored at the element's layout LEFT edge instead (confirmed via
+      // device screenshot vs DOM on iPadOS 14.8 — content shifted right by the
+      // layout offset and clipped). Old WebKit is detected via missing
+      // aspect-ratio support. There: use origin "top left" (no origin math for
+      // the compositor to get wrong) and center with an explicit translateX
+      // derived from measured geometry.
+      var oldWebKit = !(window.CSS && CSS.supports && CSS.supports('aspect-ratio', '1 / 1'));
+      if (oldWebKit) {
+        root.style.transform = 'none';
+        var L0 = root.getBoundingClientRect().left;   // untransformed layout left
+        var targetL = (de.clientWidth - naturalW * scale) / 2;
+        root.style.transformOrigin = 'top left';
+        root.style.transform = 'translateX(' + (targetL - L0) + 'px) scale(' + scale + ')';
+        root.style.willChange = 'auto';
+      } else {
+        root.style.transform = 'scale(' + scale + ')';
+        root.style.transformOrigin = 'top center';
+        root.style.willChange = 'transform';
+      }
+      // Reserve the scaled box so the flex layout centers it correctly.
+      wrap.style.width = (naturalW * scale) + 'px';
+      wrap.style.height = (naturalH * scale) + 'px';
+      try { window.appScale = scale; } catch (e) {}
+    }
+
+    function schedule() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(function () { raf = null; fit(); });
+    }
+
+    function install() {
+      // Block pinch-zoom: WKWebView doesn't reliably honor user-scalable=no,
+      // but preventing iOS's proprietary gesture events does the job. Double-tap
+      // zoom is handled by touch-action in safe-area.css.
+      var block = function (e) { e.preventDefault(); };
+      document.addEventListener('gesturestart', block, { passive: false });
+      document.addEventListener('gesturechange', block, { passive: false });
+      document.addEventListener('gestureend', block, { passive: false });
+
+      // Take over the app's scaler so refreshLayout() fits in ALL orientations.
+      try { window.applyAppScale = fit; } catch (e) {}
+
+      // The app only auto-enables its stacked portrait layout below 640px width,
+      // so an iPad in portrait stays in the desktop arrangement. On any touch
+      // device, portrait orientation should mean the portrait layout.
+      try {
+        if (typeof window.isPortraitAuto === 'function' && typeof window.isMobileMode === 'function') {
+          window.isPortraitAuto = function () {
+            var portrait = window.matchMedia && window.matchMedia('(orientation:portrait)').matches;
+            return window.isMobileMode() && portrait;
+          };
+        }
+      } catch (e) {}
+
+      // Old WebKit (iOS ≤14) can keep compositing the scaled layer with the
+      // PREVIOUS orientation's geometry after rotation — layout reads fine but
+      // the paint is shifted/cropped. Tearing the transform down for one frame
+      // forces the compositor to rebuild the layer with fresh geometry.
+      var resetThenFit = function () {
+        var r = document.getElementById('seq-root');
+        var w = document.getElementById('scale-wrap');
+        if (r) { r.style.transform = 'none'; r.style.removeProperty('width'); }
+        if (w) { w.style.width = ''; w.style.height = ''; }
+        fit._key = '';                 // viewport changed: allow a fresh solve
+        requestAnimationFrame(function () {
+          if (typeof window.refreshLayout === 'function') { try { window.refreshLayout(); } catch (e) { schedule(); } }
+          else schedule();
+        });
+        setTimeout(schedule, 200);
+        setTimeout(schedule, 500);
+      };
+
+      window.addEventListener('resize', schedule, { passive: true });
+      window.addEventListener('orientationchange', resetThenFit);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', schedule, { passive: true });
+      }
+      if (window.matchMedia) {
+        var mq = window.matchMedia('(orientation: portrait)');
+        if (mq.addEventListener) mq.addEventListener('change', resetThenFit);
+        else if (mq.addListener) mq.addListener(resetThenFit);
+      }
+      // Re-fit when the app's content size changes (mode switch, sound engine
+      // expand, bank/part swaps, etc.). Root width is fixed, so this can't loop.
+      var root = document.getElementById('seq-root');
+      if (root && window.ResizeObserver) {
+        new ResizeObserver(schedule).observe(root);
+      }
+
+      // The app ran its initial applyPortrait() BEFORE this script loaded, using
+      // its original isPortraitAuto — so the portrait-flip override above hasn't
+      // been applied yet (an iPad in portrait would stay in the desktop layout
+      // until the first rotation). Re-run the app's full layout pass, not just
+      // our scaler.
+      var relayout = function () {
+        if (typeof window.refreshLayout === 'function') { try { window.refreshLayout(); return; } catch (e) {} }
+        schedule();
+      };
+      relayout();
+      setTimeout(relayout, 200);
+      setTimeout(relayout, 600);
+      window.addEventListener('load', function () { relayout(); setTimeout(relayout, 300); });
+    }
+
+    // Mode tabs (PTRN/STEP/KEYB/CTRL): the app pins them to a fixed pixel width
+    // measured from a bottom-row button (desktop alignment). At unusual aspect
+    // ratios (e.g. AUv3 plugin windows) the fixed widths overflow and CTRL gets
+    // clipped. Make them fluid like the action buttons — always fits.
+    (function () {
+      var fluidTabs = function () {
+        ['tab-pat', 'tab-step', 'tab-key', 'tab-ctrl'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.style.flex = '1 1 0';
+        });
+      };
+      var tries = 0;
+      var timer = setInterval(function () {
+        if (typeof window.syncModeTabWidths === 'function') {
+          clearInterval(timer);
+          window.syncModeTabWidths = fluidTabs;
+          fluidTabs();
+        } else if (++tries > 100) { clearInterval(timer); fluidTabs(); }
+      }, 100);
+    })();
+
+    // Coalesce dot blinks to ~5Hz everywhere (standalone + plugin): each blink
+    // is a class toggle + repaint that competes with the audio scheduler on old
+    // devices. The eye can't follow faster blinking anyway.
+    (function () {
+      var lastFlash = {};
+      var tries = 0;
+      var timer = setInterval(function () {
+        if (typeof window.queueVisualAdd === 'function') {
+          clearInterval(timer);
+          var orig = window.queueVisualAdd;
+          window.queueVisualAdd = function (at, elId, cls, durSec, pri) {
+            if (cls === 'dot-flash') {
+              var t = performance.now();
+              if (t - (lastFlash[elId] || 0) < 190) return;
+              lastFlash[elId] = t;
+            }
+            return orig.apply(this, arguments);
+          };
+        } else if (++tries > 100) { clearInterval(timer); }
+      }, 100);
+    })();
+
+    if (document.getElementById('seq-root')) {
+      install();
+    } else if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', install);
+    } else {
+      install();
+    }
+  })();
+
+})();
 </script>
 <!-- ════════════════════════════════════════════════════════════════════
   HOW TO NAVIGATE THIS FILE
