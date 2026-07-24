@@ -4478,15 +4478,17 @@ function showDelayPanel(){
   grid.innerHTML='';
   const lbl=document.getElementById('smd-mode-label');
   if(lbl) lbl.textContent='MIDI DELAY \u2014 PART '+(activePart+1);
+  // 0-based cell index. DLY TIME / DLY FB / PITCH FB sit in boxes 1-3; MIDI DLY
+  // keeps box 4. Boxes 5-8 stay empty.
   const DEFS={
+    0:{key:'midiDlyTime',label:'DLY TIME', min:0,  max:DLY_TIMES.length-1, px:10, dflt:DEFAULT_DLY_TIME_IDX,
+       fmt:v=>DLY_TIMES[v].label,    status:v=>'DLY TIME: '+DLY_TIMES[v].label},
+    1:{key:'dlyFb',      label:'DLY FB',   min:0,  max:100, px:3,  dflt:0,
+       fmt:v=>v+'%',                 status:v=>'DLY FB: '+v+'%'},
+    2:{key:'dlyPitch',   label:'PITCH FB', min:-12,max:12,  px:10, dflt:0,
+       fmt:v=>(v>0?'+':'')+v,        status:v=>'PITCH FB: '+(v>0?'+':'')+v+' st'},
     3:{key:'midiDly',    label:'MIDI DLY', min:0,  max:100, px:3,  dflt:0,
        fmt:v=>v+'%',                 status:v=>'MIDI DLY: '+v+'%'},
-    5:{key:'midiDlyTime',label:'DLY TIME', min:0,  max:DLY_TIMES.length-1, px:10, dflt:DEFAULT_DLY_TIME_IDX,
-       fmt:v=>DLY_TIMES[v].label,    status:v=>'DLY TIME: '+DLY_TIMES[v].label},
-    6:{key:'dlyFb',      label:'DLY FB',   min:0,  max:100, px:3,  dflt:0,
-       fmt:v=>v+'%',                 status:v=>'DLY FB: '+v+'%'},
-    7:{key:'dlyPitch',   label:'PITCH FB', min:-12,max:12,  px:10, dflt:0,
-       fmt:v=>(v>0?'+':'')+v,        status:v=>'PITCH FB: '+(v>0?'+':'')+v+' st'},
   };
   for(let i=0;i<8;i++){
     const def=DEFS[i];
@@ -9588,17 +9590,82 @@ document.addEventListener('pagehide',()=>{ if(_saveDirty) persistNow(); });
    ════════════════════════════════════════════════════════════════════ */
 // Download a .json, load via a file picker. Later this is where the File
 // System Access API or a desktop temp-file path slots in.
+// A tiny themed name-entry popup. Built once, reused. Sits OUTSIDE #seq-root so
+// the app's UI scale doesn't shrink it, and stops its own key events from
+// reaching the app (whose document-level handlers would otherwise read typed
+// letters as part-select / transport shortcuts). Enter = OK, Escape / backdrop
+// tap = Cancel. `onOk(name)` fires only on a confirmed non-cancel.
+function promptFileName(dflt, onOk){
+  if(!document.getElementById('fname-modal-css')){
+    const st=document.createElement('style'); st.id='fname-modal-css';
+    st.textContent=
+     '.fname-back{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
+       +'background:rgba(0,0,0,.6);padding:16px;}'
+    +'.fname-box{width:min(340px,calc(100vw - 32px));background:var(--seq-panel);border:1px solid var(--seq-yellow-dark);'
+       +'border-radius:6px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.6);font-family:var(--seq-font);}'
+    +'.fname-title{font-size:12px;font-weight:bold;letter-spacing:.08em;color:var(--seq-yellow);text-transform:uppercase;margin-bottom:10px;}'
+    +'.fname-row{display:flex;align-items:center;gap:6px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);'
+       +'border-radius:4px;padding:6px 8px;}'
+    +'.fname-input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--seq-text);'
+       +'font-family:var(--seq-font);font-size:16px;padding:2px 0;}'   /* 16px: stops iOS zoom-on-focus */
+    +'.fname-ext{color:var(--seq-text-dim);font-size:13px;flex:0 0 auto;}'
+    +'.fname-btns{display:flex;gap:8px;margin-top:12px;}'
+    +'.fname-btns button{flex:1;padding:9px 0;border-radius:4px;font-family:var(--seq-font);font-size:12px;font-weight:bold;'
+       +'letter-spacing:.05em;cursor:pointer;border:1px solid var(--seq-border);}'
+    +'.fname-cancel{background:var(--seq-btn-bg);color:var(--seq-text-dim);}'
+    +'.fname-ok{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}';
+    document.head.appendChild(st);
+  }
+  const back=document.createElement('div'); back.className='fname-back';
+  back.innerHTML=
+    '<div class="fname-box">'
+    +'<div class="fname-title">Save project as</div>'
+    +'<div class="fname-row"><input class="fname-input" type="text" spellcheck="false" '
+      +'autocapitalize="off" autocomplete="off"><span class="fname-ext">.json</span></div>'
+    +'<div class="fname-btns"><button type="button" class="fname-cancel">Cancel</button>'
+      +'<button type="button" class="fname-ok">Save</button></div>'
+    +'</div>';
+  const input=back.querySelector('.fname-input');
+  input.value=dflt;
+  let done=false;
+  const close=()=>{ if(!done){ done=true; back.remove(); } };
+  const ok=()=>{ if(done) return; const v=input.value; close(); onOk(v); };
+  // Keep every key inside the modal — the app listens on document.
+  ['keydown','keyup','keypress'].forEach(t=>input.addEventListener(t,e=>{
+    e.stopPropagation();
+    if(t==='keydown'){ if(e.key==='Enter'){ e.preventDefault(); ok(); } else if(e.key==='Escape'){ e.preventDefault(); close(); } }
+  }));
+  back.querySelector('.fname-ok').addEventListener('click',ok);
+  back.querySelector('.fname-cancel').addEventListener('click',close);
+  back.addEventListener('mousedown',e=>{ if(e.target===back) close(); });
+  document.body.appendChild(back);
+  // Focus and pre-select so the user can either keep or overtype the default.
+  setTimeout(()=>{ input.focus(); input.select(); },30);
+}
+// Make a user-typed name safe as a download filename: drop path separators and
+// characters that break saves on some platforms, trim, strip a redundant .json,
+// and fall back to the default if nothing usable is left.
+function _sanitizeFileName(name,dflt){
+  let s=(name||'').trim().replace(/\.json$/i,'');
+  s=s.replace(/[\/\\?%*:|"<>\x00-\x1f]/g,'').replace(/\s+/g,' ').replace(/^\.+/,'').trim();
+  return s||dflt;
+}
 function downloadProject(){
   persistNow();
   const json=_memSave||JSON.stringify(serializeAll());
   const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  const fname='sequencer-project-'+stamp+'.json';
+  const dflt='sequencer-project-'+stamp;
+  promptFileName(dflt,name=>{
+    _saveProjectBlob(json,_sanitizeFileName(name,dflt)+'.json');
+  });
+}
+// Actually write out the project under the chosen filename. Runs from the popup
+// SAVE click, so it is still inside a user gesture — the Web Share sheet on iOS
+// needs that.
+function _saveProjectBlob(json,fname){
   const blob=new Blob([json],{type:'application/json'});
-
   // On touch devices (iPhone/iPad), <a download> is ignored by Safari, so use
   // the Web Share API — it lets the user pick “Save to Files”, AirDrop, etc.
-  const aTest=document.createElement('a');
-  const downloadWorks=('download' in aTest);
   const isTouch=('ontouchend' in document) || (navigator.maxTouchPoints>0);
   if(isTouch && navigator.canShare){
     try{
