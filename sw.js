@@ -1,19 +1,24 @@
-/* defOult service worker.
+/* defOult service worker — offline-first, update only on a new version.
  *
- * Two jobs: make the site installable on Android/Chrome (which requires a
- * worker), and make it genuinely usable offline. The page is fully
- * self-contained — the font is inlined, there are no CDN requests — so caching
- * the handful of same-origin files is the whole story.
+ * The page is fully self-contained (font inlined, no CDN requests), so caching
+ * the handful of same-origin files is the whole app.
  *
- * Strategy is stale-while-revalidate: a cached response goes out immediately
- * (instant load, works with no network) while a fresh copy is fetched in the
- * background for next time. index.html is ~600 KB, so this matters more than
- * the extra freshness a network-first policy would buy.
+ * STRATEGY: cache-first. Once installed, every request is served from the local
+ * cache — the app runs with no network at all, and it never re-downloads its
+ * ~600 KB page "just in case" (the old stale-while-revalidate did, on every
+ * load). New content reaches the device ONLY when a new version is published.
  *
- * Bump CACHE when the site is redeployed; activate() drops every other cache,
- * so a stale worker can never strand an old build.
+ * HOW AN UPDATE HAPPENS: VERSION below is a content hash stamped at build time
+ * (scripts/stamp-web-export.mjs). When index.html changes, the hash changes, so
+ * THIS FILE's bytes change — and the browser's built-in service-worker update
+ * check notices that on the next launch, installs the new worker, and precaches
+ * the new files into a fresh cache. The running app is untouched until the user
+ * accepts: the page shows a small "Update ready" chip, and only a tap swaps to
+ * the new version. So the app updates when — and only when — the site has a new
+ * build, and never mid-session by surprise.
  */
-const CACHE = 'defoult-v2';
+const VERSION = 'b6b90d07b879';          // stamped from a hash of the build
+const CACHE = 'defoult-' + VERSION;
 
 // Best-effort: about/manual live in the site repo and may not be deployed
 // alongside a given build, so each is added on its own and failures are ignored
@@ -36,16 +41,26 @@ self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await Promise.all(PRECACHE.map(u => cache.add(u).catch(() => {})));
-    self.skipWaiting();
+    // First-EVER install (no worker controlling yet): take over immediately so
+    // the app is offline-ready from this first launch. A later UPDATE does not
+    // skipWaiting here — it waits until the user accepts (see the page chip),
+    // so a new build never swaps assets under a running session.
+    if (!self.registration.active) await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
+    // Drop every older defoult cache — only the current VERSION survives.
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k.startsWith('defoult-') && k !== CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
+});
+
+// The page tells a waiting worker to take over (user tapped "Update ready").
+self.addEventListener('message', e => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('fetch', e => {
@@ -58,19 +73,22 @@ self.addEventListener('fetch', e => {
 
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
+    // Cache-first: the whole point. A cached response never triggers a network
+    // fetch, so the app is instant and fully offline.
     const hit = await cache.match(req, { ignoreSearch: true });
-    const net = fetch(req).then(res => {
+    if (hit) return hit;
+    // Not in cache yet (a page the precache list missed): fetch once, keep it.
+    try {
+      const res = await fetch(req);
       if (res && res.ok && res.type === 'basic') cache.put(req, res.clone());
       return res;
-    }).catch(() => null);
-    if (hit) return hit;                       // instant, offline-safe
-    const res = await net;
-    if (res) return res;
-    // Offline and never cached: for a navigation, fall back to the shell.
-    if (req.mode === 'navigate') {
-      const shell = await cache.match('./index.html');
-      if (shell) return shell;
+    } catch (err) {
+      // Offline and uncached: serve the app shell for a navigation.
+      if (req.mode === 'navigate') {
+        const shell = await cache.match('./index.html');
+        if (shell) return shell;
+      }
+      return new Response('', { status: 504, statusText: 'Offline' });
     }
-    return new Response('', { status: 504, statusText: 'Offline' });
   })());
 });

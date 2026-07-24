@@ -50,11 +50,57 @@ content="defOult is a free browser-based drum machine and step sequencer inspire
   var standalone=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 
   // Service worker: http/https only, so a Capacitor WebView (capacitor://) or a
-  // file:// copy never tries to register one.
+  // file:// copy never tries to register one. The worker is cache-first, so the
+  // app runs fully offline and never re-downloads itself; a new build published
+  // to the site installs in the background and waits — the ONLY thing that swaps
+  // the running app to it is the "Update ready" chip below, on a tap.
   if('serviceWorker' in navigator && !window.Capacitor && /^https?:$/.test(location.protocol)){
     window.addEventListener('load',function(){
-      navigator.serviceWorker.register('sw.js',{scope:'./'}).catch(function(){});
+      navigator.serviceWorker.register('sw.js',{scope:'./'}).then(function(reg){
+        // A worker reaching "installed" while one is already in control means a
+        // NEW version is staged and waiting — offer to switch to it.
+        function offerIfWaiting(sw){
+          if(!sw) return;
+          if(sw.state==='installed' && navigator.serviceWorker.controller){ showUpdateChip(); return; }
+          sw.addEventListener('statechange',function(){
+            if(sw.state==='installed' && navigator.serviceWorker.controller) showUpdateChip();
+          });
+        }
+        offerIfWaiting(reg.waiting);
+        reg.addEventListener('updatefound',function(){ offerIfWaiting(reg.installing); });
+        // Nudge a fresh version check on launch (the browser also does this on
+        // its own schedule; this just makes it prompt).
+        try{ reg.update(); }catch(e){}
+      }).catch(function(){});
+
+      // When the new worker takes control after the user accepts, reload ONCE so
+      // the fresh page is what renders.
+      var reloading=false;
+      navigator.serviceWorker.addEventListener('controllerchange',function(){
+        if(reloading) return; reloading=true; location.reload();
+      });
     });
+  }
+  // "Update ready" chip. Reuses the install-hint styling; a tap tells the
+  // waiting worker to activate, which triggers the reload above. Never shown
+  // more than once at a time. Independent of the install-hint dismissal.
+  var _updChip=null;
+  function showUpdateChip(){
+    if(_updChip) return;
+    _updChip=document.createElement('div');
+    _updChip.className='pwa-chip'; _updChip.style.bottom='8px';
+    _updChip.innerHTML='<div class="pwa-txt"><div class="pwa-main">↻ UPDATE READY</div>'
+      +'<div class="pwa-sub">New version available — tap to reload.</div></div>'
+      +'<button class="pwa-x" type="button" aria-label="Dismiss">×</button>';
+    _updChip.querySelector('.pwa-txt').addEventListener('click',function(){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        var w=reg&&(reg.waiting||reg.installing);
+        if(w) w.postMessage('skipWaiting');
+      });
+    });
+    _updChip.querySelector('.pwa-x').addEventListener('click',function(e){ e.stopPropagation(); _updChip.remove(); _updChip=null; });
+    (document.body||document.documentElement).appendChild(_updChip);
+    _updChip.classList.add('on');
   }
   if(standalone || pref()==='off') return;    // already installed, or hint dismissed
 
