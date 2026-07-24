@@ -48,11 +48,12 @@
   <ul>
     <li><b>Recorder bar</b> (top) — bounces the sound engine's master output to a WAV file (see Audio bounce).</li>
     <li><b>Top bar</b> — transport (play <kbd>Space</kbd> / pause <kbd>Bksp</kbd> / record <kbd>Ent</kbd> / settings <kbd>Esc</kbd>), tempo &amp; metronome, and the four mode tabs: <span class="btnface">PTRN</span> <kbd>9</kbd> <span class="btnface">STEP</span> <kbd>0</kbd> <span class="btnface">KEYB</span> <kbd>-</kbd> <span class="btnface">CTRL</span> <kbd>=</kbd>. <b>Holding</b> a tab (or its key) switches to it only momentarily — make a change and release, and you snap back to where you were. A quick tap with no change switches permanently.</li>
-    <li><b>Parts row</b> — 8 parts, each showing its instrument name and loop length. Tapping a part <b>selects it and triggers its sound</b> (in STEP / KEYB / CTRL; with <b>REC</b> armed the hit is also recorded). Hold <span class="btnface">SELECT</span> to select a part silently. The grid, display and CTRL panel always show the active part; a <span class="red">red</span> dot marks a part that has drifted out of sync.</li>
+    <li><b>Parts row</b> — 8 parts, each showing its instrument name and loop length. Tapping a part <b>selects it and triggers its sound the moment you press</b> (in STEP / KEYB / CTRL; with <b>REC</b> armed the hit is also recorded). Hold <span class="btnface">SELECT</span> to select a part silently. The grid, display and CTRL panel always show the active part; a <span class="red">red</span> dot marks a part that has drifted out of sync.</li>
     <li><b>Step grid</b> — 16 pads per page, up to 64 steps (pages <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd>). Its meaning changes per tab (steps, pattern slots, keyboard, settings pages).</li>
     <li><b>Virtual display</b> — shows the playing <b>Bank · Pattern</b> and a grid of value cells. Adjust any cell by <b>dragging</b> or the <b>scroll wheel</b>; <b>double-click / double-tap resets</b> it. Cells can also be driven by incoming MIDI CC, or from the keyboard: <kbd>,</kbd> / <kbd>.</kbd> move the cell selection, <kbd>;</kbd> / <kbd>L</kbd> raise / lower the selected value.</li>
     <li><b>Buttons row</b> (below the grid and status) — the four hold modifiers <span class="btnface">MUTE</span> <kbd>Shift</kbd> · <span class="btnface">SOLO</span> <kbd>Ctrl</kbd> · <span class="btnface">ALIGN</span> <kbd>`</kbd> · <span class="btnface">SELECT</span> <kbd>\</kbd>, plus the four <b>action buttons</b> (<kbd>O</kbd> <kbd>P</kbd> <kbd>[</kbd> <kbd>]</kbd>) whose labels and function change per tab.</li>
     <li><b>Hold modifiers</b> — hold and tap parts: <span class="btnface">MUTE</span> mutes, <span class="btnface">SOLO</span> solos, <span class="btnface">ALIGN</span> re-syncs a part to the bar, <span class="btnface">SELECT</span> selects without triggering. A quick tap of <span class="btnface">ALIGN</span> alone aligns the active part. Combos: <span class="btnface">MUTE</span>+<span class="btnface">ALIGN</span> clears all mutes, <span class="btnface">SOLO</span>+<span class="btnface">ALIGN</span> clears all solos, <span class="btnface">MUTE</span>+<span class="btnface">SELECT</span> clears the active part's step skips.</li>
+    <li><b>Latching a modifier</b> — slide a modifier button <b>downwards</b> to keep it engaged hands-free (it turns <b>yellow</b>). Repeat the slide, tap the button, or tap empty space to release. Handy for one-handed muting or holding <span class="btnface">SOLO</span> open on the MIDI-delay page.</li>
     <li><b>Sound panel</b> (bottom) — the expandable sound editor for the active part, with an <span class="btnface">ALL MUTE</span> button in its header.</li>
     <li><b>Status bar</b> — every action is confirmed here. Read it when unsure.</li>
   </ul>
@@ -73,22 +74,25 @@
   <h2>3 · STEP tab</h2>
   <ul>
     <li><b>Tap a pad</b> to place or remove a step. <kbd>Q</kbd>–<kbd>I</kbd> and <kbd>A</kbd>–<kbd>K</kbd> mirror the 16 pads. A removed step remembers its settings and restores them when re-placed; hold <span class="btnface">ALIGN</span> while placing to force the part's step defaults instead. Placing a step beyond the loop end automatically extends the loop to the end of that page.</li>
-    <li><b>Hold a pad</b> — the display switches to that step's own page (<span class="dim">STEP n — PART n</span>): <b>NOTE · ACCENT · GATE · PROB · OCT · VELOCITY · TIME OFST · RETRIG</b>. Drag the cells to shape just that step (probability, micro-timing, ratchets…).</li>
-    <li><b>Step cycles</b> — while a pad is held, the four page buttons become <b>cycle toggles 1–4</b>: choose on which repetitions of a 4-cycle loop the step sounds (e.g. only every 4th pass). A small corner notch marks cycle-restricted steps.</li>
+    <li><b>Hold a pad</b> — the display switches to that step's own page (<span class="dim">STEP n — PART n</span>): <b>NOTE · ACCENT · GATE · PROB · OCT · VELOCITY · TIME OFST · RETRIG</b>. Drag the cells to shape just that step (probability, micro-timing, ratchets…). The NOTE cell loops across octaves — dragging past B wraps to C and bumps OCT.</li>
+    <li><b>Latch a step</b> — hold a pad from 1–8 and slide <b>up</b>, or a pad from 9–16 and slide <b>down</b>, to keep it selected after you release, so you can adjust its parameters and cycles hands-free. Repeat the slide on the same pad, tap it again, or tap empty space to release.</li>
+    <li><b>Step cycles</b> — while a pad is held (or latched), the four page buttons become <b>cycle toggles 1–4</b>: choose on which repetitions of a 4-cycle loop the step sounds (e.g. only every 4th pass). A small corner notch marks cycle-restricted steps.</li>
     <li><b>Step skip</b> — hold <span class="btnface">MUTE</span> and tap a pad (or <kbd>Shift</kbd>+step key): the playhead <b>jumps over</b> that step entirely, shortening the loop's feel. Skipped pads turn grey; skips override the SEQ STRT/END window (those cells dim). <span class="btnface">MUTE</span>+<span class="btnface">SELECT</span> (or <kbd>Shift</kbd>+<kbd>\</kbd>) clears all skips on the part.</li>
     <li><b>Page duplicate / expand</b> — hold <span class="btnface">MUTE</span> and tap a page button to copy the filled pages into a longer loop: page 2 copies 1→2; page 3 copies 1→3 (filling 2 as well if it's empty); page 4 fills 2/3/4 from what exists (1→2,3,4; or 3=1, 4=2; or 4=2). The loop end extends to cover the copies. Steps, parameters, skips and cycles are all copied.</li>
     <li>A <span class="dot w"></span> dot on a pad means the step carries <b>step locks</b> (see CTRL). A <span class="dot r"></span> red dot means those locks are currently muted.</li>
   </ul>
   <h3>On the display — SEQUENCER PART</h3>
-  <p>The display shows <b>SEQUENCER PART N</b>: eight cells shaping the active part's timing. All of them are draggable / scrollable here:</p>
+  <p>The display shows <b>SEQUENCER PART N</b>: eight cells shaping the active part's timing and pitch. All are draggable / scrollable, double-tap resets:</p>
   <ul>
     <li><b>SEQ STRT / SEQ END</b> — the part's loop window (1–64 steps; also draggable on the range bar). They dim when step-skips override them.</li>
     <li><b>SEQ DIR</b> — playback direction. <b>SPEED</b> — per-part speed multiplier (polyrhythms).</li>
-    <li><b>OFFSET</b> — rotates the sequence; the grid shows the shifted result. <b>SWING</b> — off-beat shuffle.</li>
-    <li><b>MIDI DLY</b> — note-echo amount; hold <span class="btnface">MUTE</span> to reach <b>DLY TIME</b> (echo division) on the same cell.</li>
-    <li><b>DLY FB</b> — echo feedback; hold <span class="btnface">MUTE</span> to reach <b>PITCH FB</b> (±12 st per echo — pitched delays).</li>
+    <li><b>TRANSP</b> — transposes <b>every note in the part</b>. One drag notch or wheel click = <b>±1 octave</b>; hold <span class="btnface">MUTE</span> for <b>±1 semitone</b>. Double-tap returns it to 0.</li>
+    <li><b>SEQ OFST</b> — rotates the sequence; the grid shows the shifted result. <b>SWING</b> — off-beat shuffle.</li>
+    <li><b>MIDI DLY</b> — note-echo amount.</li>
   </ul>
-  <p class="dim">The MUTE-shifted alternates apply to drag, wheel and incoming CC alike. <b>Holding a step pad</b> switches the display to that step's own parameters; <b>holding a part button</b> shows the part's note defaults (PART DEFAULTS — the values every new step is seeded with).</p>
+  <h3>MIDI DELAY page — hold SOLO</h3>
+  <p>Hold (or latch) <span class="btnface">SOLO</span> in the STEP tab and the display becomes the <b>MIDI DELAY</b> page for the part: <b>DLY TIME</b> (echo division) · <b>DLY FB</b> (feedback) · <b>PITCH FB</b> (±12 st per echo — pitched delays that spiral up or down) · <b>MIDI DLY</b>. Release SOLO to return. Latch SOLO to keep the page open and adjust it hands-free.</p>
+  <p class="dim"><b>Holding a step pad</b> switches the display to that step's own parameters; <b>holding a part button</b> shows the part's note defaults (PART DEFAULTS — the values every new step is seeded with, whose NOTE also loops across octaves).</p>
 
   <h3>Action buttons</h3>
   <table>
@@ -96,7 +100,7 @@
     <tr><td><span class="btnface">PTRN COPY</span> <kbd>O</kbd></td><td class="dim">Nothing to do — edits are auto-saved into the current slot as you make them (the status bar confirms)</td><td>Browse: tap slot(s) to save a copy there — release to finish; you continue on the last slot saved</td></tr>
     <tr><td><span class="btnface">PTRN LOAD</span> <kbd>P</kbd></td><td class="dim">Nothing to do — the slot always holds your latest edits, so there is nothing to revert</td><td>Browse: tap any slot to load it (queued to the next bar while playing)</td></tr>
     <tr><td><span class="btnface">PTRN CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's steps</td><td>Browse: tap slot(s) to <span class="red">empty</span> them — including the loaded one</td></tr>
-    <tr><td><span class="btnface">PTRN RAND</span> <kbd>]</kbd></td><td colspan="2">Hold to see the random ranges (scale, root, octave span, velocity, gate) — release to fill the part randomly</td></tr>
+    <tr><td><span class="btnface">PTRN RAND</span> <kbd>]</kbd></td><td colspan="2"><b>Quick-tap</b> fills the part randomly. <b>Hold</b> to see and adjust the random ranges (scale, root, octave span, velocity, gate) <b>without</b> applying them.</td></tr>
   </table>
 </section>
 
@@ -105,7 +109,8 @@
   <ul>
     <li><b>8 banks × 64 patterns.</b> The parts row becomes the bank picker; the grid shows that bank's pattern slots (lit = has data).</li>
     <li><b>Tap a slot</b> — stopped: loads immediately. Playing: <b>queues</b> the change for the next bar downbeat (slot blinks, status confirms). The display always shows what is actually <b>playing</b>, while you browse freely.</li>
-    <li>Hold <span class="btnface">SELECT</span> and tap a slot to select it without loading.</li>
+    <li><b>Which is which:</b> a blinking dot always marks the pattern that is <b>playing</b>; a box marks the one you have <b>selected</b>. The playing pattern — and the bank that holds it — always show in <b>yellow</b>; any other selected pattern or browsed bank shows in <span class="red">red</span>.</li>
+    <li><b>Cued editing</b> — hold <span class="btnface">SELECT</span> and tap a slot to <b>select without loading</b>. In the STEP tab that selected pattern is now <b>editable while a different one keeps playing</b> — there is no playhead on it, and the display's Bank · Pattern turns <span class="red">red</span> to show it is not the one playing. Your edits save to the selected pattern and leave the playing one untouched.</li>
     <li><b>LOOP 1/4 · 1/8 · 1/16 · 1/32</b> — hold an action button to loop the playing material at that length; release to resume exactly where playback would have been. Loops can be layered: with several held, the most recent one sets the rate, and releasing it falls back to the previous.</li>
     <li>A pattern change made <b>while looping</b> waits in the background — the loop is untouched; on release the new pattern enters on the next bar.</li>
   </ul>
@@ -120,7 +125,7 @@
   <h2>5 · KEYB tab</h2>
   <ul>
     <li>The grid becomes a <b>playable keyboard</b> for the active part; the first two page buttons shift the octave, the other two shift the key window.</li>
-    <li><b>Virtual display — KEYBOARD:</b> <b>VELOCITY · SCALE · ARP · RATE · OCTAVE · ROOT · RANGE · GATE</b>. Scale and root lock the keys to a scale; the ARP cells configure the arpeggiator (mode, rate division, octave range, gate — RATE/RANGE/GATE dim while ARP is off). Each cell has its own assignable input-CC number.</li>
+    <li><b>Virtual display — KEYBOARD:</b> <b>VELOCITY · SCALE · ARP · RATE · OCTAVE · ROOT · RANGE · GATE</b>. Scale and root lock the keys to a scale; the ARP cells configure the arpeggiator (mode, rate division, octave range, gate — RATE/RANGE/GATE dim while ARP is off). ROOT loops around the twelve notes without changing octave. Each cell has its own assignable input-CC number.</li>
     <li><b>ROLL 1/4 · 1/8 · 1/16 · 1/32</b> — hold an action button while holding notes to repeat them at that division.</li>
     <li>With <b>REC</b> armed and the transport running, played notes are written into the sequence at the current position. With the transport stopped, the arpeggiator free-runs while keys are held and re-syncs on play.</li>
   </ul>
@@ -131,7 +136,7 @@
   <ul>
     <li><b>On the display:</b> 8 parameter cells for the active part. With the internal drum machine this is <b>SOUND CTRL</b> — the part's sound parameters, always starting with <b>VOL · PAN · REV SND · DLY SND</b> plus attack, decay and type-specific cells. In MIDI mode it's <b>MIDI CTRL</b> — 8 assignable CCs sent to the part's output (CC numbers editable here or in Settings).</li>
     <li>Each cell has a <b>global value</b> — drag it any time; this is the value that plays wherever no lock exists.</li>
-    <li><b>Step lock:</b> hold a step pad — the display retitles to <b>LOCK — STEP N</b> and the cells now show that step's values — then drag a cell: that value plays <b>only on that step</b>; the next unlocked step snaps back to the global value. Locked cells are highlighted; double-click a held cell to remove its lock.</li>
+    <li><b>Step lock:</b> hold a step pad — the display retitles to <b>LOCK — STEP N</b> and the cells now show that step's values — then drag a cell: that value plays <b>only on that step</b>; the next unlocked step snaps back to the global value. Locked cells are highlighted; double-click a held cell to remove its lock. A held step can be <b>latched</b> (slide up on 1–8 / down on 9–16) to edit its locks hands-free.</li>
     <li><b>Quick tap a step pad</b> in CTRL to jump to the STEP tab and toggle that step there — no need to switch tabs first.</li>
     <li>With <b>REC</b> armed, turning cells while playing records locks as automation.</li>
   </ul>
@@ -152,7 +157,7 @@
     <tr><th>Button</th><th>Function</th></tr>
     <tr><td><span class="btnface">PARM MUTE</span> <kbd>O</kbd></td><td>Mute the active part's locks (kept, not played). Label and step dots turn <span class="red">red</span>.</td></tr>
     <tr><td><span class="btnface">PARM M ALL</span> <kbd>P</kbd></td><td>Mute locks on <b>all</b> parts. Switching it off also resets every per-part mute.</td></tr>
-    <tr><td><span class="btnface">PARM CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's CTRL setup and locks.</td></tr>
+    <tr><td><span class="btnface">PARM CLEAR</span> <kbd>[</kbd></td><td>Clear the active part's CTRL setup and locks (with the <b>All</b> hold, every part).</td></tr>
     <tr><td><span class="btnface">PARM HOLD</span> <kbd>]</kbd></td><td>Latch mode: a lock's value <b>holds until the next lock</b> instead of snapping back. <span class="red">Red</span> while on. Mute always wins over hold.</td></tr>
   </table>
   <p class="dim">Lock mutes and hold are live performance states — they are never saved with patterns.</p>
@@ -163,7 +168,7 @@
   <ul>
     <li>In SETTINGS, the <span class="btnface">SELECT</span> button becomes the mode toggle: <b>DRUM MACHINE</b> (internal sound engine on; parts named after their instrument) or <b>MIDI CONTROLLER</b> (engine off, parts named PART 1–8; MIDI out still works).</li>
     <li>Each internal part has a <b>sound editor</b> (bottom panel — click to expand): voice type and mono/poly, volume, pan, tune, attack, decay, tone, extra oscillator tunings for CHRD, sample loading, and reverb/delay sends. Its header carries an <span class="btnface">ALL MUTE</span> button. Type and voice are also reachable from the <b>PART SETUP</b> panel (hold a part button in CTRL).</li>
-    <li><b>Master FX</b> — a distortion stage (volume, gain, character) with an independent 3-band EQ that can sit <b>pre or post</b> drive, plus a send <b>reverb</b> (four algorithms, decay, damping, return) and a send <b>delay</b> (four algorithms, time, feedback, return). All of them are hands-on from the CTRL tab via the <span class="btnface">MUTE</span> / <span class="btnface">SOLO</span> hold panels. Combined with PITCH FB, note echoes can spiral up or down in pitch.</li>
+    <li><b>Master FX</b> — a distortion stage (volume, gain, character) with an independent 3-band EQ that can sit <b>pre or post</b> drive, plus a send <b>reverb</b> (four algorithms, decay, damping, return) and a send <b>delay</b> (four algorithms, time, feedback, return). All of them are hands-on from the CTRL tab via the <span class="btnface">MUTE</span> / <span class="btnface">SOLO</span> hold panels. Combined with PITCH FB on the MIDI-delay page, note echoes can spiral up or down in pitch.</li>
   </ul>
 </section>
 
@@ -173,7 +178,8 @@
     <li>The gear button (<kbd>Esc</kbd>) opens <b>SETTINGS</b> mode. The grid becomes settings pages — <b>page 1: MIDI IN</b>, <b>page 2: CC IN</b>, <b>page 9: MIDI OUT</b>, <b>page 10: CTRL CC OUT</b> — and the buttons row is repurposed: <span class="btnface">ABOUT</span> · <span class="btnface">DONATE</span> · <span class="btnface">MANUAL</span> links, the DRUM MACHINE / MIDI CONTROLLER toggle, and the file buttons (section 10).</li>
     <li><b>MIDI IN / MIDI OUT pages</b> — pick the global device and channel. Tap a part to set a <b>per-part override</b> (device and channel, or inherit global). The global output channel can be <b>Auto</b>: each part sends on its own channel 1–8.</li>
     <li><b>CC IN page</b> — the 8 MIDI CC numbers that drive the display cells in every mode (double-click a cell for the factory number). <b>CTRL CC OUT page</b> — per part, the 8 CC numbers the CTRL tab sends in MIDI mode.</li>
-    <li><b>Incoming CC</b> is mapped to whatever the display currently shows — sequencer cells in STEP (including the MUTE-shifted alternates), CTRL cells in CTRL, the keyboard/arp cells in KEYB, the velocity mixer in PTRN, even the held FX panels.</li>
+    <li><b>Incoming CC</b> is mapped to whatever the display currently shows — the sequencer cells in STEP, the MIDI-delay page under <span class="btnface">SOLO</span>, the CTRL cells in CTRL, the keyboard/arp cells in KEYB, the velocity mixer in PTRN, even the held FX panels.</li>
+    <li><b>Audio rate</b> — the top-right of the display shows the current audio sample rate. If it turns <span class="red">red</span> and reads low (typically a Bluetooth headset that opened the audio in hands-free mode), the sound loses its top end and the hi-hat can go quiet. Reconnect the device or reload; the app also re-opens the audio at full rate when it can.</li>
     <li>Notes, echoes and CTRL CCs are sent per part over the part's output routing.</li>
   </ul>
 </section>
@@ -183,21 +189,31 @@
   <ul>
     <li>The recorder bar captures the master output — all parts, panning, sends and master FX; the metronome click is excluded. <span class="btnface">BOUNCE</span> while playing <b>arms</b> and starts on the next bar; pressing <span class="btnface">STOP</span> lets the bar finish first — takes are exact whole bars, ready to loop. Press stop twice to cut immediately.</li>
     <li>From a stopped transport, BOUNCE starts playback and captures from the very first step.</li>
-    <li><span class="btnface">SAVE WAV</span> exports the take (16-bit stereo WAV); <span class="btnface">PREVIEW</span> auditions it first, no save needed.</li>
+    <li><span class="btnface">SAVE WAV</span> names and exports the take: a small dialog lets you <b>type a filename</b> first (16-bit stereo WAV). On iPhone/iPad it offers <b>Save to Files</b> / share. <span class="btnface">PREVIEW</span> auditions the take first, no save needed.</li>
   </ul>
 </section>
 
 <section>
   <h2>10 · Projects &amp; saving</h2>
   <ul>
-    <li>In SETTINGS, the four action buttons become: <span class="btnface">FILE SAVE</span> <kbd>O</kbd> exports the whole project (all banks, patterns, sounds, settings) as a file; <span class="btnface">FILE LOAD</span> <kbd>P</kbd> imports one; <span class="btnface">FILE NEW</span> <kbd>[</kbd> resets everything.</li>
+    <li>In SETTINGS, the four action buttons become: <span class="btnface">FILE SAVE</span> <kbd>O</kbd> — opens a dialog to <b>name the file</b>, then exports the whole project (all banks, patterns, sounds, settings); <span class="btnface">FILE LOAD</span> <kbd>P</kbd> imports one; <span class="btnface">FILE NEW</span> <kbd>[</kbd> resets everything. On iPhone/iPad, FILE SAVE offers <b>Save to Files</b> / share.</li>
     <li><b>Patterns always save themselves</b> — every edit (steps and knob moves alike) is committed back to the pattern's slot automatically. There is no save button for patterns; use <span class="btnface">PTRN COPY</span> (hold) only to copy a pattern to <b>other</b> slots.</li>
     <li><span class="btnface">AUTO-SAVE</span> <kbd>]</kbd> (on by default) additionally keeps the whole project persisted in the browser, so it survives a reload. Turning it off clears the stored data.</li>
   </ul>
 </section>
 
 <section>
-  <h2>11 · Keyboard quick reference</h2>
+  <h2>11 · Install &amp; offline</h2>
+  <ul>
+    <li><b>Install it</b> — add the app to your home screen (your browser's <b>Add to Home Screen</b>, or the Install prompt in Chrome/Edge) to run it fullscreen, with no address bar, and scaled to fit the screen with no scrolling.</li>
+    <li><b>Works offline</b> — once installed it runs with no connection. It updates <b>only when a new version is published</b>: you'll see a small <b>Update ready</b> chip on launch — tap it to switch to the new version.</li>
+    <li><b>iPhone / iPad silent switch</b> — the ring/silent switch mutes Web Audio. If you hear nothing after pressing play, take the phone out of Silent Mode (the app reminds you the first time).</li>
+    <li>Installed on iOS the app keeps its <b>own storage</b>, separate from the browser tab, so a project saved in one is not visible in the other.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>12 · Keyboard quick reference</h2>
   <table>
     <tr><th>Keys</th><th>Action</th></tr>
     <tr><td><kbd>Space</kbd></td><td>Play / stop (stop resets to the start)</td></tr>
