@@ -17,7 +17,7 @@
  * the new version. So the app updates when — and only when — the site has a new
  * build, and never mid-session by surprise.
  */
-const VERSION = '37fddb6496b4';          // stamped from a hash of the build
+const VERSION = 'c762eb0331b6';          // stamped from a hash of the build
 const CACHE = 'defoult-' + VERSION;
 
 // Best-effort: about/manual live in the site repo and may not be deployed
@@ -26,6 +26,8 @@ const CACHE = 'defoult-' + VERSION;
 const PRECACHE = [
   './',
   './index.html',
+  './app.js',
+  './app.css',
   './sample-persist.js',
   './manifest.webmanifest',
   './icons/icon-32.png',

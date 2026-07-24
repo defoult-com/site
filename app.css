@@ -1,0 +1,493 @@
+
+  /* ──────────────────────────────────────────────────────────────
+     CSS §1 · GLOBAL RESETS, THEME VARIABLES & PAGE FRAME
+     ────────────────────────────────────────────────────────────── */
+  html,body{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
+  .step-grid,.parts-grid,.smd-grid,.step-range-bar,.tport-top-btn,.ctrl-btn,.mode-tab{touch-action:none;}
+  :root{--seq-bg:#1a1a14;--seq-panel:#2a2a1e;--seq-border:#3a3a28;--seq-yellow:#f0c030;--seq-yellow-dark:#c09010;--seq-yellow-bg:#3a2e00;--seq-text:#e8e0c0;--seq-text-dim:#888870;--seq-btn-bg:#222218;--seq-red:#e05040;
+    /* Condensed Helvetica look: use Helvetica Neue Condensed where installed
+       (most Apple devices), else the free 'Archivo Narrow' web font, else any
+       generic condensed sans. font-stretch nudges Helvetica Neue to its
+       condensed width on platforms that expose it. */
+    --seq-font:'Helvetica Neue Condensed','HelveticaNeue-CondensedBold','Helvetica Neue','Archivo Narrow','Roboto Condensed','Arial Narrow',Helvetica,Arial,sans-serif;}
+  #seq-root,#seq-root *{font-stretch:condensed;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;margin:0;padding:8px;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;}
+  /* The page gutter lives on <body> only. With box-sizing:border-box, padding
+     on the root <html> element stacks ON TOP of body's min-height:100vh and
+     pushes the document ~16px past the viewport — a small phantom vertical
+     scrollbar on desktop. Zero it on <html> (also inside the mobile media
+     query below, hence !important). body keeps the 8px/4px gutter. */
+  html{padding:0!important;}
+  body.portrait{align-items:flex-start;padding:4px;}
+  @media (max-width:680px){ html,body{padding:4px;} }
+  #scale-wrap{display:flex;justify-content:center;align-items:flex-start;}
+  #seq-root{background:var(--seq-bg);font-family:var(--seq-font);color:var(--seq-text);padding:8px;border-radius:6px;user-select:none;width:640px;transform-origin:top center;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §2 · TOP BAR — transport pads, mode tabs, keyboard-hint chips
+     ────────────────────────────────────────────────────────────── */
+  .seq-top-bar{display:flex;align-items:stretch;gap:2px;margin-bottom:6px;width:100%;}
+  .top-bar-sep{width:1px;background:var(--seq-border);margin:0 4px;flex-shrink:0;}
+  .tport-top-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;flex:1;}
+  .tport-top-pad{height:100%;width:100%;min-width:32px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--seq-text-dim);padding:0 6px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;box-sizing:border-box;}
+  .tport-top-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
+  .tport-top-kbd{font-size:9px;font-weight:bold;color:#111;background:var(--seq-yellow);border-radius:2px;padding:1px 4px 0;width:100%;box-sizing:border-box;min-height:14px;display:flex;align-items:center;justify-content:center;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:clip;letter-spacing:0;}
+  .mode-tab{display:flex;align-items:center;justify-content:center;gap:6px;padding:5px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;cursor:pointer;font-family:var(--seq-font);font-size:13px;font-weight:bold;color:var(--seq-text-dim);flex:1;}
+  .mode-tab.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .mode-tab.active .kbdkey{background:#111;color:var(--seq-yellow);}
+  .kbdkey{border-radius:2px;font-size:10px;font-weight:bold;padding:1px 5px;min-width:20px;text-align:center;background:var(--seq-yellow);color:#111;}
+  .mode-tab:not(.active) .kbdkey{background:var(--seq-text-dim);color:#222;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §3 · MAIN 2-COLUMN LAYOUT + PATTERN GRID (PAT mode)
+     ────────────────────────────────────────────────────────────── */
+  .seq-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:stretch;}
+  .mode-tabs-group{flex:1 1 0;display:flex;gap:2px;align-items:stretch;}
+  .mode-tabs-group .mode-tab{flex:1 1 0;min-width:0;}
+  .seq-left,.seq-right{display:flex;flex-direction:column;gap:6px;}
+  .pat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
+  .pat-num{width:100%;padding:6px 2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:var(--seq-text);cursor:pointer;position:relative;transition:background .08s,border-color .08s,color .08s,box-shadow .08s;}
+  .pat-num.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .pat-num.pending{outline:2px solid #ff9900;outline-offset:-2px;}
+  .pat-num.has-data::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
+  .pat-num.active.has-data::after{background:#111a;}
+  .pat-section-title{font-size:9px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:5px;}
+  .pat-info{font-size:11px;color:var(--seq-yellow);font-weight:bold;}
+  .pat-actions{display:flex;gap:4px;margin-top:4px;}
+  .pat-action-btn{padding:4px 10px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-family:var(--seq-font);font-size:10px;font-weight:bold;color:var(--seq-text-dim);cursor:pointer;}
+  @media (hover:hover){.pat-action-btn:hover{border-color:var(--seq-yellow);color:var(--seq-text);}}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §4 · PANELS + PARTS GRID (part buttons, mute/solo/sync states)
+     ────────────────────────────────────────────────────────────── */
+  .panel{background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:3px;padding:8px;}
+  /* In the two-column (landscape) layout, let the Step panel grow to fill the
+     remaining left-column height so its bottom edge lines up with the Status
+     bar on the right — no gap. The step grid keeps its natural size; the extra
+     space just sits below it (buttons are unchanged). */
+  body:not(.portrait) #step-panel{flex:1 1 auto;}
+  .panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;margin-bottom:7px;}
+  /* parts-grid is the LAST child of its gray panel — no bottom margin, so the
+     panel's 8px padding reads the same on all four sides. */
+  .parts-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;}
+  .part-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
+  .part-num{width:100%;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:bold;color:var(--seq-text);transition:background .08s,border-color .08s,color .08s,box-shadow .08s;position:relative;padding:2px 0;}
+  .pnum-n{font-size:11px;line-height:1;}
+  .pnum-name{font-size:8px;font-weight:bold;color:var(--seq-text-dim);text-transform:uppercase;letter-spacing:.03em;line-height:1;white-space:nowrap;overflow:hidden;max-width:100%;text-overflow:ellipsis;}
+  .part-num.active .pnum-name{color:inherit;}
+  .part-num.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .part-num.has-steps::after{content:'';position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);transition:background .05s;}
+  .part-num.dot-flash::after{background:#fff!important;transition:none;}
+  .part-num.active.has-steps::after{background:#111a;}
+  .part-num.has-steps.out-of-sync::after{background:#e05040;}
+  .part-num.active.has-steps.out-of-sync::after{background:#ff6050;}
+  .part-num.muted{background:#1a1a10;border-color:#444430;color:#555540;}
+  .part-num.muted.active{background:#3a2a00;border-color:#665500;color:#887730;}
+  .part-num.soloed{border-color:#60d0d0;color:#60d0d0;}
+  .part-num.active.soloed{background:#006060;border-color:#60d0d0;color:#b0ffff;}
+  .part-num.muted::before{content:'M';position:absolute;top:1px;left:2px;font-size:7px;color:#e05040;font-weight:bold;}
+  .part-num.soloed::before{content:'S';position:absolute;top:1px;left:2px;font-size:7px;color:#60d0d0;font-weight:bold;}
+  .part-num.muted.has-steps::after{background:#554430;}
+  .part-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#111;padding:2px 0;}
+  .part-name{font-size:8px;color:var(--seq-text-dim);text-align:center;margin-top:1px;letter-spacing:.03em;}
+  .part-name.muted{color:#554430;}
+  .part-len{font-size:7px;color:var(--seq-yellow-dark);text-align:center;letter-spacing:.02em;}
+  .parts-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px;}
+  .action-label{font-size:11px;color:var(--seq-text-dim);text-align:center;}
+  .action-key{border-radius:2px;font-size:11px;font-weight:bold;padding:3px 10px;text-align:center;cursor:pointer;border:1px solid transparent;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;}
+  .action-key.shift-key{background:var(--seq-yellow);color:#111;}
+  .action-key.ctrl-key{background:var(--seq-btn-bg);border-color:#60d0d0;color:#60d0d0;}
+  .action-key.shift-key.held{background:#fff;color:#000;box-shadow:0 0 0 2px var(--seq-yellow);}
+  .action-key.ctrl-key.held{background:#003838;box-shadow:0 0 0 2px #60d0d0;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §5 · STEP PANEL — step pads, playhead/skip states, range bar
+     ────────────────────────────────────────────────────────────── */
+  .step-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;min-height:16px;}
+  .step-panel-title{font-size:11px;letter-spacing:.12em;color:var(--seq-text-dim);text-transform:uppercase;line-height:16px;}
+  .part-indicator{font-size:11px;color:var(--seq-yellow);font-weight:bold;line-height:16px;height:16px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;}
+  /* Very small phones (body.tiny-screen, set from JS): drop the Parts and Step
+     panel header rows entirely so the whole layout packs tighter. The display:
+     none removes the row and its bottom margin, reclaiming the vertical space.
+     Bigger phones and tablets never get this class, so they look unchanged. */
+  body.tiny-screen #parts-panel-header,
+  body.tiny-screen .step-panel-header{display:none!important;}
+  .part-num.part-disabled{opacity:.35;cursor:default;}
+  .step-pad.page-disabled{opacity:.3;cursor:default;}
+  .ctrl-btn.ctrl-disabled{opacity:.3;cursor:default;pointer-events:none;}
+  .step-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;}
+  .step-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
+  .step-pad{width:100%;aspect-ratio:1;min-height:34px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:var(--seq-text-dim);transition:background .06s;position:relative;}
+  /* iOS/Safari (WebKit) mis-sizes `aspect-ratio` on a flex child once an ancestor
+     has a `transform: scale()` — which the landscape (non-portrait) layout uses to
+     fit the fixed 640px design to the screen. That collapses the step-pad height and
+     cramps the two step rows on real iPhones, while portrait (no transform) and
+     Firefox's Gecko simulator look fine. The part boxes avoid this by using a plain
+     min-height instead of aspect-ratio. Since the design width is fixed, the step
+     column is always ~34px, so in the non-portrait layout we size the pad with a
+     definite height (matching the parts) rather than aspect-ratio. Squares stay
+     square, desktop is unchanged, and the iOS bug can't trigger. Portrait keeps its
+     own fluid aspect-ratio rule below. */
+  body:not(.portrait) .step-pad{aspect-ratio:auto;height:34px;min-height:34px;}
+  .step-pad.has-data::after,.step-pad.dot-flash::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--seq-yellow-dark);}
+  .step-pad.on.has-data::after{background:#111a;}
+  .step-pad.dot-flash::after{background:#fff!important;width:6px!important;height:6px!important;box-shadow:0 0 4px #fff;transition:none;}
+  .step-pad.has-lock::before{content:'';position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 3px #fff;}
+  /* PARM MUTE: while the active part's parameter locks are muted (per-part or
+     global ALL layer), its lock dots turn red — locks exist but won't play. */
+  body.parm-muted .step-pad.has-lock::before{background:var(--seq-red);box-shadow:0 0 3px var(--seq-red);}
+  .smd-cell.cc-locked{border-color:#60d0d0;}
+  .smd-cell.cc-locked .smd-cell-val{color:#60d0d0;}
+  .step-pad.key-note{background:var(--seq-yellow);border-color:var(--seq-yellow);color:#111;font-size:10px;line-height:1;white-space:nowrap;}
+  .step-pad.key-note.key-off{background:var(--seq-btn-bg);border-color:var(--seq-border);color:var(--seq-text-dim);opacity:.45;}
+  .step-pad.key-blank{background:var(--seq-btn-bg);border-color:var(--seq-border);opacity:.35;}
+  .step-pad.on{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .step-grid.ctrl-mode .step-pad.on{background:#6a6a6a;border-color:#4a4a4a;color:#111;}
+  .step-pad.playhead{outline:2px solid #fff;outline-offset:-2px;}
+  .step-pad.on.playhead{background:#fff;color:#111;}
+  .step-pad.trigger{background:#fff !important;color:#111 !important;}
+  .step-pad.held{box-shadow:0 0 0 2px #fff inset;}
+  /* Universal press highlight */
+  .press-active{box-shadow:0 0 0 2px #fff inset!important;}
+  /* ── LOW-FX profile (old / low-end devices; class set by the low-power
+     detector next to LOW_POWER_AUDIO) ─────────────────────────────────────
+     The eased background transitions make every playhead move and trigger
+     flash repaint for ~4-5 frames instead of one, and the tiny glow shadows
+     force larger repaint areas — both are disproportionately expensive on
+     old Android GPUs. Colors and layout stay identical; state changes are
+     simply instant instead of eased. */
+  body.low-fx .step-pad,body.low-fx .part-num,body.low-fx .pat-num,
+  body.low-fx .tport-pad,body.low-fx .tport-top-pad,body.low-fx .action-key,
+  body.low-fx .range-btn,body.low-fx .smd-cell{transition:none!important;}
+  body.low-fx .step-pad.dot-flash::after,
+  body.low-fx .step-pad.has-lock::before,
+  body.low-fx.parm-muted .step-pad.has-lock::before{box-shadow:none!important;}
+  .tport-top-pad.mode-on{background:var(--seq-yellow-bg);border-color:var(--seq-yellow);color:var(--seq-text);}
+  .tport-top-pad.metro-flash{background:#fff;border-color:#fff;color:#111;}
+  .step-pad.inactive{opacity:1;background:#333330;border:1px solid #4a4a40;color:#777;cursor:default;}
+  .step-pad.inactive.on{background:#4a4a45;color:#999;}
+  .step-pad.skipped{background:#333330!important;border:1px solid #4a4a40!important;color:#777!important;}
+  /* Cycle-restricted step: a small notch in the bottom-left corner marks that
+     the step plays on only some of the 4 loop repetitions. */
+  .step-pad.cyc-skip::after{content:'';position:absolute;left:2px;bottom:2px;width:0;height:0;border-left:5px solid var(--seq-yellow-dark);border-top:5px solid transparent;opacity:.9;}
+  .step-pad.on.cyc-skip::after{border-left-color:#111;}
+  .step-pad.skipped.on{background:#4a4a45!important;color:#999!important;}
+  .step-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#111;padding:2px 0;}
+  .step-range-bar{display:flex;gap:3px;margin-top:5px;}
+  .range-btn{flex:1;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:4px;font-size:10px;color:var(--seq-text-dim);display:flex;align-items:center;justify-content:space-between;gap:4px;cursor:pointer;transition:background .08s,border-color .08s,color .08s,box-shadow .08s;position:relative;line-height:1;}
+  .range-btn span:first-child{flex:1;text-align:center;line-height:1.2;}
+  .range-btn span{display:inline-flex;align-items:center;justify-content:center;}
+  .range-btn.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .range-btn.active .rkbd{background:#111;color:var(--seq-yellow);}
+  .range-btn.has-content{border-color:var(--seq-yellow-dark);}
+  .range-btn.active.has-content{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  .rkbd{background:var(--seq-yellow);color:#111;border-radius:2px;font-size:9px;font-weight:bold;padding:1px 4px;}
+  .range-btn.playing::before{content:'';position:absolute;left:5px;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:#fff;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §6 · TEMPO READOUT + ACTION (CTRL) BUTTONS + SETTINGS TOGGLE
+     ────────────────────────────────────────────────────────────── */
+  .tempo-top{display:flex;flex-direction:column;align-items:center;gap:2px;padding:0 6px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;justify-content:center;}
+  .tempo-top-row{display:flex;align-items:baseline;gap:4px;}
+  .tempo-top-val{font-size:18px;font-weight:bold;color:var(--seq-text);font-family:var(--seq-font);}
+  .tempo-top-unit{font-size:9px;color:var(--seq-text-dim);}
+  .tempo-top-slider{width:100%;}
+  .tempo-label{font-size:11px;color:var(--seq-text-dim);}
+  .tempo-val{font-size:22px;font-weight:bold;color:var(--seq-text);}
+  .tempo-unit{font-size:11px;color:var(--seq-text-dim);}
+  .tempo-kbdkey{background:var(--seq-yellow);color:#111;border-radius:2px;font-size:10px;font-weight:bold;padding:2px 6px;margin-left:auto;}
+  .tempo-slider{flex:1;margin-left:4px;}
+  .ctrl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:6px;}
+  .ctrl-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;min-width:0;}
+  /* AUTO-SAVE active: solid yellow value cell (like an active part/step) */
+  .ctrl-btn.autosave-on .ctrl-val{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;}
+  /* MODIFIER LATCHED: solid yellow value cell */
+  .ctrl-btn.mod-latched .ctrl-val{background:var(--seq-yellow)!important;border-color:var(--seq-yellow-dark)!important;color:#111!important;}
+  @media (hover:hover){.ctrl-val:hover{border-color:var(--seq-yellow);}}
+  .ctrl-label{font-size:9px;color:var(--seq-text-dim);text-align:center;}
+  .ctrl-val{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:10px;font-weight:bold;color:var(--seq-text);text-align:center;padding:5px 2px;letter-spacing:.04em;white-space:nowrap;}
+  .ctrl-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
+  /* Settings-mode toggle (replaces the Select button while in SETTINGS) */
+  .ctrl-btn.set-toggle .ctrl-val{font-size:8.5px;line-height:1.05;padding:4px 2px;flex:1;display:flex;align-items:center;justify-content:center;white-space:normal;letter-spacing:.02em;}
+  .set-toggle-track{display:flex;width:100%;gap:2px;}
+  .set-toggle-seg{flex:1;height:8px;border-radius:2px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);transition:background .1s,border-color .1s;}
+  .set-toggle-seg.on{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);}
+  /* smd-wrap is the ONLY child of its gray panel — no bottom margin, so the
+     panel's 8px padding reads the same on all four sides. */
+  /* ──────────────────────────────────────────────────────────────
+     CSS §7 · DISPLAY (SMD) — cells, drag & CC-learn states, swing bar
+     ────────────────────────────────────────────────────────────── */
+  .smd-wrap{background:var(--seq-yellow-bg);border:1px solid var(--seq-yellow-dark);border-radius:3px;padding:6px;}
+  .smd-header{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--seq-yellow);letter-spacing:.1em;margin-bottom:6px;text-transform:uppercase;}
+  .smd-grid{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1fr;gap:4px;aspect-ratio:4/2;}
+  .smd-cell{background:var(--seq-btn-bg);border:1px solid var(--seq-yellow-dark);border-radius:2px;padding:4px 2px;text-align:center;position:relative;transition:border-color .1s,background .1s;display:flex;flex-direction:column;justify-content:center;align-items:center;overflow:hidden;aspect-ratio:1;}
+  .smd-cell.draggable,.smd-cell.dir-cell,.smd-cell.spd-cell,.smd-cell.swg-cell{cursor:ns-resize;}
+  @media (hover:hover){.smd-cell.draggable:hover,.smd-cell.dir-cell:hover,.smd-cell.spd-cell:hover,.smd-cell.swg-cell:hover{border-color:var(--seq-yellow);background:#2a2a18;}}
+  .smd-cell.dragging{border-color:#fff;background:#2a3010;}
+  .smd-cell.dragging.snap-mode{border-color:var(--seq-yellow);background:#1a2800;}
+  /* per-cell CC input */
+  .cc-input-wrap{display:none!important;}
+  .cc-label{font-size:6px;color:var(--seq-yellow-dark);line-height:1;}
+  .cc-num-input{width:24px;background:#111;border:1px solid var(--seq-yellow-dark);border-radius:2px;color:var(--seq-yellow);font-family:var(--seq-font);font-size:7px;text-align:center;padding:0 1px;outline:none;-moz-appearance:textfield;}
+  .cc-num-input::-webkit-outer-spin-button,.cc-num-input::-webkit-inner-spin-button{-webkit-appearance:none;}
+  .cc-num-input:focus{border-color:var(--seq-yellow);background:#1a1a00;}
+  .smd-cell.cc-active .cc-num-input{border-color:#60d0d0;}
+  .smd-cell.cc-active{border-color:#60d0d0 !important;background:#001a1a !important;}
+  /* Desktop keyboard-selected display parameter ( , / . to move, ; / l to
+     change). A bright ring + subtle fill; sits above hover/drag but below the
+     CC-learn active state. */
+  /* Use a real 2px border (not an inset box-shadow) for the ring: the whole
+     sequencer is drawn with a fractional CSS transform:scale(), and an inset
+     shadow rasterizes in local space then scales, so it drifts a subpixel off
+     the square. A border is part of the box and scales with the edges exactly.
+     box-sizing:border-box means the extra 1px grows inward — no reflow. */
+  .smd-cell.kb-selected{border:2px solid var(--seq-yellow)!important;background:#2a3010!important;}
+  .smd-cell.kb-selected .smd-cell-label{color:var(--seq-yellow);}
+  /* The keyboard-selection square is a desktop-only affordance. Force it off on
+     mobile/touch so it can never render there even if a mobile browser
+     misreports pointer/hover to the JS gate. */
+  body.mobile-mode .smd-cell.kb-selected,
+  body.touch-capable .smd-cell.kb-selected{border:1px solid var(--seq-border)!important;background:var(--seq-btn-bg)!important;box-shadow:none!important;}
+  body.mobile-mode .smd-cell.kb-selected .smd-cell-label,
+  body.touch-capable .smd-cell.kb-selected .smd-cell-label{color:var(--seq-yellow-dark);}
+  .smd-cell-label{font-size:9px;color:var(--seq-yellow-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
+  .smd-cell-val{font-size:18px;font-weight:bold;color:var(--seq-yellow);line-height:1;}
+  .smd-cell.draggable .smd-cell-val{color:#fff;}
+  .dir-val,.spd-val,.swg-val{font-size:18px;font-weight:bold;color:#fff;line-height:1;}
+  .snap-hint{font-size:7px;color:var(--seq-yellow-dark);text-align:center;margin-top:2px;letter-spacing:.04em;min-height:9px;}
+  /* DRUM MACHINE sound-CTRL cells reuse the exact canonical cell metrics
+     (label + 22px value + snap-hint spacer); nowrap keeps spaced values
+     like "60 Hz" on one line so placement matches every other panel. */
+  .snd-lbl{white-space:nowrap;}
+  .snd-val{white-space:nowrap;}
+  .swing-bar-wrap{position:absolute;bottom:4px;left:4px;right:4px;height:3px;background:#1a1a10;border-radius:2px;overflow:hidden;}
+  .swing-bar-fill{height:100%;background:var(--seq-yellow);border-radius:2px;transition:width .08s;}
+  /* Display-parameter navigator (the 4 arrow buttons under the virtual display).
+     Lives inside the SMD gray panel as a sibling of smd-wrap. Reuses the
+     transport pad + yellow key-hint markup so height matches the top-bar
+     transport buttons exactly (18px SVG icon + key hint). */
+  #param-nav-row{margin-top:6px;margin-bottom:0;}
+  @media (hover:hover){#param-nav-row .param-nav-btn:hover .tport-top-pad{border-color:var(--seq-yellow-dark);color:var(--seq-yellow);}}
+  /* The , . ; l selection flow is a desktop keyboard affordance (the highlight
+     square is forced off on touch), so hide these buttons there to match. */
+  body.mobile-mode #param-nav-row,
+  body.touch-capable #param-nav-row{display:none!important;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §8 · BOTTOM BAR — MIDI config + SOUND EDITOR
+     ────────────────────────────────────────────────────────────── */
+  .seq-bottom-bar{display:flex;flex-direction:column;gap:0;margin-top:6px;border:1px solid var(--seq-border);border-radius:3px;overflow:hidden;}
+  .bottom-bar-sep{height:1px;background:var(--seq-border);}
+  .midi-config-bar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;flex-wrap:wrap;}
+  .midi-config-label{font-size:9px;color:var(--seq-text-dim);}
+  .midi-input-select{flex:1;min-width:100px;background:var(--seq-btn-bg);border:1px solid var(--seq-yellow-dark);border-radius:2px;color:var(--seq-text);font-family:var(--seq-font);font-size:9px;padding:2px 4px;outline:none;}
+  .midi-ch-select{background:var(--seq-btn-bg);border:1px solid var(--seq-yellow-dark);border-radius:2px;color:var(--seq-text);font-family:var(--seq-font);font-size:9px;padding:2px 4px;outline:none;width:44px;}
+  .set-midi-row{display:flex;align-items:center;gap:8px;flex:1;width:100%;box-sizing:border-box;min-width:0;background:var(--seq-btn-bg);border:1px solid var(--seq-yellow-dark);border-radius:2px;padding:0 10px;}
+  .set-midi-label{font-size:10px;letter-spacing:.1em;color:var(--seq-text-dim);min-width:64px;flex-shrink:0;}
+  .set-midi-select{flex:1;min-width:0;width:100%;max-width:100%;box-sizing:border-box;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;color:var(--seq-text);font-family:var(--seq-font);font-size:11px;padding:4px 6px;outline:none;}
+  .set-midi-dot-spacer{width:7px;flex-shrink:0;}
+  .midi-status-dot{width:7px;height:7px;border-radius:50%;background:var(--seq-text-dim);flex-shrink:0;}
+  .midi-status-dot.on{background:#60d060;}
+  .midi-status-dot.err{background:var(--seq-red);}
+  .sound-editor{background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;overflow:hidden;}
+  /* MIDI CONTROLLER mode: whole sound engine is greyed out and non-interactive */
+  .sound-editor.sound-disabled{opacity:.4;pointer-events:none;}
+  .sound-editor-header{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;cursor:pointer;border-bottom:1px solid var(--seq-border);}
+  .sound-editor-title{font-size:10px;color:var(--seq-yellow);letter-spacing:.08em;text-transform:uppercase;}
+  .sound-editor-body{display:none;padding:8px;flex-direction:column;gap:5px;}
+  .sound-editor-body.open{display:flex;}
+  /* ── Sound-engine row HIDDEN (visual only) ─────────────────────────────
+     The bottom "Sound — Part X" editor row is hidden from view by request.
+     It is NOT removed: every element stays in the DOM and keeps updating
+     with all sound-engine changes (slider sync, title, build, etc.), so it
+     stays current. To bring it back later, just delete (or comment out) the
+     single rule below — nothing else needs to change. */
+  .seq-bottom-bar{display:none!important;}
+  .se-row{display:flex;align-items:center;gap:6px;}
+  .se-label{font-size:9px;color:var(--seq-text-dim);width:56px;flex-shrink:0;}
+  .se-val{font-size:10px;color:var(--seq-yellow);min-width:32px;text-align:right;}
+  .se-slider{flex:1;}
+  .se-type-row{display:flex;gap:3px;flex-wrap:wrap;}
+  .se-type-btn{padding:3px 7px;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;font-size:9px;color:var(--seq-text-dim);cursor:pointer;font-family:var(--seq-font);}
+  .se-type-btn.active{background:var(--seq-yellow);border-color:var(--seq-yellow-dark);color:#111;font-weight:bold;}
+  /* ──────────────────────────────────────────────────────────────
+     CSS §9 · STATUS BAR + TRANSPORT ROW
+     ────────────────────────────────────────────────────────────── */
+  .status-bar{background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:3px 8px;margin-bottom:6px;min-height:22px;display:flex;align-items:center;gap:6px;}
+  .seq-dot{width:6px;height:6px;border-radius:50%;background:#60d060;flex-shrink:0;}
+  .status-msg{font-size:10px;color:var(--seq-text-dim);}
+  .transport-row{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
+  .tport-btn{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;}
+  .tport-pad{width:100%;background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:2px;padding:6px 2px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--seq-text-dim);transition:background .1s,border-color .1s,color .1s,box-shadow .1s;}
+  .tport-pad.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
+  .tport-kbd{width:100%;background:var(--seq-yellow);border-radius:2px;font-size:9px;font-weight:bold;color:#111;text-align:center;padding:2px 0;}
+  /* Mobile/touch: the yellow keyboard-shortcut hints are useless on a touchscreen — hide them all. */
+  body.mobile-mode .tport-top-kbd,
+  body.mobile-mode .part-kbd,
+  body.mobile-mode .step-kbd,
+  body.mobile-mode .rkbd,
+  body.mobile-mode .ctrl-kbd,
+  body.mobile-mode .tport-kbd,
+  body.mobile-mode .mode-tab .kbdkey{display:none!important;}
+
+  /* ── Vertical / portrait phone layout ──────────────────────────────
+     Stacks the two main columns into one and lets the app fill the screen
+     width instead of the fixed 640px desktop design. Toggled by body.portrait
+     (auto on portrait phones, or via the manual toggle). */
+  body.portrait #scale-wrap{width:100%;justify-content:center;align-items:flex-start;}
+  body.portrait #seq-root{width:100%!important;max-width:560px;padding:6px;transform-origin:top center;}
+  #view-toggle{display:none;position:fixed;bottom:8px;right:8px;z-index:1000;background:var(--seq-yellow);color:#111;border:none;border-radius:4px;font-family:var(--seq-font);font-size:11px;font-weight:bold;padding:6px 11px;cursor:pointer;opacity:.9;box-shadow:0 2px 6px rgba(0,0,0,.5);}
+  /* The portrait/wide toggle is intentionally hidden — layout auto-selects
+     portrait vs wide from the screen, so no manual button is shown (kept in the
+     DOM so the layout JS's null-guarded references stay valid). */
+  #view-toggle{display:none!important;}
+  body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
+  /* Flatten the left/right wrappers so all four panels become direct flex items
+     of seq-main, then reorder: Display → Parts → Step → Status. */
+  body.portrait .seq-left,body.portrait .seq-right{display:contents;}
+  body.portrait .seq-right > .panel:first-child{order:1;}  /* SMD display first */
+  body.portrait .seq-left > .panel:nth-child(1){order:2;}  /* Parts */
+  body.portrait .seq-left > .panel:nth-child(2){order:3;}  /* Step sequencer */
+  body.portrait .seq-right > .panel:nth-child(2){order:4;} /* status bar last */
+  body.portrait .smd-grid{aspect-ratio:auto;}               /* let the display grow naturally full-width */
+  body.portrait .smd-cell-val{font-size:18px;}
+  body.portrait .parts-grid{gap:4px;}
+  body.portrait .step-grid{gap:4px;}
+  body.portrait .step-pad{font-size:13px;min-height:0;aspect-ratio:1;}      /* fit width: square via aspect-ratio, no fixed min that forces overflow */
+  body.portrait .part-num{min-height:0;aspect-ratio:1;}  /* match step-pad height (square) */
+  body.portrait .parts-grid,body.portrait .step-grid{grid-template-columns:repeat(8,minmax(0,1fr));}
+  body.portrait .smd-grid{gap:6px;}
+
+  /* ── Portrait panel order: Display → Parts → Step → Status ────────────
+     The display normally lives in seq-right (after seq-left's Parts/Step).
+     In portrait we flatten both wrappers (display:contents) so their child
+     panels become direct flex items of seq-main, then use `order` to pull
+     the SMD display panel up between the top button rows and the Parts box. */
+  body.portrait .seq-main{display:flex;flex-direction:column;gap:6px;}
+  body.portrait .seq-left,body.portrait .seq-right{display:contents;}
+  body.portrait .seq-right > .panel:first-child{order:1;}   /* SMD display first */
+  body.portrait .seq-left  > .panel:nth-child(1){order:2;}  /* Parts second */
+  body.portrait .seq-left  > .panel:nth-child(2){order:3;}  /* Step Sequencer third */
+  body.portrait .seq-right > .panel:nth-child(2){order:4;}  /* Status last */
+
+  /* ── Portrait top-bar rows ───────────────────────────────────────────
+     Row 1: play/pause/record/settings | tempo+metro   (first seq-top-bar)
+     Row 2: PAT STEP KEY CTRL                           (mode-tabs-group wraps below)
+     Row 3: Mute Solo Align Select                      (second seq-top-bar)
+     Row 4: Save Reload Clear Random                    (wraps below row 3)
+     Groups stay together by 4, like the horizontal design. */
+  body.portrait .seq-top-bar{flex-wrap:wrap;row-gap:4px;}
+  /* Hide the separators that sit BETWEEN the wrapped half-rows, but keep the
+     one inside the left-half (between transport and tempo/metro) visible. */
+  body.portrait .seq-top-bar > .top-bar-sep{display:none;}
+
+
+  /* Row 1: the transport+tempo left-half group takes the full first line. */
+
+  /* Row 2: the mode-tabs group takes the full next line; its 4 tabs split evenly. */
+  body.portrait .mode-tabs-group{flex:1 1 100%;}
+  body.portrait .mode-tabs-group .mode-tab{flex:1 1 0;}
+
+  /* ── Portrait: equal button heights across the wrapped rows ─────────
+     In landscape one flex row (align-items:stretch) equalizes transport pads,
+     mode tabs, and action buttons automatically. Portrait wraps them onto
+     separate rows, where each row collapses to its own content height — the
+     icon-only transport pads (play/stop/rec/settings + tempo/metro) and the
+     action-button faces (Mute/Solo/… and, in SETTINGS, ABOUT/DONATE/MANUAL/
+     DRUM MACHINE + the FILE row) came out visibly shorter than the PTRN/STEP/
+     KEYB/CTRL tabs. Pin every face to ONE shared minimum height instead. */
+  body.portrait .mode-tab{box-sizing:border-box;min-height:30px;}
+  body.portrait .tport-top-pad{min-height:30px;}
+  body.portrait #action-btn-row .ctrl-val{box-sizing:border-box;min-height:30px;flex:1;display:flex;align-items:center;justify-content:center;}
+
+  /* Action button row (Mute/Solo/Align/Select + Save/Reload/Clear/Random),
+     now positioned below the sequencer/status: 8 buttons → exactly 4 per row.
+     flex-shrink:0 so they hold their width and the 5th wraps to the next row. */
+  body.portrait #action-btn-row{flex-wrap:wrap;}
+  /* The status bar is relocated (via JS) to sit between the button row and the
+     sound engine in portrait — give it the same 6px separation as other rows. */
+  body.portrait #status-panel{margin-top:6px;}
+  /* Mobile landscape: the status bar is pulled out of the right column (via JS)
+     and placed as ONE full-width row at the bottom, just under the action-button
+     row. Same 6px separation as every other row. On DESKTOP landscape the status
+     bar stays in the right column under the virtual display (its markup slot),
+     where the column's own 6px gap spaces it — so no extra margin there. */
+  body.mobile-mode:not(.portrait) #status-panel{margin-top:6px;}
+  /* Mobile landscape only: there is no placeholder, so the right column's SMD
+     display panel would sit at the top with empty space below it. Let the gray
+     panel grow to fill the full column height (top buttons → bottom buttons) and
+     center the virtual display vertically within it. */
+  body.mobile-mode:not(.portrait) .seq-right > .panel:first-child{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;}
+  /* The grid is pinned to a 2:1 box in JS for this case, so its tracks are
+     already square — let the cells simply fill their tracks instead of using
+     their own aspect-ratio:1 (which WebKit also mis-sizes in this flex context,
+     the same bug worked around for .step-pad). */
+  body.mobile-mode:not(.portrait) .smd-cell{aspect-ratio:auto;height:auto;min-height:0;}
+  body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger,
+  body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{
+    flex:0 0 calc(25% - 2px)!important;min-width:0;max-width:calc(25% - 1px);box-sizing:border-box;
+  }
+  /* Portrait: put the Save/Reload/Clear/Random row on top and the
+     Mute/Solo/Align/Select row below (flipped vs. the desktop single row). */
+  body.portrait #ctrl-save,body.portrait #ctrl-reload,body.portrait #ctrl-clear,body.portrait #ctrl-none{order:1;}
+  body.portrait #shift-btn,body.portrait #ctrl-btn,body.portrait #btn-resync,body.portrait #btn-trigger{order:2;}
+
+  /* ── Audio recorder bar ──────────────────────────────────────────────
+     Top row that records the FULL sound-engine output (all parts, pan,
+     reverb/delay, master FX) WITHOUT the metronome click, and saves a WAV. */
+  .rec-bar{display:flex;align-items:stretch;gap:6px;margin-bottom:6px;width:100%;
+    background:var(--seq-panel);border:1px solid var(--seq-border);border-radius:4px;padding:5px;flex-wrap:wrap;}
+  .rec-btn{display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:var(--seq-text);padding:6px 14px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;min-width:96px;}
+  @media (hover:hover){.rec-btn:hover{border-color:var(--seq-yellow);}}
+  .rec-btn:active{transform:translateY(1px);}
+  .rec-btn.armed{border-color:var(--seq-red);color:#fff;background:#2a1410;}
+  .rec-level{position:relative;width:6px;align-self:stretch;border-radius:2px;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);overflow:hidden;flex-shrink:0;}
+  .rec-level-fill{position:absolute;left:0;right:0;bottom:0;height:0%;
+    background:linear-gradient(to top,#40c040,#f0c030 72%,#e05040);transition:height .05s linear;}
+  .rec-meta{flex:1 1 120px;display:flex;flex-direction:column;justify-content:center;min-width:0;
+    padding:0 4px;line-height:1.25;}
+  .rec-time{font-size:16px;font-weight:bold;color:var(--seq-yellow);
+    font-variant-numeric:tabular-nums;letter-spacing:.02em;}
+  .rec-bar.armed .rec-time{color:var(--seq-red);}
+  .rec-status{font-size:10px;color:var(--seq-text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rec-save{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+    background:var(--seq-yellow);border:1px solid var(--seq-yellow-dark);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:#111;padding:6px 14px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;}
+  .rec-save:active{transform:translateY(1px);}
+  .rec-save.disabled{opacity:.4;pointer-events:none;background:var(--seq-btn-bg);
+    border-color:var(--seq-border);color:var(--seq-text-dim);}
+  /* Compact PREVIEW toggle for the last take — sits beside SAVE WAV and
+     plays lastBlob directly, no file save needed. Neutral so it doesn't clash
+     with the yellow SAVE WAV or the red armed BOUNCE; yellow accent while it
+     plays. */
+  .rec-prev{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+    background:var(--seq-btn-bg);border:1px solid var(--seq-border);border-radius:3px;
+    font-family:var(--seq-font);font-size:12px;font-weight:bold;letter-spacing:.05em;
+    color:var(--seq-text);padding:6px 12px;transition:background .1s,border-color .1s,color .1s,box-shadow .1s;white-space:nowrap;}
+  @media (hover:hover){.rec-prev:hover{border-color:var(--seq-yellow);}}
+  .rec-prev:active{transform:translateY(1px);}
+  .rec-prev.playing{border-color:var(--seq-yellow);color:var(--seq-yellow);}
+  .rec-prev.disabled{opacity:.4;pointer-events:none;}
+  /* Keep the button a constant size across the PREVIEW ⇄ STOP swap by
+     reserving a fixed slot for the (wider) label so "STOP" doesn't shrink it. */
+  #rec-preview-label{display:inline-block;min-width:58px;text-align:center;}
+  @media (max-width:680px){ .rec-status{font-size:9px;} .rec-btn{min-width:80px;padding:6px 10px;}
+    .rec-prev{padding:6px 10px;} .rec-save{padding:6px 10px;} }
+  /* BOUNCE/recorder bar: always ONE row on small/portrait layouts, matching the
+     packaged app. .rec-bar wraps and its children carry rigid min-widths, which
+     pushed PREVIEW / SAVE WAV onto a second row on a phone; let them shrink
+     instead and clip the caption, which is the only expendable text here. */
+  body.mobile-mode .rec-bar,
+  body.portrait .rec-bar{flex-wrap:nowrap!important;}
+  body.mobile-mode .rec-bar .rec-btn,
+  body.portrait .rec-bar .rec-btn{min-width:0!important;padding-left:8px!important;padding-right:8px!important;flex-shrink:0;}
+  body.mobile-mode .rec-bar .rec-meta,
+  body.portrait .rec-bar .rec-meta{min-width:0!important;overflow:hidden!important;flex:1 1 auto!important;}
+  body.mobile-mode .rec-bar .rec-prev,
+  body.mobile-mode .rec-bar .rec-save,
+  body.portrait .rec-bar .rec-prev,
+  body.portrait .rec-bar .rec-save{min-width:0!important;padding-left:8px!important;padding-right:8px!important;flex-shrink:0;}
+  /* At iPhone-SE width the one-row bar leaves the timer ~6px short of its own
+     text, so trim it on those screens only — the caption beside it is the part
+     that's meant to ellipsis away, not the running time. */
+  @media (max-width:400px){ .rec-bar .rec-time{font-size:13px;} }
