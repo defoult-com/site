@@ -9641,7 +9641,8 @@ document.addEventListener('pagehide',()=>{ if(_saveDirty) persistNow(); });
 // reaching the app (whose document-level handlers would otherwise read typed
 // letters as part-select / transport shortcuts). Enter = OK, Escape / backdrop
 // tap = Cancel. `onOk(name)` fires only on a confirmed non-cancel.
-function promptFileName(dflt, onOk){
+function promptFileName(dflt, onOk, opts){
+  opts=opts||{};   // {title, ext} — default to the project-save wording
   if(!document.getElementById('fname-modal-css')){
     const st=document.createElement('style'); st.id='fname-modal-css';
     st.textContent=
@@ -9665,9 +9666,9 @@ function promptFileName(dflt, onOk){
   const back=document.createElement('div'); back.className='fname-back';
   back.innerHTML=
     '<div class="fname-box">'
-    +'<div class="fname-title">Save project as</div>'
+    +'<div class="fname-title">'+(opts.title||'Save project as')+'</div>'
     +'<div class="fname-row"><input class="fname-input" type="text" spellcheck="false" '
-      +'autocapitalize="off" autocomplete="off"><span class="fname-ext">.json</span></div>'
+      +'autocapitalize="off" autocomplete="off"><span class="fname-ext">'+(opts.ext||'.json')+'</span></div>'
     +'<div class="fname-btns"><button type="button" class="fname-cancel">Cancel</button>'
       +'<button type="button" class="fname-ok">Save</button></div>'
     +'</div>';
@@ -9691,8 +9692,10 @@ function promptFileName(dflt, onOk){
 // Make a user-typed name safe as a download filename: drop path separators and
 // characters that break saves on some platforms, trim, strip a redundant .json,
 // and fall back to the default if nothing usable is left.
-function _sanitizeFileName(name,dflt){
-  let s=(name||'').trim().replace(/\.json$/i,'');
+function _sanitizeFileName(name,dflt,ext){
+  ext=ext||'.json';
+  let s=(name||'').trim();
+  if(ext&&s.toLowerCase().slice(-ext.length)===ext.toLowerCase()) s=s.slice(0,-ext.length); // strip a redundant extension
   s=s.replace(/[\/\\?%*:|"<>\x00-\x1f]/g,'').replace(/\s+/g,' ').replace(/^\.+/,'').trim();
   return s||dflt;
 }
@@ -10609,14 +10612,42 @@ window.addEventListener('orientationchange', ()=>setTimeout(()=>requestAnimation
     return new Blob([view],{type:'audio/wav'});
   }
 
-  function saveWav(){
-    if(!lastBlob) return;
+  // Plain <a download> to the browser's Downloads under a chosen name — the
+  // desktop path, and the fallback everywhere else.
+  function _wavDownloadAs(fname){
     const url=URL.createObjectURL(lastBlob);
     const a=document.createElement('a');
-    a.href=url; a.download=lastName;
+    a.href=url; a.download=fname;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000);
-    elStatus.textContent='Saved '+lastName;
+    elStatus.textContent='Saved '+fname;
+  }
+  // Write the take out under `fname`. Runs from the name-popup SAVE click, so it
+  // is inside a user gesture — iOS's share sheet needs that. On touch it offers
+  // “Save to Files”, AirDrop, etc; elsewhere (and as the fallback) it downloads.
+  function _saveWavAs(fname){
+    const isTouch=('ontouchend' in document) || (navigator.maxTouchPoints>0);
+    if(isTouch && navigator.canShare){
+      try{
+        const file=new File([lastBlob],fname,{type:'audio/wav'});
+        if(navigator.canShare({files:[file]})){
+          navigator.share({files:[file],title:fname})
+            .then(()=>{ elStatus.textContent='Shared '+fname+' — choose “Save to Files”'; })
+            .catch(()=>_wavDownloadAs(fname));
+          return;
+        }
+      }catch(e){}
+    }
+    _wavDownloadAs(fname);
+  }
+  // SAVE WAV → the same name popup as the project save, so the take gets a
+  // custom filename before it is written.
+  function saveWav(){
+    if(!lastBlob) return;
+    const dflt=(lastName||'stepseq').replace(/\.wav$/i,'');
+    promptFileName(dflt,function(name){
+      _saveWavAs(_sanitizeFileName(name,dflt,'.wav')+'.wav');
+    },{ext:'.wav',title:'Save WAV as'});
   }
 
   elToggle.addEventListener('click',()=>{ recording?stopRec():startRec(); });

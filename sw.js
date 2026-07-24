@@ -17,7 +17,7 @@
  * the new version. So the app updates when — and only when — the site has a new
  * build, and never mid-session by surprise.
  */
-const VERSION = 'b6b90d07b879';          // stamped from a hash of the build
+const VERSION = '37fddb6496b4';          // stamped from a hash of the build
 const CACHE = 'defoult-' + VERSION;
 
 // Best-effort: about/manual live in the site repo and may not be deployed
