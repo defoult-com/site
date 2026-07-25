@@ -225,9 +225,9 @@ function defaultStepParams(){return {note:0,accent:1,velManual:false,gate:50,pro
 // Velocity mixer (PAT mode display): per-part MIDI velocity scaler 0-100%.
 // 100 = velocities pass unchanged, 0 = part fully muted at the velocity level.
 const midiVel=Array(8).fill(100);
-// Global per-part defaults applied to NEWLY entered steps (prob/retrig excluded).
+// Global per-part defaults applied to NEWLY entered steps.
 // Lives outside the pattern store, so it's the same across all patterns/banks.
-const partStepDefaults=Array.from({length:8},()=>({note:0,accent:1,velManual:false,gate:50,oct:5,vel:100,stepOffset:0}));
+const partStepDefaults=Array.from({length:8},()=>({note:0,accent:1,velManual:false,gate:50,prob:100,oct:5,vel:100,stepOffset:0,retrig:1}));
 function newStepParams(pi){return {...defaultStepParams(),...partStepDefaults[pi]};}
 // Accent: 0=normal, 1=accent (+30%), 2=ghost (−50%). Legacy true/false maps to 1/0.
 function accState(v){return v===true?2:v===false?1:Math.max(0,Math.min(2,v|0));}
@@ -1704,7 +1704,7 @@ function onMidiMessage(e, srcDeviceId){
     } else if(heldPartPi!==-1){
       // ── Part defaults mode ───────────────────────────────────────
       const def=STEP_PARAM_DEFS[idx];
-      if(!def||def.key==='prob'||def.key==='retrig')return;
+      if(!def)return;
       const sp=partStepDefaults[heldPartPi];
       if(def.isToggle){
         sp[def.key]=value>=64;
@@ -2181,12 +2181,6 @@ function showPartDefaults(pi){
 
   STEP_PARAM_DEFS.forEach((def,idx)=>{
     const cell=document.createElement('div');
-    if(def.key==='prob'||def.key==='retrig'){
-      cell.className='smd-cell';
-      cell.innerHTML='<div class="smd-cell-label"></div><div class="smd-cell-val"></div><div class="snap-hint"></div>';
-      grid.appendChild(cell);
-      return;
-    }
     cell.className='smd-cell draggable';
     cell.title='Drag up/down';
     cell.innerHTML=`
@@ -8320,7 +8314,7 @@ function newProject(){
     for(const key in soundCtrlLocks[i]) delete soundCtrlLocks[i][key];
     clearLockOverrides(i);
     // Per-part step-entry defaults back to factory.
-    partStepDefaults[i]={note:0,accent:1,velManual:false,gate:50,oct:5,vel:100,stepOffset:0};
+    partStepDefaults[i]={note:0,accent:1,velManual:false,gate:50,prob:100,oct:5,vel:100,stepOffset:0,retrig:1};
     partPage[i]=0;
     // Per-part MIDI routing back to "inherit global" (keeps connected devices).
     partMidiIn[i].deviceId=null;  partMidiIn[i].channel=-1;
