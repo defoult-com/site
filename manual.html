@@ -65,7 +65,7 @@
     <li><b>Play</b> (<kbd>Space</kbd>) starts the sequencer; pressing it again <b>stops and resets</b> every part to the start. Queued events (pattern changes) land on bar downbeats.</li>
     <li><b>Pause</b> (<kbd>Backspace</kbd>) pauses in place and resumes from exactly where playback left off.</li>
     <li><b>REC</b> (<kbd>Enter</kbd>) arms live recording: part hits and notes played in KEYB mode, and knob moves in CTRL mode, are written into the running sequence as steps and step locks. Live-recorded hits are quantised to the nearest step.</li>
-    <li><b>Tempo</b> — drag the tempo readout left/right (or scroll) to change BPM; on desktop, hold <kbd>N</kbd> and nudge with <kbd>←</kbd>/<kbd>→</kbd> (<kbd>Shift</kbd> for ±10). The metronome button (<kbd>M</kbd>) toggles a click with a bar accent.</li>
+    <li><b>Tempo</b> — drag the tempo readout left/right (or scroll) to change BPM; on desktop, hold <kbd>N</kbd> and nudge with <kbd>;</kbd> (up) / <kbd>l</kbd> (down), <kbd>Shift</kbd> for ±10. The metronome button (<kbd>M</kbd>) toggles a click with a bar accent.</li>
     <li><b>Settings</b> (gear, <kbd>Esc</kbd>) opens SETTINGS mode (see section 8).</li>
   </ul>
 </section>
@@ -92,7 +92,7 @@
   </ul>
   <h3>MIDI DELAY page — hold SOLO</h3>
   <p>Hold (or latch) <span class="btnface">SOLO</span> in the STEP tab and the display becomes the <b>MIDI DELAY</b> page for the part: <b>DLY TIME</b> (echo division) · <b>DLY FB</b> (feedback) · <b>PITCH FB</b> (±12 st per echo — pitched delays that spiral up or down) · <b>MIDI DLY</b>. Release SOLO to return. Latch SOLO to keep the page open and adjust it hands-free.</p>
-  <p class="dim"><b>Holding a step pad</b> switches the display to that step's own parameters; <b>holding a part button</b> shows the part's note defaults (PART DEFAULTS — the values every new step is seeded with, whose NOTE also loops across octaves).</p>
+  <p class="dim"><b>Holding a step pad</b> switches the display to that step's own parameters; <b>holding a part button</b> shows the part's <b>PART DEFAULTS</b> — the values every new step is seeded with: <b>NOTE · ACCENT · GATE · PROB · OCT · VELOCITY · TIME OFST · RETRIG</b> (NOTE loops across octaves). Set a default probability or retrig here and new steps inherit it.</p>
 
   <h3>Action buttons</h3>
   <table>
@@ -220,7 +220,7 @@
     <tr><td><kbd>Backspace</kbd></td><td>Pause / resume in place</td></tr>
     <tr><td><kbd>Enter</kbd></td><td>Record arm on / off</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Settings mode</td></tr>
-    <tr><td><kbd>N</kbd> (hold)</td><td>Tempo — nudge with <kbd>←</kbd>/<kbd>→</kbd>, <kbd>Shift</kbd> for ±10</td></tr>
+    <tr><td><kbd>N</kbd> (hold)</td><td>Tempo — nudge with <kbd>;</kbd> up / <kbd>l</kbd> down, <kbd>Shift</kbd> for ±10</td></tr>
     <tr><td><kbd>M</kbd></td><td>Metronome on / off</td></tr>
     <tr><td><kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd></td><td>PTRN / STEP / KEYB / CTRL tabs (hold for a temporary switch)</td></tr>
     <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Trigger + select part (with <span class="btnface">MUTE</span>/<span class="btnface">SOLO</span> held: mute / solo; with <span class="btnface">ALIGN</span>: align; with <span class="btnface">SELECT</span>: silent select)</td></tr>
