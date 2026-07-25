@@ -3473,6 +3473,10 @@ function updateDirDisplay(){const el=document.getElementById('smd-dir-cell-val')
 function xposeRange(pi){
   const sp=parts[pi].stepParams;let lo=127,hi=0;
   for(let i=0;i<sp.length;i++){const t=sp[i].note+sp[i].oct*12;if(t<lo)lo=t;if(t>hi)hi=t;}
+  // The part's NOTE default moves with the steps, so keep it inside the range
+  // too — nothing (steps or default) should clip at the 0/127 MIDI ends.
+  const pd=partStepDefaults[pi],dt=pd.note+pd.oct*12;
+  if(dt<lo)lo=dt;if(dt>hi)hi=dt;
   const cur=parts[pi].xpose||0;
   return [cur-lo,cur+(127-hi)];
 }
@@ -3484,6 +3488,10 @@ function setXpose(pi,nv){
     const s=p.stepParams[i],t=Math.max(0,Math.min(127,s.note+s.oct*12+d));
     s.note=((t%12)+12)%12;s.oct=Math.floor(t/12);
   }
+  // Shift the part's NOTE default by the same amount, so steps placed AFTER a
+  // transpose inherit the transposed pitch rather than the un-shifted default.
+  const pd=partStepDefaults[pi],pt=Math.max(0,Math.min(127,pd.note+pd.oct*12+d));
+  pd.note=((pt%12)+12)%12;pd.oct=Math.floor(pt/12);
   p.xpose=nv;
   updateXposeDisplay();updatePartIndicator();
   try{markPatternChanged();}catch(e){}
